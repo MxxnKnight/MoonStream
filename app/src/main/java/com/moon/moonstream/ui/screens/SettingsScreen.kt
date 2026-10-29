@@ -1,55 +1,65 @@
 package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.moon.moonstream.BuildConfig
+import com.moon.moonstream.ui.components.InfoDot
 import com.moon.moonstream.ui.components.MsDropdown
 import com.moon.moonstream.ui.components.MsOutlinePill
-import com.moon.moonstream.ui.components.MsSlider
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.components.MsToggle
 import com.moon.moonstream.ui.components.SettingRow
 import com.moon.moonstream.ui.components.SettingsGroup
 import com.moon.moonstream.ui.state.AppUiState
+import com.moon.moonstream.ui.state.MsAccent
 import com.moon.moonstream.ui.theme.MsColors
+import kotlinx.coroutines.launch
 
 /**
  * Phase 1: settings with fake data. Every setting has an info tooltip.
  * TODO(Phase 2+): persist to DataStore/prefs and apply to the real services.
  */
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
     val context = LocalContext.current
     var portText by remember { mutableStateOf(AppUiState.port.toString()) }
     var tailscale by remember { mutableStateOf(false) }
     var publicHost by remember { mutableStateOf("") }
     var autoScan by remember { mutableStateOf(true) }
     var scanInterval by remember { mutableStateOf("30") }
-    var confidence by remember { mutableFloatStateOf(0.75f) }
     var animeMode by remember { mutableStateOf(true) }
-    var cacheMb by remember { mutableStateOf("2048") }
+    var cacheMb by remember { mutableStateOf(AppUiState.cacheMaxMb.toString()) }
     var bufferMb by remember { mutableStateOf("20") }
     var maxSizeMb by remember { mutableStateOf("") }
     var prefQuality by remember { mutableStateOf("1080p") }
@@ -125,17 +135,8 @@ fun SettingsScreen() {
                     modifier = Modifier.width(120.dp),
                 )
             }
-            SettingRow(
-                title = "Match confidence",
-                info = "How sure the app must be before it files a video under a title automatically. Higher means fewer wrong matches, but more files land in Unmatched for you to link by hand.",
-            ) {
-                MsSlider(
-                    value = confidence,
-                    onValueChange = { confidence = it; fakeSaved() },
-                    valueRange = 0.5f..0.99f,
-                    modifier = Modifier.width(170.dp),
-                )
-            }
+            // v0.3.1: the "Match confidence" slider was removed — moon noted no
+            // other app has it; matching strictness is handled internally.
             SettingRow(
                 title = "Anime handling",
                 info = "When on, channels marked as anime use episode-number matching (like episode 1123) instead of season/episode matching.",
@@ -151,11 +152,18 @@ fun SettingsScreen() {
             ) {
                 MsTextField(
                     value = cacheMb,
-                    onValueChange = { cacheMb = it },
+                    onValueChange = {
+                        cacheMb = it
+                        it.toIntOrNull()?.let { mb ->
+                            if (mb >= 0) AppUiState.cacheMaxMb = mb
+                        }
+                    },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.width(120.dp),
                 )
             }
+            // Mockup-style cache meter: "312 MB of 2048 MB" + bar + Clear.
+            CacheStorageBlock()
             SettingRow(
                 title = "Buffer MB",
                 info = "How much video the app downloads ahead while you watch. Bigger means smoother playback on slow connections, but uses more data upfront.",
@@ -165,18 +173,6 @@ fun SettingsScreen() {
                     onValueChange = { bufferMb = it },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.width(120.dp),
-                )
-            }
-            SettingRow(
-                title = "Clear Cache",
-                info = "Deletes all stored video chunks and image thumbnails right now. Your library and channels are not affected.",
-            ) {
-                MsOutlinePill(
-                    text = "Clear",
-                    fontSize = 13,
-                    onClick = {
-                        Toast.makeText(context, "Cache cleared (fake)", Toast.LENGTH_SHORT).show()
-                    },
                 )
             }
             SettingRow(
@@ -215,13 +211,27 @@ fun SettingsScreen() {
 
         SettingsGroup("Appearance & Library") {
             SettingRow(
-                title = "Theme",
-                info = "Dark is the default look. More themes can be added later without changing anything else.",
+                title = "Accent color",
+                info = "The app's highlight color — buttons, switches, progress bars and the selected tab follow it. Applies instantly.",
             ) {
-                Text(
-                    "Dark",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MsColors.TextPrimary,
+                MsDropdown(
+                    selected = AppUiState.accent.label,
+                    options = MsAccent.values().map { it.label },
+                    onSelect = { label ->
+                        MsAccent.values().find { it.label == label }?.let {
+                            AppUiState.setAccent(it, context)
+                        }
+                    },
+                    modifier = Modifier.width(170.dp),
+                )
+            }
+            SettingRow(
+                title = "Pure AMOLED mode",
+                info = "Switches backgrounds and cards to true black. On AMOLED screens black pixels are fully off, so this saves battery and looks deeper in the dark.",
+            ) {
+                MsToggle(
+                    checked = AppUiState.amoled,
+                    onCheckedChange = { AppUiState.setAmoled(it, context) },
                 )
             }
             SettingRow(
@@ -229,6 +239,18 @@ fun SettingsScreen() {
                 info = "When on, the app ignores a file it has already indexed, even if it appears again in another channel.",
             ) {
                 MsToggle(checked = dupProtection, onCheckedChange = { dupProtection = it; fakeSaved() })
+            }
+        }
+        SettingsGroup("Diagnostics") {
+            SettingRow(
+                title = "View logs",
+                info = "Opens the app's diagnostic log — useful when something misbehaves and you want to see what the app was doing.",
+            ) {
+                MsOutlinePill(
+                    text = "Open",
+                    fontSize = 13,
+                    onClick = onOpenLogs,
+                )
             }
         }
         SettingsGroup("App") {
@@ -255,5 +277,80 @@ fun SettingsScreen() {
                 )
             }
         }
+    }
+}
+
+/**
+ * Mockup-style cache meter: "312 MB of 2048 MB" + progress bar + Clear Cache.
+ * Clear animates the usage down to 0 (fake).
+ * TODO(Phase 4): drive from real cache stats.
+ */
+@Composable
+private fun CacheStorageBlock() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val used = AppUiState.cacheUsedMb
+    val max = AppUiState.cacheMaxMb.coerceAtLeast(1)
+    val bar = remember { Animatable(used.toFloat() / max) }
+
+    // Keep the bar in sync when the numbers change (e.g. after Clear).
+    androidx.compose.runtime.LaunchedEffect(used, max) {
+        bar.animateTo(used.toFloat() / max, tween(600))
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Cache storage",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MsColors.TextPrimary,
+            )
+            Spacer(Modifier.width(10.dp))
+            InfoDot(onClick = {
+                Toast.makeText(
+                    context,
+                    "Video chunks and thumbnails stored on your phone. Clearing never touches your library or channels.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            })
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "$used MB of $max MB",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MsColors.TextPrimary,
+            )
+            MsOutlinePill(
+                text = "Clear Cache",
+                fontSize = 13,
+                onClick = {
+                    scope.launch {
+                        val from = AppUiState.cacheUsedMb
+                        val anim = Animatable(from.toFloat())
+                        anim.animateTo(0f, tween(700)) { AppUiState.cacheUsedMb = value.toInt() }
+                    }
+                    Toast.makeText(context, "Cache cleared (fake)", Toast.LENGTH_SHORT).show()
+                },
+            )
+        }
+        LinearProgressIndicator(
+            progress = bar.value.coerceIn(0f, 1f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp)),
+            color = MsColors.Accent,
+            trackColor = MsColors.TrackOff,
+        )
     }
 }

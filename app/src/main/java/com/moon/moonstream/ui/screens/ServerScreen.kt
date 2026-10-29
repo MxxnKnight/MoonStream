@@ -50,7 +50,9 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.moon.moonstream.ui.components.BareIconButton
+import com.moon.moonstream.ui.components.CopyMorphButton
 import com.moon.moonstream.ui.components.MsCard
 import com.moon.moonstream.ui.components.PowerSwitch
 import com.moon.moonstream.ui.components.PulsingDot
@@ -101,14 +103,21 @@ fun ServerScreen() {
             .background(MsColors.Bg)
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text(
-            "MoonStream",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MsColors.TextPrimary,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "MoonStream",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MsColors.TextPrimary,
+            )
+            MsSectionEyebrow(if (on) "RUNNING" else "IDLE")
+        }
 
         if (on) {
             ServerCardOn(uptimeSecs = uptimeSecs, onToggle = onToggle)
@@ -122,53 +131,67 @@ fun ServerScreen() {
             enter = fadeIn(tween(300)) + expandVertically(tween(350)),
             exit = fadeOut(tween(250)) + shrinkVertically(tween(300)),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // Manifest URL card
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                MsSectionEyebrow("ADDON LINK")
+                // THE single addon link UI (v0.3.1: no duplicates anywhere else).
                 MsCard {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                "Manifest URL",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MsColors.TextSecondary,
-                            )
+                        Text(
+                            "Manifest URL",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MsColors.TextSecondary,
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 AppUiState.manifestLink,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MsColors.TextPrimary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            CopyMorphButton(
+                                showLabel = false,
+                                onCopy = {
+                                    clipboard.setText(AnnotatedString(AppUiState.manifestLink))
+                                },
                             )
                         }
-                        BareIconButton(
-                            icon = Icons.Filled.ContentCopy,
-                            contentDescription = "Copy manifest link",
-                            tint = MsColors.TextSecondary,
-                            onClick = {
-                                clipboard.setText(AnnotatedString(AppUiState.manifestLink))
-                                Toast.makeText(context, "Manifest link copied", Toast.LENGTH_SHORT).show()
-                            },
-                        )
                     }
                 }
 
                 ServerStatsCard(uptimeSecs = uptimeSecs)
 
+                MsSectionEyebrow("LIBRARY")
                 LibraryDashboardCard()
 
                 Text(
                     "Paste the manifest URL into Stremio or Nuvio to browse your library.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MsColors.TextSecondary,
+                    modifier = Modifier.padding(horizontal = 4.dp),
                 )
             }
         }
     }
+}
+
+/** Small caps section eyebrow for the home screen hierarchy. */
+@Composable
+private fun MsSectionEyebrow(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.Bold,
+        color = MsColors.TextSecondary,
+        letterSpacing = 1.5.sp,
+        modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+    )
 }
 
 /** OFF state: completely static — flat dark card, static red dot, no shimmer. */
@@ -220,7 +243,7 @@ private fun ServerCardOff(onToggle: () -> Unit) {
     }
 }
 
-/** ON state: green gradient, shimmer strip, pulsing green dot. */
+/** ON state: accent-tinted gradient, shimmer strip, pulsing dot. */
 @Composable
 private fun ServerCardOn(uptimeSecs: Int, onToggle: () -> Unit) {
     val shimmer = rememberInfiniteTransition(label = "shimmer")
@@ -237,10 +260,13 @@ private fun ServerCardOn(uptimeSecs: Int, onToggle: () -> Unit) {
             .clip(RoundedCornerShape(MsRadii.Card))
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFF1A2B1D), Color(0xFF0F170F)),
+                    listOf(
+                        MsColors.Accent.copy(alpha = 0.14f),
+                        MsColors.Surface,
+                    ),
                 ),
             )
-            .padding(20.dp),
+            .padding(22.dp),
     ) {
         // Shimmer strip pinned to the top edge (ON only).
         Box(
@@ -252,7 +278,7 @@ private fun ServerCardOn(uptimeSecs: Int, onToggle: () -> Unit) {
                     Brush.horizontalGradient(
                         listOf(
                             Color.Transparent,
-                            MsColors.Lime.copy(alpha = 0.75f),
+                            MsColors.Accent.copy(alpha = 0.75f),
                             Color.Transparent,
                         ),
                         startX = shimmerX * 1200f - 480f,
@@ -267,7 +293,7 @@ private fun ServerCardOn(uptimeSecs: Int, onToggle: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                PulsingDot(color = MsColors.Lime, pulse = true)
+                PulsingDot(color = MsColors.Accent, pulse = true)
                 Spacer(Modifier.width(10.dp))
                 Text(
                     "Server ON",
@@ -340,22 +366,8 @@ private fun ServerStatsCard(uptimeSecs: Int) {
                 )
                 SmallMetric(label = "all-time", value = "1.33 GB")
             }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "URL: ${AppUiState.manifestLink}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MsColors.TextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            // v0.3.1: the URL row lived here too — removed. The manifest card
+            // above is the ONE addon link UI; no duplicates.
         }
     }
 }

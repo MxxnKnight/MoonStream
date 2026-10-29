@@ -90,7 +90,7 @@ fun MetadataFixSheet(
                             .clip(RoundedCornerShape(MsRadii.Chip))
                             .clickable { selected = r }
                             .background(
-                                if (isSel) MsColors.Lime.copy(alpha = 0.14f)
+                                if (isSel) MsColors.Accent.copy(alpha = 0.14f)
                                 else MsColors.SurfaceAlt,
                             )
                             .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -107,7 +107,7 @@ fun MetadataFixSheet(
                                 text = "✓",
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = MsColors.Lime,
+                                color = MsColors.Accent,
                             )
                         }
                     }

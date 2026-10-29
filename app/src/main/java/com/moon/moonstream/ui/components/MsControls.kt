@@ -41,7 +41,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,8 +80,8 @@ fun LimePillButton(
     enabled: Boolean = true,
     fontSize: Int = 15,
 ) {
-    val bg = if (enabled) MsColors.Lime else MsColors.TrackOff
-    val fg = if (enabled) MsColors.OnLime else MsColors.TextSecondary
+    val bg = if (enabled) MsColors.Accent else MsColors.TrackOff
+    val fg = if (enabled) MsColors.OnAccent else MsColors.TextSecondary
     Box(
         modifier = modifier
             .clip(CircleShape)
@@ -122,7 +124,7 @@ fun MsOutlinePill(
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
             fontSize = fontSize.sp,
-            color = if (enabled) MsColors.Lime else MsColors.TextSecondary,
+            color = if (enabled) MsColors.Accent else MsColors.TextSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
@@ -143,7 +145,7 @@ fun LimeTextButton(
         style = MaterialTheme.typography.bodyMedium,
         fontWeight = FontWeight.Medium,
         fontSize = fontSize.sp,
-        color = MsColors.Lime,
+        color = MsColors.Accent,
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
             .clickable(onClick = onClick)
@@ -194,8 +196,8 @@ fun MsTextField(
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = MsColors.TextPrimary,
             unfocusedTextColor = MsColors.TextPrimary,
-            cursorColor = MsColors.Lime,
-            focusedBorderColor = MsColors.Lime,
+            cursorColor = MsColors.Accent,
+            focusedBorderColor = MsColors.Accent,
             unfocusedBorderColor = MsColors.TextSecondary.copy(alpha = 0.35f),
             focusedPlaceholderColor = MsColors.TextSecondary,
             unfocusedPlaceholderColor = MsColors.TextSecondary,
@@ -229,7 +231,7 @@ fun QualityChip(text: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(MsRadii.Chip))
-            .background(MsColors.Lime.copy(alpha = 0.18f))
+            .background(MsColors.Accent.copy(alpha = 0.18f))
             .padding(horizontal = 10.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -237,7 +239,7 @@ fun QualityChip(text: String, modifier: Modifier = Modifier) {
             text = text,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
-            color = MsColors.Lime,
+            color = MsColors.Accent,
         )
     }
 }
@@ -273,8 +275,8 @@ fun MsToggle(
         onCheckedChange = onCheckedChange,
         modifier = modifier,
         colors = SwitchDefaults.colors(
-            checkedThumbColor = MsColors.OnLime,
-            checkedTrackColor = MsColors.Lime,
+            checkedThumbColor = MsColors.OnAccent,
+            checkedTrackColor = MsColors.Accent,
             checkedBorderColor = Color.Transparent,
             uncheckedThumbColor = MsColors.TextSecondary,
             uncheckedTrackColor = MsColors.TrackOff,
@@ -297,8 +299,8 @@ fun MsSlider(
         valueRange = valueRange,
         modifier = modifier,
         colors = SliderDefaults.colors(
-            thumbColor = MsColors.Lime,
-            activeTrackColor = MsColors.Lime,
+            thumbColor = MsColors.Accent,
+            activeTrackColor = MsColors.Accent,
             inactiveTrackColor = MsColors.TrackOff,
         ),
     )
@@ -392,10 +394,10 @@ fun PowerSwitch(
         modifier = modifier
             .size(trackWidth, trackHeight)
             .clip(CircleShape)
-            .background(if (on) MsColors.Lime.copy(alpha = 0.22f) else MsColors.SurfaceAlt)
+            .background(if (on) MsColors.Accent.copy(alpha = 0.22f) else MsColors.SurfaceAlt)
             .border(
                 3.dp,
-                if (on) MsColors.Lime else MsColors.TextSecondary.copy(alpha = 0.5f),
+                if (on) MsColors.Accent else MsColors.TextSecondary.copy(alpha = 0.5f),
                 CircleShape,
             )
             .clickable(
@@ -478,7 +480,7 @@ fun MsGroupHeader(text: String) {
         text = text,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold,
-        color = MsColors.Lime,
+        color = MsColors.Accent,
         modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
     )
 }
@@ -527,7 +529,7 @@ fun MsDropdown(
                 .background(MsColors.SurfaceAlt)
                 .border(
                     1.dp,
-                    if (expanded) MsColors.Lime else MsColors.TextSecondary.copy(alpha = 0.35f),
+                    if (expanded) MsColors.Accent else MsColors.TextSecondary.copy(alpha = 0.35f),
                     RoundedCornerShape(MsRadii.Field),
                 )
                 .clickable { expanded = true }
@@ -554,7 +556,7 @@ fun MsDropdown(
             Icon(
                 imageVector = Icons.Filled.ArrowDropDown,
                 contentDescription = "Open options",
-                tint = if (expanded) MsColors.Lime else MsColors.TextSecondary,
+                tint = if (expanded) MsColors.Accent else MsColors.TextSecondary,
             )
         }
         DropdownMenu(
@@ -571,14 +573,14 @@ fun MsDropdown(
                                 text = option,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (isSel) MsColors.Lime else MsColors.TextPrimary,
+                                color = if (isSel) MsColors.Accent else MsColors.TextPrimary,
                                 modifier = Modifier.weight(1f),
                             )
                             if (isSel) {
                                 Icon(
                                     imageVector = Icons.Filled.Check,
                                     contentDescription = "Selected",
-                                    tint = MsColors.Lime,
+                                    tint = MsColors.Accent,
                                     modifier = Modifier.size(18.dp),
                                 )
                             }
@@ -587,6 +589,83 @@ fun MsDropdown(
                     onClick = { onSelect(option); expanded = false },
                 )
             }
+        }
+    }
+}
+
+/**
+ * Copy button that morphs into a checkmark on tap: the copy icon pops into a
+ * solid accent circle with a dark check + a brief "Copied!" label, then
+ * settles back. Replaces the bare toast — the state change IS the feedback.
+ */
+@Composable
+fun CopyMorphButton(
+    onCopy: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = MsColors.TextSecondary,
+    showLabel: Boolean = true,
+) {
+    var copied by remember { mutableStateOf(false) }
+    val pop by animateFloatAsState(
+        targetValue = if (copied) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "copyPop",
+    )
+    LaunchedEffect(copied) {
+        if (copied) {
+            kotlinx.coroutines.delay(1600)
+            copied = false
+        }
+    }
+
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {
+                    onCopy()
+                    copied = true
+                },
+            )
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (copied) {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .scale(pop.coerceIn(0.01f, 1.2f))
+                    .background(MsColors.Accent, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = "Copied",
+                    tint = MsColors.OnAccent,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            if (showLabel) {
+                Text(
+                    text = "Copied!",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MsColors.Accent,
+                )
+            }
+        } else {
+            Icon(
+                imageVector = Icons.Filled.ContentCopy,
+                contentDescription = "Copy",
+                tint = tint,
+                modifier = Modifier.size(24.dp),
+            )
         }
     }
 }

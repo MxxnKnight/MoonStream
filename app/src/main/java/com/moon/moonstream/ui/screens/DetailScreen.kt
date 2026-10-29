@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -102,7 +103,23 @@ fun DetailScreen(titleId: String, onBack: () -> Unit) {
                 contentDescription = "Back",
                 tint = Color.White,
                 onClick = onBack,
-                modifier = Modifier.padding(8.dp),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp),
+            )
+            // Hide entry (overflow action) — moves the title to the Hidden tab.
+            BareIconButton(
+                icon = Icons.Filled.VisibilityOff,
+                contentDescription = "Hide entry",
+                tint = Color.White,
+                onClick = {
+                    AppUiState.hiddenIds.add(titleId)
+                    Toast.makeText(context, "Hidden — find it in the Hidden tab (fake)", Toast.LENGTH_SHORT).show()
+                    onBack()
+                },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp),
             )
             Text(
                 text = title.title,

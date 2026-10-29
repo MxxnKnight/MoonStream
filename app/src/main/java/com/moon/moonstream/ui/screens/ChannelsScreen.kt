@@ -1,9 +1,18 @@
 package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,12 +29,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -33,12 +43,14 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -63,6 +75,7 @@ import com.moon.moonstream.ui.model.fakeUnmatched
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MsColors
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 
 /**
@@ -70,8 +83,6 @@ import kotlinx.coroutines.launch
  * so the unmatched list stays smooth even with 400+ items.
  * TODO(Phase 3): real channel list, scan jobs, unmatched index from Room.
  */
-private enum class ScanState { IDLE, SCANNING, DONE }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
@@ -81,34 +92,40 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
     val channels = remember { mutableStateListOf<FakeChannel>().apply { addAll(fakeChannels) } }
     val unmatched = remember { mutableStateListOf<UnmatchedFile>().apply { addAll(fakeUnmatched) } }
 
-    var scanAllState by remember { mutableStateOf(ScanState.IDLE) }
-    var scanStates by remember { mutableStateOf<Map<String, ScanState>>(emptyMap()) }
+    // Premium scan treatment (v0.3.1): each active scan owns an Animatable
+    // progress 0→1; the row reads anim.value so the bar + % tick smoothly.
+    val scanAnims = remember { mutableStateMapOf<String, Animatable<Float, AnimationVector1D>>() }
+    var doneIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var scanAllDone by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
     var linkFile by remember { mutableStateOf<UnmatchedFile?>(null) }
 
     fun fakeScan(id: String?, label: String) {
-        if (id != null) {
-            scanStates = scanStates + (id to ScanState.SCANNING)
-        } else {
-            scanAllState = ScanState.SCANNING
-            scanStates = channels.associate { it.id to ScanState.SCANNING }
-        }
+        val targets = if (id != null) listOf(id) else channels.map { it.id }
+        if (targets.isEmpty()) return
+        targets.forEach { tid -> scanAnims[tid] = Animatable(0f) }
         scope.launch {
-            delay(2000)
-            if (id != null) {
-                scanStates = scanStates + (id to ScanState.DONE)
-                delay(1500)
-                scanStates = scanStates - id
-            } else {
-                scanAllState = ScanState.DONE
-                scanStates = channels.associate { it.id to ScanState.DONE }
-                delay(1500)
-                scanAllState = ScanState.IDLE
-                scanStates = emptyMap()
+            targets.map { tid ->
+                launch {
+                    scanAnims[tid]?.animateTo(1f, tween(2400, easing = LinearEasing))
+                    doneIds = doneIds + tid
+                    delay(1300)
+                    doneIds = doneIds - tid
+                    scanAnims.remove(tid)
+                }
+            }.joinAll()
+            if (id == null) {
+                scanAllDone = true
+                delay(1600)
+                scanAllDone = false
             }
             Toast.makeText(context, "$label scan finished (fake)", Toast.LENGTH_SHORT).show()
         }
     }
+
+    val anyScanning = scanAnims.isNotEmpty()
+    val total = channels.size
+    val doneCount = doneIds.size
 
     LazyColumn(
         modifier = Modifier
@@ -130,8 +147,10 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
                     color = MsColors.TextPrimary,
                 )
                 ScanAllButton(
-                    state = scanAllState,
-                    busy = scanStates.values.any { it == ScanState.SCANNING },
+                    scanning = anyScanning,
+                    doneCount = doneCount,
+                    total = total,
+                    showDone = scanAllDone,
                     onClick = { fakeScan(null, "All channels") },
                 )
             }
@@ -140,7 +159,8 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
         items(channels, key = { it.id }) { ch ->
             ChannelRow(
                 channel = ch,
-                state = scanStates[ch.id] ?: ScanState.IDLE,
+                progress = scanAnims[ch.id]?.value,
+                done = doneIds.contains(ch.id),
                 onToggle = { ch.enabled = !ch.enabled },
                 onScan = { fakeScan(ch.id, ch.name) },
             )
@@ -215,84 +235,144 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
     }
 }
 
-/** Scan All Now button with spinner → checkmark states. */
+/**
+ * Scan All Now pill: idle → collective progress ("Scanning 2/4…" with a slim
+ * determinate bar) → satisfying "Done" pop. No raw spinner anywhere.
+ */
 @Composable
-private fun ScanAllButton(state: ScanState, busy: Boolean, onClick: () -> Unit) {
-    when (state) {
-        ScanState.IDLE -> LimePillButton(
+private fun ScanAllButton(
+    scanning: Boolean,
+    doneCount: Int,
+    total: Int,
+    showDone: Boolean,
+    onClick: () -> Unit,
+) {
+    when {
+        showDone -> DonePill(text = "All scanned")
+        scanning -> {
+            val progress = if (total > 0) doneCount.toFloat() / total else 0f
+            Column(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(MsColors.SurfaceAlt)
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = "Scanning $doneCount/$total…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MsColors.TextPrimary,
+                )
+                LinearProgressIndicator(
+                    progress = progress,
+                    modifier = Modifier
+                        .width(110.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = MsColors.Accent,
+                    trackColor = MsColors.TrackOff,
+                )
+            }
+        }
+        else -> LimePillButton(
             text = "Scan All Now",
             onClick = onClick,
-            enabled = !busy,
             fontSize = 14,
         )
-        ScanState.SCANNING -> Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-                color = MsColors.Lime,
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "Scanning…",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MsColors.TextSecondary,
-            )
-        }
-        ScanState.DONE -> DonePill(text = "Done")
     }
 }
 
 @Composable
 private fun ChannelRow(
     channel: FakeChannel,
-    state: ScanState,
+    progress: Float?,
+    done: Boolean,
     onToggle: () -> Unit,
     onScan: () -> Unit,
 ) {
     MsCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        channel.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MsColors.TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (channel.isAnime) {
-                        Spacer(Modifier.width(8.dp))
-                        AnimeBadge()
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            channel.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MsColors.TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (channel.isAnime) {
+                            Spacer(Modifier.width(8.dp))
+                            AnimeBadge()
+                        }
                     }
+                    Text(
+                        "${channel.files} files",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextSecondary,
+                    )
                 }
-                Text(
-                    "${channel.files} files",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MsColors.TextSecondary,
-                )
+                // Right side: the progress lives UNDER the name (below), so
+                // here we only swap scan button → done check.
+                when {
+                    done -> DoneCheck()
+                    progress == null -> BareIconButton(
+                        icon = Icons.Filled.Refresh,
+                        contentDescription = "Scan Now",
+                        tint = MsColors.TextSecondary,
+                        onClick = onScan,
+                    )
+                    // while scanning, the toggle stays put; progress is below
+                }
+                Spacer(Modifier.width(4.dp))
+                MsToggle(checked = channel.enabled, onCheckedChange = { onToggle() })
             }
-            when (state) {
-                ScanState.IDLE -> BareIconButton(
-                    icon = Icons.Filled.Refresh,
-                    contentDescription = "Scan Now",
-                    tint = MsColors.TextSecondary,
-                    onClick = onScan,
-                )
-                ScanState.SCANNING -> CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
-                    strokeWidth = 2.dp,
-                    color = MsColors.Lime,
-                )
-                ScanState.DONE -> DoneCheck()
+
+            // Sleek progress treatment under the channel name: % label +
+            // slim accent bar, morphing into the checkmark when done.
+            AnimatedVisibility(
+                visible = progress != null && !done,
+                enter = fadeIn(tween(200)) + expandVertically(tween(250)),
+                exit = fadeOut(tween(200)) + shrinkVertically(tween(250)),
+            ) {
+                val p = (progress ?: 0f).coerceIn(0f, 1f)
+                Column(modifier = Modifier.padding(top = 10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Scanning…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MsColors.TextSecondary,
+                        )
+                        Text(
+                            "${(p * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MsColors.Accent,
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = p,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = MsColors.Accent,
+                        trackColor = MsColors.TrackOff,
+                    )
+                }
             }
-            Spacer(Modifier.width(4.dp))
-            MsToggle(checked = channel.enabled, onCheckedChange = { onToggle() })
         }
     }
 }
@@ -312,13 +392,13 @@ private fun DoneCheck(modifier: Modifier = Modifier) {
         modifier = modifier
             .size(28.dp)
             .scale(scale)
-            .background(MsColors.Lime, CircleShape),
+            .background(MsColors.Accent, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = Icons.Filled.Check,
             contentDescription = "Scan done",
-            tint = MsColors.OnLime,
+            tint = MsColors.OnAccent,
             modifier = Modifier.size(18.dp),
         )
     }
@@ -337,14 +417,14 @@ private fun DonePill(text: String) {
     Row(
         modifier = Modifier
             .scale(scale)
-            .background(MsColors.Lime, CircleShape)
+            .background(MsColors.Accent, CircleShape)
             .padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = Icons.Filled.Check,
             contentDescription = null,
-            tint = MsColors.OnLime,
+            tint = MsColors.OnAccent,
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(6.dp))
@@ -352,7 +432,7 @@ private fun DonePill(text: String) {
             text = text,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
-            color = MsColors.OnLime,
+            color = MsColors.OnAccent,
         )
     }
 }

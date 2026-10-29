@@ -11,22 +11,39 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.moon.moonstream.R
+import com.moon.moonstream.ui.state.AppUiState
 
 // ---------------------------------------------------------------------------
 // Design tokens — taken from the approved mockup. Use these, never raw
 // Material3 defaults.
+//
+// v0.3.1: Accent + backgrounds are DYNAMIC — they read AppUiState (accent
+// picker + pure AMOLED toggle, persisted). Because the backing fields are
+// Compose mutableState, every composable that reads MsColors recomposes
+// instantly when the user changes them in Settings → Appearance.
 // ---------------------------------------------------------------------------
 object MsColors {
-    val Bg = Color(0xFF0E1116)          // app background (near-black)
-    val Surface = Color(0xFF161B24)     // cards (flat, no elevation shadows)
-    val SurfaceAlt = Color(0xFF1E2532)  // slightly lifted surfaces (fields, sheets)
-    val Lime = Color(0xFF7DD956)        // primary accent
-    val OnLime = Color(0xFF0E1116)      // dark text on lime buttons
+    /** Primary accent — follows the Settings → Appearance accent picker. */
+    val Accent: Color
+        get() = AppUiState.accent.color
+
+    /** Text/icons drawn ON the accent (dark, readable on all 4 accents). */
+    val OnAccent: Color
+        get() = AppUiState.accent.onColor
+
+    val Bg: Color
+        get() = if (AppUiState.amoled) Color(0xFF000000) else Color(0xFF0E1116)
+    val Surface: Color
+        get() = if (AppUiState.amoled) Color(0xFF0A0A0A) else Color(0xFF161B24)
+    val SurfaceAlt: Color
+        get() = if (AppUiState.amoled) Color(0xFF141414) else Color(0xFF1E2532)
     val Blue = Color(0xFF6A9BFF)        // sparing use (e.g. ANIME badge)
     val TextPrimary = Color(0xFFFFFFFF)
     val TextSecondary = Color(0xFF9AA0A6)
-    val TrackOff = Color(0xFF3A4356)
-    val Divider = Color(0xFF232A38)
+    val TrackOff: Color
+        get() = if (AppUiState.amoled) Color(0xFF2A2A2A) else Color(0xFF3A4356)
+    val Divider: Color
+        get() = if (AppUiState.amoled) Color(0xFF1C1C1C) else Color(0xFF232A38)
 }
 
 object MsRadii {
@@ -70,23 +87,24 @@ private fun Typography.withInter(): Typography {
     )
 }
 
-private val DarkColors = darkColorScheme(
-    primary = MsColors.Lime,
-    onPrimary = MsColors.OnLime,
-    secondary = MsColors.Blue,
-    background = MsColors.Bg,
-    surface = MsColors.Surface,
-    surfaceVariant = MsColors.SurfaceAlt,
-    onBackground = MsColors.TextPrimary,
-    onSurface = MsColors.TextPrimary,
-    onSurfaceVariant = MsColors.TextSecondary,
-    outline = MsColors.Divider,
-)
-
 @Composable
 fun MoonStreamTheme(content: @Composable () -> Unit) {
+    // Built inside the composable (not a static val) so the scheme follows
+    // the live accent / AMOLED state on every recomposition.
+    val scheme = darkColorScheme(
+        primary = MsColors.Accent,
+        onPrimary = MsColors.OnAccent,
+        secondary = MsColors.Blue,
+        background = MsColors.Bg,
+        surface = MsColors.Surface,
+        surfaceVariant = MsColors.SurfaceAlt,
+        onBackground = MsColors.TextPrimary,
+        onSurface = MsColors.TextPrimary,
+        onSurfaceVariant = MsColors.TextSecondary,
+        outline = MsColors.Divider,
+    )
     MaterialTheme(
-        colorScheme = DarkColors,
+        colorScheme = scheme,
         typography = Typography().withInter(),
         content = content,
     )

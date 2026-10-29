@@ -198,7 +198,7 @@ private fun SegmentOption(
     Box(
         modifier = modifier
             .clip(CircleShape)
-            .background(if (selected) MsColors.Lime else MsColors.SurfaceAlt)
+            .background(if (selected) MsColors.Accent else MsColors.SurfaceAlt)
             .then(
                 if (!selected) Modifier.border(
                     1.dp,
@@ -214,7 +214,7 @@ private fun SegmentOption(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
-            color = if (selected) MsColors.OnLime else MsColors.TextSecondary,
+            color = if (selected) MsColors.OnAccent else MsColors.TextSecondary,
         )
     }
 }

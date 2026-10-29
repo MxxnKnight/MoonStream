@@ -66,7 +66,7 @@ fun SplashScreen(onDone: () -> Unit) {
             CircularProgressIndicator(
                 modifier = Modifier.size(30.dp),
                 strokeWidth = 3.dp,
-                color = MsColors.Lime,
+                color = MsColors.Accent,
                 trackColor = MsColors.TrackOff,
             )
             Spacer(Modifier.height(14.dp))

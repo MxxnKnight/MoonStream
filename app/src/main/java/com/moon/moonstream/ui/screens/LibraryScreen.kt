@@ -1,7 +1,10 @@
 package com.moon.moonstream.ui.screens
 
+import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +22,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -34,16 +39,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.LimePillButton
+import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MsSheetContent
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.model.FakeTitle
 import com.moon.moonstream.ui.model.fakeTitles
+import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.ui.theme.MsRadii
 
@@ -51,7 +59,7 @@ import com.moon.moonstream.ui.theme.MsRadii
  * Phase 1: library with fake data.
  * TODO(Phase 3): back with Room observeMedia() Flow; filters map to real queries.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(onOpenDetail: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
@@ -63,18 +71,21 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
     var sort by remember { mutableStateOf("Recently added") }
 
     val tabs = listOf("All", "Movies", "Series", "Anime", "Hidden")
+    val hiddenIds = AppUiState.hiddenIds
     val filtered = fakeTitles.filter { t ->
+        val isHidden = hiddenIds.contains(t.id)
         val matchesTab = when (tab) {
-            0 -> !t.hidden
-            1 -> t.type == "movie" && !t.hidden
-            2 -> t.type == "series"
-            3 -> t.type == "anime"
-            4 -> t.hidden
+            0 -> !isHidden
+            1 -> t.type == "movie" && !isHidden
+            2 -> t.type == "series" && !isHidden
+            3 -> t.type == "anime" && !isHidden
+            4 -> isHidden
             else -> true
         }
         val matchesQuery = query.isBlank() || t.title.contains(query, ignoreCase = true)
         matchesTab && matchesQuery
     }
+    val inHiddenTab = tab == 4
 
     Column(
         modifier = Modifier
@@ -121,7 +132,7 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
                         text = name,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (selected) MsColors.Lime else MsColors.TextSecondary,
+                        color = if (selected) MsColors.Accent else MsColors.TextSecondary,
                         textAlign = TextAlign.Center,
                         maxLines = 1,
                     )
@@ -132,7 +143,7 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
                             .height(3.dp)
                             .clip(RoundedCornerShape(2.dp))
                             .background(
-                                if (selected) MsColors.Lime else Color.Transparent,
+                                if (selected) MsColors.Accent else Color.Transparent,
                             ),
                     )
                 }
@@ -146,8 +157,16 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(18.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            items(filtered) { title ->
-                PosterCell(title = title, onClick = { onOpenDetail(title.id) })
+            items(filtered, key = { it.id }) { title ->
+                PosterCell(
+                    title = title,
+                    inHiddenTab = inHiddenTab,
+                    onClick = { onOpenDetail(title.id) },
+                    onToggleHide = {
+                        if (hiddenIds.contains(title.id)) hiddenIds.remove(title.id)
+                        else hiddenIds.add(title.id)
+                    },
+                )
             }
         }
     }
@@ -163,41 +182,82 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PosterCell(title: FakeTitle, onClick: () -> Unit) {
+private fun PosterCell(
+    title: FakeTitle,
+    inHiddenTab: Boolean,
+    onClick: () -> Unit,
+    onToggleHide: () -> Unit,
+) {
+    val context = LocalContext.current
+    var showHideMenu by remember { mutableStateOf(false) }
+    val isHidden = AppUiState.hiddenIds.contains(title.id)
+
     Column(
-        modifier = Modifier.clickable { onClick() },
+        modifier = Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = { showHideMenu = true },
+        ),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(MsRadii.Poster))
-                .background(Brush.verticalGradient(listOf(title.colorA, title.colorB))),
-            contentAlignment = Alignment.BottomStart,
-        ) {
-            // Bottom scrim so the title stays readable on bright posters
+        Box {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(72.dp)
-                    .align(Alignment.BottomCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, Color(0xB3000000)),
+                    .aspectRatio(2f / 3f)
+                    .clip(RoundedCornerShape(MsRadii.Poster))
+                    .background(Brush.verticalGradient(listOf(title.colorA, title.colorB))),
+                contentAlignment = Alignment.BottomStart,
+            ) {
+                // Bottom scrim so the title stays readable on bright posters
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color(0xB3000000)),
+                            ),
                         ),
-                    ),
-            )
-            Text(
-                text = title.title,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(10.dp),
-            )
+                )
+                Text(
+                    text = title.title,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(10.dp),
+                )
+            }
+
+            // Long-press menu: Hide / Unhide entry (anchored to the poster).
+            DropdownMenu(
+                expanded = showHideMenu,
+                onDismissRequest = { showHideMenu = false },
+                modifier = Modifier.background(MsColors.SurfaceAlt),
+            ) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            if (isHidden) "Unhide entry" else "Hide entry",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                        )
+                    },
+                    onClick = {
+                        onToggleHide()
+                        Toast.makeText(
+                            context,
+                            if (isHidden) "Unhidden (fake)" else "Hidden (fake)",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        showHideMenu = false
+                    },
+                )
+            }
         }
         Spacer(Modifier.height(6.dp))
         Text(
@@ -205,6 +265,17 @@ private fun PosterCell(title: FakeTitle, onClick: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             color = MsColors.TextSecondary,
         )
+        // Hidden tab: explicit per-item Unhide action.
+        if (inHiddenTab) {
+            LimeTextButton(
+                text = "Unhide",
+                fontSize = 13,
+                onClick = {
+                    onToggleHide()
+                    Toast.makeText(context, "Unhidden (fake)", Toast.LENGTH_SHORT).show()
+                },
+            )
+        }
     }
 }
 
@@ -263,7 +334,7 @@ private fun FilterRow(
                     modifier = Modifier
                         .clip(RoundedCornerShape(14.dp))
                         .background(
-                            if (isSel) MsColors.Lime else MsColors.SurfaceAlt,
+                            if (isSel) MsColors.Accent else MsColors.SurfaceAlt,
                         )
                         .clickable { onSelect(opt) }
                         .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -273,7 +344,7 @@ private fun FilterRow(
                         opt,
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (isSel) MsColors.OnLime else MsColors.TextSecondary,
+                        color = if (isSel) MsColors.OnAccent else MsColors.TextSecondary,
                         maxLines = 1,
                     )
                 }
