@@ -1,8 +1,8 @@
 package com.moon.moonstream.ui.screens
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -13,9 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -30,26 +34,57 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.moon.moonstream.R
-import com.moon.moonstream.backend.BackendProvider
-import com.moon.moonstream.backend.FakeMoonStreamBackend
+import com.moon.moonstream.tdlib.AuthState
+import com.moon.moonstream.tdlib.TelegramManager
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.theme.MsColors
 
-/**
- * Login screen – currently still uses the FAKE login.
- * Steps prepared for real Telegram later:
- * 0 = Phone number
- * 1 = OTP / Code
- * 2 = 2FA Password (if needed)
- */
 @Composable
 fun LoginScreen(onLoggedIn: () -> Unit) {
-    var step by remember { mutableStateOf(0) } // 0=phone, 1=code, 2=password
+    val context = LocalContext.current
+
+    // Create the manager only once
+    val manager = remember {
+        TelegramManager(context.applicationContext)
+    }
+
+    val authState by manager.authState.collectAsState()
+
+    var step by remember { mutableStateOf(0) } // 0=api, 1=phone, 2=code, 3=password
+    var apiIdText by remember { mutableStateOf("") }
+    var apiHash by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+
+    // Watch TDLib auth state and move to next step automatically
+    LaunchedEffect(authState) {
+        when (authState) {
+            is AuthState.WaitingPhoneNumber -> {
+                isLoading = false
+                step = 1
+            }
+            is AuthState.WaitingCode -> {
+                isLoading = false
+                step = 2
+            }
+            is AuthState.WaitingPassword -> {
+                isLoading = false
+                step = 3
+            }
+            is AuthState.Ready -> {
+                isLoading = false
+                onLoggedIn()
+            }
+            is AuthState.LoggedOut -> {
+                isLoading = false
+            }
+            else -> {}
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -63,11 +98,11 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             painter = painterResource(id = R.drawable.app_logo),
             contentDescription = "MoonStream",
             modifier = Modifier
-                .size(120.dp)
-                .clip(RoundedCornerShape(28.dp)),
+                .size(100.dp)
+                .clip(RoundedCornerShape(24.dp)),
         )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
 
         Text(
             text = "MoonStream",
@@ -80,8 +115,9 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
 
         Text(
             text = when (step) {
-                0 -> "Log in with your Telegram account"
-                1 -> "Enter the code Telegram sent you"
+                0 -> "Enter your Telegram API credentials"
+                1 -> "Enter your phone number"
+                2 -> "Enter the code Telegram sent you"
                 else -> "Enter your 2FA password"
             },
             style = MaterialTheme.typography.bodyMedium,
@@ -89,10 +125,56 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             textAlign = TextAlign.Center,
         )
 
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(24.dp))
 
-        // ---------- STEP 0: Phone Number ----------
+        // ========== STEP 0: API ID + HASH ==========
         if (step == 0) {
+            MsTextField(
+                value = apiIdText,
+                onValueChange = {
+                    apiIdText = it.filter { c -> c.isDigit() }
+                    errorMessage = null
+                },
+                hint = "API ID (numbers only)",
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            MsTextField(
+                value = apiHash,
+                onValueChange = {
+                    apiHash = it.trim()
+                    errorMessage = null
+                },
+                hint = "API Hash",
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            LimePillButton(
+                text = if (isLoading) "Starting..." else "Continue",
+                onClick = {
+                    val id = apiIdText.toIntOrNull()
+                    if (id == null || id == 0 || apiHash.length < 10) {
+                        errorMessage = "Please enter valid API ID and Hash"
+                        return@LimePillButton
+                    }
+                    isLoading = true
+                    errorMessage = null
+                    manager.setApiCredentials(id, apiHash)
+                    manager.start()
+                },
+                enabled = !isLoading && apiIdText.isNotBlank() && apiHash.length > 5,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        // ========== STEP 1: PHONE ==========
+        if (step == 1) {
             MsTextField(
                 value = phone,
                 onValueChange = {
@@ -107,23 +189,25 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             Spacer(Modifier.height(16.dp))
 
             LimePillButton(
-                text = "Continue",
+                text = if (isLoading) "Sending..." else "Send Code",
                 onClick = {
-                    if (phone.filter { it.isDigit() }.length >= 7) {
-                        step = 1
-                    } else {
-                        errorMessage = "Please enter a valid phone number"
+                    if (phone.filter { it.isDigit() }.length < 7) {
+                        errorMessage = "Enter a valid phone number"
+                        return@LimePillButton
                     }
+                    isLoading = true
+                    errorMessage = null
+                    manager.setPhoneNumber(phone)
                 },
-                enabled = phone.filter { it.isDigit() }.length >= 7,
+                enabled = !isLoading && phone.filter { it.isDigit() }.length >= 7,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
 
-        // ---------- STEP 1: OTP / Code ----------
-        if (step == 1) {
+        // ========== STEP 2: CODE ==========
+        if (step == 2) {
             Text(
-                text = "Code sent to $phone (fake for now)",
+                text = "Code sent to $phone",
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
             )
@@ -144,33 +228,27 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             Spacer(Modifier.height(16.dp))
 
             LimePillButton(
-                text = "Verify Code",
+                text = if (isLoading) "Checking..." else "Verify Code",
                 onClick = {
-                    // For now we still use the fake login.
-                    // Later this will call the real TDLib checkCode()
-                    (BackendProvider.backend as? FakeMoonStreamBackend)?.fakeLogin()
-                    onLoggedIn()
+                    if (code.length < 4) {
+                        errorMessage = "Enter the code"
+                        return@LimePillButton
+                    }
+                    isLoading = true
+                    errorMessage = null
+                    manager.checkCode(code)
                 },
-                enabled = code.length >= 4,
+                enabled = !isLoading && code.length >= 4,
                 modifier = Modifier.fillMaxWidth(),
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            Text(
-                text = "← Back",
-                color = MsColors.TextSecondary,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier
-                    .padding(8.dp)
-                    .clickable { step = 0 }
             )
         }
 
-        // ---------- STEP 2: 2FA Password (ready for later) ----------
-        if (step == 2) {
+        // ========== STEP 3: 2FA PASSWORD ==========
+        if (step == 3) {
+            val hint = (authState as? AuthState.WaitingPassword)?.hint ?: ""
+
             Text(
-                text = "Your account has Two-Step Verification enabled",
+                text = if (hint.isNotBlank()) "Hint: $hint" else "Two-Step Verification is enabled",
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
                 textAlign = TextAlign.Center,
@@ -186,22 +264,31 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
                 },
                 hint = "2FA Password",
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                // visualTransformation = PasswordVisualTransformation(),  // uncomment if you want dots
                 modifier = Modifier.fillMaxWidth(),
             )
 
             Spacer(Modifier.height(16.dp))
 
             LimePillButton(
-                text = "Confirm Password",
+                text = if (isLoading) "Checking..." else "Confirm Password",
                 onClick = {
-                    // Later: call real TDLib checkPassword()
-                    (BackendProvider.backend as? FakeMoonStreamBackend)?.fakeLogin()
-                    onLoggedIn()
+                    if (password.isBlank()) {
+                        errorMessage = "Enter your password"
+                        return@LimePillButton
+                    }
+                    isLoading = true
+                    errorMessage = null
+                    manager.checkPassword(password)
                 },
-                enabled = password.length >= 1,
+                enabled = !isLoading && password.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+
+        // Loading indicator
+        if (isLoading) {
+            Spacer(Modifier.height(20.dp))
+            CircularProgressIndicator(color = MsColors.Accent)
         }
 
         // Error message
@@ -211,13 +298,14 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
                 text = errorMessage!!,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
             )
         }
 
         Spacer(Modifier.height(20.dp))
 
         Text(
-            text = "Currently using FAKE login (any code works).\nReal Telegram login will be connected later.",
+            text = "Your API credentials are only stored on this device.",
             style = MaterialTheme.typography.bodySmall,
             color = MsColors.TextSecondary,
             textAlign = TextAlign.Center,
