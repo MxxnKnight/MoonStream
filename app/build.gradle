@@ -1,0 +1,78 @@
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+android {
+    namespace 'com.moon.moonstream'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.moon.moonstream'
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '0.1.0'
+
+        vectorDrawables {
+            useSupportLibrary true
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+    buildFeatures {
+        compose true
+    }
+    composeOptions {
+        kotlinCompilerExtensionVersion '1.5.10'
+    }
+}
+
+dependencies {
+    // No BOM: the offline mirror mixes compose 1.5.x/1.6.x. We pin compose
+    // artifacts to 1.6.1 (present in the mirror) and keep material3 1.1.1 /
+    // material-icons-core 1.5.0 (only versions present).
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    implementation 'androidx.activity:activity-compose:1.8.2'
+    implementation 'androidx.compose.ui:ui:1.6.1'
+    implementation 'androidx.compose.ui:ui-graphics:1.6.1'
+    implementation 'androidx.compose.ui:ui-tooling-preview:1.6.1'
+    implementation 'androidx.compose.material3:material3:1.1.1'
+    implementation 'androidx.compose.material:material-icons-extended:1.5.0'
+
+    debugImplementation 'androidx.compose.ui:ui-tooling:1.6.1'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest:1.5.0'
+}
+
+configurations.all {
+    resolutionStrategy.eachDependency { details ->
+        def g = details.requested.group
+        def n = details.requested.name
+        if (g.startsWith('androidx.compose')
+            && g != 'androidx.compose.compiler'
+            && !n.contains('test')
+            && !(n in ['material3', 'material', 'material-ripple',
+                       'material-icons-core', 'material-icons-extended',
+                       'material-android', 'material-icons-core-android',
+                       'material-ripple-android', 'material-icons-extended-android'])) {
+            details.useVersion '1.6.1'
+        }
+        if (g == 'androidx.annotation') {
+            details.useVersion(n == 'annotation-experimental' ? '1.3.0' : '1.7.0')
+        }
+        if (g == 'org.jetbrains.kotlinx') {
+            details.useVersion '1.7.3'
+        }
+    }
+}
