@@ -13,7 +13,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +36,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -52,12 +57,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.moon.moonstream.ui.components.AnimeBadge
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.FixMode
@@ -74,9 +81,15 @@ import com.moon.moonstream.ui.model.fakeChannels
 import com.moon.moonstream.ui.model.fakeUnmatched
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MsColors
+import java.util.Locale
+import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+
+/** Thousands separator for the scan panel stats. */
+private fun formatScanCount(n: Int): String =
+    String.format(Locale.US, "%,d", n)
 
 /**
  * Channels with fake data. The whole screen is ONE LazyColumn with stable keys
@@ -100,10 +113,46 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
     var showAdd by remember { mutableStateOf(false) }
     var linkFile by remember { mutableStateOf<UnmatchedFile?>(null) }
 
+    // Scan results panel (item 26, TeleStremio-style): bottom card with live
+    // Indexed / Existing / Unmatched / Checked stats while scanning, flips to
+    // "Last scan finished" with final numbers, auto-dismisses after ~4s.
+    // scanGen guards the auto-dismiss against a newer scan starting meanwhile.
+    var panelVisible by remember { mutableStateOf(false) }
+    var panelFinished by remember { mutableStateOf(false) }
+    var scanStats by remember { mutableStateOf(ScanStats(0, 0, 0, 0)) }
+    var scanGen by remember { mutableStateOf(0) }
+
     fun fakeScan(id: String?, label: String) {
         val targets = if (id != null) listOf(id) else channels.map { it.id }
         if (targets.isEmpty()) return
+        val gen = scanGen + 1
+        scanGen = gen
         targets.forEach { tid -> scanAnims[tid] = Animatable(0f) }
+
+        // Panel: show live, reset stats, tick toward fake targets over 2.4s.
+        panelFinished = false
+        scanStats = ScanStats(0, 0, 0, 0)
+        panelVisible = true
+        val n = targets.size
+        val tIndexed = n * 17 + 5
+        val tExisting = n * 34 + 12
+        val tUnmatched = n * 2 + 1
+        val tChecked = n * 53 + 9
+        scope.launch {
+            val steps = 24
+            repeat(steps) { i ->
+                delay(100)
+                if (scanGen != gen) return@launch
+                val f = (i + 1) / steps.toFloat()
+                scanStats = ScanStats(
+                    (tIndexed * f).toInt(),
+                    (tExisting * f).toInt(),
+                    (tUnmatched * f).toInt(),
+                    (tChecked * f).toInt(),
+                )
+            }
+        }
+
         scope.launch {
             targets.map { tid ->
                 launch {
@@ -119,7 +168,14 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
                 delay(1600)
                 scanAllDone = false
             }
-            Toast.makeText(context, "$label scan finished (fake)", Toast.LENGTH_SHORT).show()
+            if (scanGen != gen) return@launch
+            scanStats = ScanStats(tIndexed, tExisting, tUnmatched, tChecked)
+            panelFinished = true
+            delay(4000)
+            if (scanGen == gen && panelFinished) {
+                panelVisible = false
+                panelFinished = false
+            }
         }
     }
 
@@ -127,10 +183,15 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
     val total = channels.size
     val doneCount = doneIds.size
 
-    LazyColumn(
+    // The list lives in a Box so the floating scan results panel (item 26)
+    // can overlay its bottom edge without blocking the row progress bars.
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MsColors.Bg),
+    ) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -206,8 +267,21 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
         }
 
         item(key = "bottomPad") {
-            Spacer(Modifier.height(8.dp))
+            // Room for the floating scan panel so it never covers content.
+            Spacer(Modifier.height(150.dp))
         }
+    }
+
+    ScanResultsPanel(
+        visible = panelVisible,
+        finished = panelFinished,
+        stats = scanStats,
+        onClose = {
+            panelVisible = false
+            panelFinished = false
+        },
+        modifier = Modifier.align(Alignment.BottomCenter),
+    )
     }
 
     if (showAdd) {
@@ -239,6 +313,152 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
  * Scan All Now pill: idle → collective progress ("Scanning 2/4…" with a slim
  * determinate bar) → satisfying "Done" pop. No raw spinner anywhere.
  */
+
+/** Live counters shown in the scan results panel (item 26). */
+data class ScanStats(
+    val indexed: Int,
+    val existing: Int,
+    val unmatched: Int,
+    val checked: Int,
+)
+
+/**
+ * Floating scan results panel, TeleStremio-style (item 26).
+ * Eyebrow "SCAN", title "Scanning…" while live with four ticking stats,
+ * flips to "Last scan finished" with final numbers, auto-dismisses after ~4s.
+ * X button and horizontal swipe dismiss it manually. Coexists with the
+ * per-channel progress bars (panel = totals, rows = per-channel).
+ */
+@Composable
+private fun ScanResultsPanel(
+    visible: Boolean,
+    finished: Boolean,
+    stats: ScanStats,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically { it } + fadeIn(),
+        exit = slideOutVertically { it } + fadeOut(),
+        modifier = modifier,
+    ) {
+        var dragTotal by remember { mutableStateOf(0f) }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragTotal = 0f },
+                        onHorizontalDrag = { _, dragAmount -> dragTotal += dragAmount },
+                        onDragEnd = { if (abs(dragTotal) > 80) onClose() },
+                    )
+                }
+                .clip(RoundedCornerShape(20.dp))
+                .background(MsColors.Surface)
+                .border(1.dp, MsColors.Divider, RoundedCornerShape(20.dp))
+                .padding(16.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "SCAN",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MsColors.TextSecondary,
+                        letterSpacing = 2.sp,
+                    )
+                    BareIconButton(
+                        icon = Icons.Filled.Close,
+                        contentDescription = "Dismiss",
+                        onClick = onClose,
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (finished) {
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(MsColors.Accent),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Filled.Check,
+                                contentDescription = null,
+                                tint = MsColors.OnAccent,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(
+                        if (finished) "Last scan finished" else "Scanning…",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MsColors.TextPrimary,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ScanStatCell(
+                        value = stats.indexed,
+                        label = "Indexed",
+                        modifier = Modifier.weight(1f),
+                    )
+                    ScanStatCell(
+                        value = stats.existing,
+                        label = "Existing",
+                        modifier = Modifier.weight(1f),
+                    )
+                    ScanStatCell(
+                        value = stats.unmatched,
+                        label = "Unmatched",
+                        modifier = Modifier.weight(1f),
+                    )
+                    ScanStatCell(
+                        value = stats.checked,
+                        label = "Checked",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScanStatCell(value: Int, label: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(MsColors.Bg)
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            formatScanCount(value),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MsColors.Accent,
+            maxLines = 1,
+        )
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MsColors.TextSecondary,
+            maxLines = 1,
+        )
+    }
+}
+
 @Composable
 private fun ScanAllButton(
     scanning: Boolean,

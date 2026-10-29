@@ -3,15 +3,24 @@ package com.moon.moonstream.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -24,11 +33,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.moon.moonstream.ui.model.FakeMetaResult
 import com.moon.moonstream.ui.model.fakeSearchResults
 import com.moon.moonstream.ui.theme.MsColors
-import com.moon.moonstream.ui.theme.MsRadii
 
 enum class FixMode { FIX_TITLE, FIX_FILE, LINK }
 
@@ -38,7 +50,9 @@ enum class FixMode { FIX_TITLE, FIX_FILE, LINK }
  * - FIX_FILE: re-match a single wrongly indexed file
  * - LINK: link an unmatched file to an existing entry / new episode / new entry
  *
- * TODO(Phase 3): wire search to TMDB/TVDB/Kitsu and Apply to Library.replaceMetadata().
+ * Each result row shows a poster thumbnail (fake gradient placeholder),
+ * title, year and IMDb id so the right title can be identified.
+ * TODO(Phase 3): real TMDB art + search API; wire Apply to Library.replaceMetadata().
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,14 +64,16 @@ fun MetadataFixSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var query by remember { mutableStateOf("") }
-    var selected by remember { mutableStateOf<String?>(null) }
+    var selected by remember { mutableStateOf<FakeMetaResult?>(null) }
 
     val heading = when (mode) {
         FixMode.FIX_TITLE -> "Fix Metadata — This Title"
         FixMode.FIX_FILE -> "Fix Metadata — This File"
         FixMode.LINK -> "Link to Title"
     }
-    val results = fakeSearchResults.filter { it.contains(query, ignoreCase = true) }
+    val results = fakeSearchResults.filter {
+        query.isBlank() || it.title.contains(query, ignoreCase = true)
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -81,37 +97,23 @@ fun MetadataFixSheet(
                 hint = "Search title",
                 modifier = Modifier.fillMaxWidth(),
             )
-            LazyColumn(modifier = Modifier.height(232.dp)) {
-                items(results) { r ->
-                    val isSel = selected == r
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(MsRadii.Chip))
-                            .clickable { selected = r }
-                            .background(
-                                if (isSel) MsColors.Accent.copy(alpha = 0.14f)
-                                else MsColors.SurfaceAlt,
-                            )
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = r,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MsColors.TextPrimary,
-                            modifier = Modifier.weight(1f),
+            if (results.isEmpty()) {
+                Text(
+                    "No results (fake)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MsColors.TextSecondary,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            } else {
+                LazyColumn(modifier = Modifier.height(264.dp)) {
+                    items(results) { r ->
+                        MetaResultRow(
+                            result = r,
+                            selected = selected == r,
+                            onPick = { selected = r },
                         )
-                        if (isSel) {
-                            Text(
-                                text = "✓",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MsColors.Accent,
-                            )
-                        }
+                        Spacer(Modifier.height(6.dp))
                     }
-                    Spacer(Modifier.height(6.dp))
                 }
             }
             if (mode == FixMode.LINK) {
@@ -123,13 +125,13 @@ fun MetadataFixSheet(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     MsOutlinePill(
                         text = "New episode",
-                        onClick = { onApply("new-episode:" + (selected ?: query)) },
+                        onClick = { onApply("new-episode:" + (selected?.title ?: query)) },
                         enabled = selected != null || query.isNotBlank(),
                         modifier = Modifier.weight(1f),
                     )
                     MsOutlinePill(
                         text = "New entry",
-                        onClick = { onApply("new-entry:" + (selected ?: query)) },
+                        onClick = { onApply("new-entry:" + (selected?.title ?: query)) },
                         enabled = selected != null || query.isNotBlank(),
                         modifier = Modifier.weight(1f),
                     )
@@ -137,10 +139,84 @@ fun MetadataFixSheet(
             }
             LimePillButton(
                 text = if (mode == FixMode.LINK) "Link to selected title" else "Apply — merge & move files",
-                onClick = { selected?.let(onApply) },
+                onClick = { selected?.let { onApply(it.title) } },
                 enabled = selected != null,
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+    }
+}
+
+/**
+ * One search result row (item 15): poster thumbnail + title + year + IMDb id.
+ * Poster is a fake gradient placeholder with an image glyph for now.
+ * TODO(Phase 3): load real TMDB poster art.
+ */
+@Composable
+private fun MetaResultRow(
+    result: FakeMetaResult,
+    selected: Boolean,
+    onPick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable { onPick() }
+            .background(
+                if (selected) MsColors.Accent.copy(alpha = 0.14f)
+                else MsColors.SurfaceAlt,
+            )
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 52.dp, height = 74.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(
+                    Brush.verticalGradient(listOf(result.colorA, result.colorB)),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Filled.Image,
+                contentDescription = "Poster placeholder",
+                tint = Color.White.copy(alpha = 0.75f),
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                result.title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MsColors.TextPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "${result.year} · ${result.imdbId}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MsColors.TextSecondary,
+            )
+        }
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(MsColors.Accent),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.Check,
+                    contentDescription = "Picked",
+                    tint = MsColors.OnAccent,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
         }
     }
 }

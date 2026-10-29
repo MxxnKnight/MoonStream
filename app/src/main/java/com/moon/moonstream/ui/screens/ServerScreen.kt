@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -491,9 +492,10 @@ private fun LibraryDashboardCard() {
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Breakdown gets the flexible width and ellipsizes — the size
+                // can never be hidden behind it (item 21).
                 Text(
                     text = "${formatCount(movies.value.toInt())} Movies  ·  " +
                         "${formatCount(shows.value.toInt())} Shows  ·  " +
@@ -501,10 +503,11 @@ private fun LibraryDashboardCard() {
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFFDDD6FE),
                     maxLines = 1,
+                    softWrap = false,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 8.dp),
+                        .weight(1f, fill = true)
+                        .padding(end = 10.dp),
                 )
                 Text(
                     text = String.format(Locale.US, "%.1f TB", sizeTb.value),
@@ -512,6 +515,8 @@ private fun LibraryDashboardCard() {
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
                     maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.wrapContentWidth(Alignment.End),
                 )
             }
         }

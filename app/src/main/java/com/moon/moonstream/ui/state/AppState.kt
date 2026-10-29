@@ -34,6 +34,9 @@ object AppUiState {
     var accent by mutableStateOf(MsAccent.LIME)
     var amoled by mutableStateOf(false)
 
+    // Telegram login (fake for now; TODO Phase 2: real TDLib session)
+    var loggedIn by mutableStateOf(false)
+
     // Library hide/unhide (fake id list acting as a set; TODO Phase 3: Room column)
     val hiddenIds = mutableStateListOf<String>()
 
@@ -54,6 +57,7 @@ object AppUiState {
         accent = MsAccent.values().find { it.name == prefs.getString("accent", null) }
             ?: MsAccent.LIME
         amoled = prefs.getBoolean("amoled", false)
+        loggedIn = prefs.getBoolean("logged_in", false)
         if (hiddenIds.isEmpty()) {
             hiddenIds.addAll(fallbackHiddenSeed())
         }
@@ -74,6 +78,12 @@ object AppUiState {
             .edit().putBoolean("amoled", on).apply()
     }
 
+    fun setLoggedIn(context: Context) {
+        loggedIn = true
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("logged_in", true).apply()
+    }
+
     fun addLog(tag: String, message: String) {
         val t = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         logLines.add(LogLine(t, tag, message))
@@ -88,7 +98,7 @@ object AppUiState {
 
     private fun seedFakeLogs() {
         val seeds = listOf(
-            "APP" to "MoonStream 0.3.1 started (fake)",
+            "APP" to "MoonStream 0.4.0 started (fake)",
             "SCAN" to "Auto-scan scheduled every 30s (fake)",
             "MATCH" to "Indexed 7,142 files across 4 channels (fake)",
             "SERVER" to "Addon server idle — flip the switch to start (fake)",

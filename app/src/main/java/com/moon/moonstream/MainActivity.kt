@@ -4,8 +4,15 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
@@ -17,22 +24,22 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.ripple.LocalRippleTheme
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import com.moon.moonstream.ui.components.NeutralRippleTheme
 import com.moon.moonstream.ui.screens.ChannelsScreen
 import com.moon.moonstream.ui.screens.CreateScreen
 import com.moon.moonstream.ui.screens.DetailScreen
 import com.moon.moonstream.ui.screens.LibraryScreen
+import com.moon.moonstream.ui.screens.LoginScreen
 import com.moon.moonstream.ui.screens.LogsScreen
 import com.moon.moonstream.ui.screens.ServerScreen
 import com.moon.moonstream.ui.screens.SettingsScreen
@@ -47,6 +54,7 @@ import com.moon.moonstream.ui.theme.MsColors
  */
 sealed interface AppScreen {
     data object Splash : AppScreen
+    data object Login : AppScreen
     data object Server : AppScreen
     data object Library : AppScreen
     data class Detail(val titleId: String) : AppScreen
@@ -73,7 +81,7 @@ private val tabs = listOf(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        AppUiState.init(this) // load persisted accent + AMOLED before first frame
+        AppUiState.init(this) // load persisted accent + AMOLED + login before first frame
         setContent {
             MoonStreamTheme {
                 // Neutral ripple everywhere: no blue tap highlight (mockup requirement).
@@ -98,7 +106,8 @@ fun MoonStreamApp() {
         else -> current
     }
 
-    BackHandler(enabled = backStack.size > 1 && current !is AppScreen.Splash) {
+    // No going back from Splash or Login.
+    BackHandler(enabled = backStack.size > 1 && current !is AppScreen.Splash && current !is AppScreen.Login) {
         backStack.removeLast()
     }
 
@@ -111,59 +120,80 @@ fun MoonStreamApp() {
         backStack.add(screen)
     }
 
+    // Floating pill nav (v0.4.0, NoxMedia-style): detached from the edges,
+    // not the old edge-to-edge bar. Hidden on Splash and Login.
+    val showNav = current !is AppScreen.Splash && current !is AppScreen.Login
+
     Scaffold(
         containerColor = MsColors.Bg,
-        bottomBar = {
-            // No bottom bar on the splash screen.
-            if (current !is AppScreen.Splash) {
-                NavigationBar(
-                    containerColor = MsColors.Surface,
+    ) { innerPadding ->
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
+            // Content reserves room for the floating pill so lists never
+            // scroll underneath it.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(bottom = if (showNav) 104.dp else 0.dp),
+            ) {
+                when (val screen = current) {
+                    AppScreen.Splash -> SplashScreen(
+                        onDone = {
+                            if (AppUiState.loggedIn) goTab(AppScreen.Server)
+                            else go(AppScreen.Login)
+                        },
+                    )
+                    AppScreen.Login -> LoginScreen(onLoggedIn = { goTab(AppScreen.Server) })
+                    AppScreen.Server -> ServerScreen()
+                    AppScreen.Library ->
+                        LibraryScreen(onOpenDetail = { id -> go(AppScreen.Detail(id)) })
+                    is AppScreen.Detail ->
+                        DetailScreen(
+                            titleId = screen.titleId,
+                            onBack = { backStack.removeLast() },
+                        )
+                    AppScreen.Channels ->
+                        ChannelsScreen(onCreateEntry = { go(AppScreen.Create) })
+                    AppScreen.Create -> CreateScreen()
+                    AppScreen.Settings -> SettingsScreen(onOpenLogs = { go(AppScreen.Logs) })
+                    AppScreen.Logs -> LogsScreen(onBack = { backStack.removeLast() })
+                }
+            }
+
+            if (showNav) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(start = 32.dp, end = 32.dp, bottom = 22.dp)
+                        .clip(RoundedCornerShape(30.dp))
+                        .background(MsColors.Surface)
+                        .border(1.dp, MsColors.Divider, RoundedCornerShape(30.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     tabs.forEach { tab ->
                         val selected = selectedTab == tab.screen
-                        NavigationBarItem(
-                            // Filled icon when selected, outline when not — the
-                            // icon is always visible. Selected icon is dark on
-                            // a SOLID accent pill (v0.3.0 bug: lime icon on a
-                            // faint lime pill read as an empty pill).
-                            icon = {
-                                Icon(
-                                    if (selected) tab.iconFilled else tab.iconOutlined,
-                                    contentDescription = tab.label,
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(
+                                    if (selected) MsColors.Accent else MsColors.Accent.copy(alpha = 0f),
                                 )
-                            },
-                            label = { Text(tab.label) },
-                            selected = selected,
-                            onClick = { goTab(tab.screen) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MsColors.OnAccent,
-                                selectedTextColor = MsColors.Accent,
-                                unselectedIconColor = MsColors.TextSecondary,
-                                unselectedTextColor = MsColors.TextSecondary,
-                                indicatorColor = MsColors.Accent,
-                            ),
-                        )
+                                .clickable { goTab(tab.screen) }
+                                .padding(horizontal = 20.dp, vertical = 11.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                if (selected) tab.iconFilled else tab.iconOutlined,
+                                contentDescription = tab.label,
+                                tint = if (selected) MsColors.OnAccent else MsColors.TextSecondary,
+                            )
+                        }
                     }
                 }
-            }
-        },
-    ) { innerPadding ->
-        Box(Modifier.padding(innerPadding)) {
-            when (val screen = current) {
-                AppScreen.Splash -> SplashScreen(onDone = { goTab(AppScreen.Server) })
-                AppScreen.Server -> ServerScreen()
-                AppScreen.Library ->
-                    LibraryScreen(onOpenDetail = { id -> go(AppScreen.Detail(id)) })
-                is AppScreen.Detail ->
-                    DetailScreen(
-                        titleId = screen.titleId,
-                        onBack = { backStack.removeLast() },
-                    )
-                AppScreen.Channels ->
-                    ChannelsScreen(onCreateEntry = { go(AppScreen.Create) })
-                AppScreen.Create -> CreateScreen()
-                AppScreen.Settings -> SettingsScreen(onOpenLogs = { go(AppScreen.Logs) })
-                AppScreen.Logs -> LogsScreen(onBack = { backStack.removeLast() })
             }
         }
     }
