@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MoonStreamApp() {
+fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     val backStack = remember { mutableStateListOf<AppScreen>(AppScreen.Splash) }
     val current = backStack.last()
 
@@ -152,11 +152,25 @@ fun MoonStreamApp() {
             ) {
                 when (val screen = current) {
                     AppScreen.Splash -> SplashScreen(
-                        onDone = {
-                            if (AppUiState.loggedIn) goTab(AppScreen.Server)
-                            else go(AppScreen.Login)
-                        },
-                    )
+    onDone = {
+        // Give TDLib a moment to restore the session
+        // For now we still use the old loggedIn flag.
+        // Later we can make it smarter.
+        if (AppUiState.loggedIn) {
+            // Try to install real backend if session is already Ready
+            if (telegramManager.authState.value is com.moon.moonstream.tdlib.AuthState.Ready) {
+                val realBackend = com.moon.moonstream.backend.TdlibMoonStreamBackend(
+                    context = this@MainActivity,
+                    telegramManager = telegramManager
+                )
+                com.moon.moonstream.backend.BackendProvider.install(realBackend)
+            }
+            goTab(AppScreen.Server)
+        } else {
+            go(AppScreen.Login)
+        }
+    },
+)
                     AppScreen.Login -> LoginScreen(onLoggedIn = { goTab(AppScreen.Server) })
                     AppScreen.Server -> ServerScreen()
                     AppScreen.Library ->
