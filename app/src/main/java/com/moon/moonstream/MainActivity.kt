@@ -85,18 +85,23 @@ private val tabs = listOf(
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        AppUiState.init(this) // load persisted accent + AMOLED + login before first frame
-        BackendProvider.init(this) // plug in the backend (fake for now)
-        setContent {
-            MoonStreamTheme {
-                // Neutral ripple everywhere: no blue tap highlight (mockup requirement).
-                CompositionLocalProvider(LocalRippleTheme provides NeutralRippleTheme) {
-                    MoonStreamApp()
-                }
+    super.onCreate(savedInstanceState)
+
+    AppUiState.init(this)
+    BackendProvider.init(this)
+
+    // Start TelegramManager early so it can restore the saved session
+    val telegramManager = com.moon.moonstream.tdlib.TelegramManager.getInstance(this)
+    telegramManager.start()
+
+    setContent {
+        MoonStreamTheme {
+            CompositionLocalProvider(LocalRippleTheme provides NeutralRippleTheme) {
+                MoonStreamApp(telegramManager = telegramManager)
             }
         }
     }
+}
 }
 
 @Composable
