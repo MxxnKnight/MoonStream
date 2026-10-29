@@ -7,14 +7,15 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.ripple.LocalRippleTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +32,7 @@ import com.moon.moonstream.ui.screens.LibraryScreen
 import com.moon.moonstream.ui.screens.ServerScreen
 import com.moon.moonstream.ui.screens.SettingsScreen
 import com.moon.moonstream.ui.theme.MoonStreamTheme
+import com.moon.moonstream.ui.theme.MsColors
 
 /**
  * Phase 1: hand-rolled navigation (no navigation-compose in the offline mirror).
@@ -50,7 +52,7 @@ private data class Tab(val screen: AppScreen, val label: String, val icon: Image
 private val tabs = listOf(
     Tab(AppScreen.Server, "Home", Icons.Filled.Home),
     Tab(AppScreen.Library, "Library", Icons.Filled.List),
-    Tab(AppScreen.Channels, "Channels", Icons.Filled.Add),
+    Tab(AppScreen.Channels, "Channels", Icons.Filled.Tv),
     Tab(AppScreen.Settings, "Settings", Icons.Filled.Settings),
 )
 
@@ -73,9 +75,10 @@ fun MoonStreamApp() {
     val backStack = remember { mutableStateListOf<AppScreen>(AppScreen.Server) }
     val current = backStack.last()
 
-    // Detail belongs to the Library tab for bottom-bar highlighting.
+    // Detail belongs to the Library tab; Create belongs to Channels.
     val selectedTab = when (current) {
         is AppScreen.Detail -> AppScreen.Library
+        AppScreen.Create -> AppScreen.Channels
         else -> current
     }
 
@@ -93,14 +96,24 @@ fun MoonStreamApp() {
     }
 
     Scaffold(
+        containerColor = MsColors.Bg,
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = MsColors.Surface,
+            ) {
                 tabs.forEach { tab ->
                     NavigationBarItem(
                         icon = { Icon(tab.icon, contentDescription = tab.label) },
                         label = { Text(tab.label) },
                         selected = selectedTab == tab.screen,
                         onClick = { goTab(tab.screen) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MsColors.Lime,
+                            selectedTextColor = MsColors.Lime,
+                            unselectedIconColor = MsColors.TextSecondary,
+                            unselectedTextColor = MsColors.TextSecondary,
+                            indicatorColor = MsColors.Lime.copy(alpha = 0.16f),
+                        ),
                     )
                 }
             }
@@ -116,7 +129,8 @@ fun MoonStreamApp() {
                         titleId = screen.titleId,
                         onBack = { backStack.removeLast() },
                     )
-                AppScreen.Channels -> ChannelsScreen()
+                AppScreen.Channels ->
+                    ChannelsScreen(onCreateEntry = { go(AppScreen.Create) })
                 AppScreen.Create -> CreateScreen()
                 AppScreen.Settings -> SettingsScreen()
             }

@@ -10,10 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,11 +20,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.moon.moonstream.ui.theme.MsColors
 
 /**
- * A settings row: label + info (i) button that expands a plain-words
- * explanation inline, with the actual control on the right.
+ * A settings row: label + gray outline ⓘ that expands a plain-words
+ * explanation inline, with the actual control right-aligned.
  */
 @Composable
 fun SettingRow(
@@ -39,7 +38,7 @@ fun SettingRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 9.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -53,28 +52,25 @@ fun SettingRow(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = MsColors.TextPrimary,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
-                IconButton(onClick = { expanded = !expanded }) {
-                    Icon(
-                        imageVector = Icons.Filled.Info,
-                        contentDescription = "Info about $title",
-                        tint = MaterialTheme.colorScheme.secondary,
-                    )
-                }
+                Spacer(Modifier.width(10.dp))
+                InfoDot(onClick = { expanded = !expanded })
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
             control()
         }
         AnimatedVisibility(visible = expanded) {
             Text(
                 text = info,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MsColors.TextSecondary,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
                     .clickable { expanded = false }
-                    .padding(start = 4.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
+                    .padding(start = 2.dp, top = 8.dp, end = 16.dp, bottom = 4.dp),
             )
         }
     }
@@ -82,14 +78,9 @@ fun SettingRow(
 
 @Composable
 fun SettingsGroup(title: String, content: @Composable () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 4.dp),
-        )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        MsGroupHeader(title)
         content()
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
     }
 }

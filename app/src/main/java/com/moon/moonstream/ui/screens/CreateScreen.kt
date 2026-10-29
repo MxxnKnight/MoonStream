@@ -2,6 +2,7 @@ package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,21 +15,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -38,11 +34,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.moon.moonstream.ui.components.LimePillButton
+import com.moon.moonstream.ui.components.LimeTextButton
+import com.moon.moonstream.ui.components.MsSectionLabel
+import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.model.subtitleLanguages
+import com.moon.moonstream.ui.theme.MsColors
+import com.moon.moonstream.ui.theme.MsRadii
 
 /**
  * Phase 1: create custom content form with fake data.
@@ -65,18 +66,22 @@ fun CreateScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(MsColors.Bg)
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Create Custom Content", style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold)
+        Text(
+            "Create Custom Content",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MsColors.TextPrimary,
+        )
 
-        OutlinedTextField(
+        MsTextField(
             value = posterUrl,
             onValueChange = { posterUrl = it },
-            label = { Text("Poster image URL") },
-            singleLine = true,
+            hint = "Poster image URL",
             modifier = Modifier.fillMaxWidth(),
         )
         // Poster preview box
@@ -84,91 +89,129 @@ fun CreateScreen() {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(120.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .clip(RoundedCornerShape(MsRadii.Field))
+                .background(MsColors.SurfaceAlt),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 if (posterUrl.isBlank()) "Poster preview" else "Preview: $posterUrl",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MsColors.TextSecondary,
                 modifier = Modifier.padding(12.dp),
             )
         }
 
-        OutlinedTextField(value = title, onValueChange = { title = it },
-            label = { Text("Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = desc, onValueChange = { desc = it },
-            label = { Text("Description") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
-        OutlinedTextField(value = year, onValueChange = { year = it },
-            label = { Text("Year") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        MsTextField(value = title, onValueChange = { title = it }, hint = "Title",
+            modifier = Modifier.fillMaxWidth())
+        MsTextField(value = desc, onValueChange = { desc = it }, hint = "Description",
+            modifier = Modifier.fillMaxWidth(), minLines = 3, singleLine = false)
+        MsTextField(value = year, onValueChange = { year = it }, hint = "Year",
+            modifier = Modifier.fillMaxWidth())
 
-        Text("Telegram file links", style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold)
+        MsSectionLabel("Telegram file links")
         fileLinks.forEachIndexed { i, link ->
-            OutlinedTextField(
+            MsTextField(
                 value = link,
                 onValueChange = { fileLinks[i] = it },
-                label = { Text("File link ${i + 1} (t.me/…)") },
-                singleLine = true,
+                hint = "File link ${i + 1} (t.me/…)",
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        TextButton(onClick = { fileLinks.add("") }) {
-            Icon(Icons.Filled.Add, contentDescription = null)
-            Spacer(Modifier.width(4.dp))
-            Text("Add another file link")
-        }
+        LimeTextButton(text = "+ Add another file link", onClick = { fileLinks.add("") })
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (isSeries) "Series" else "Movie",
-                style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Switch(checked = isSeries, onCheckedChange = { isSeries = it })
+        // Movie / Series segmented control
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SegmentOption(
+                label = "Movie",
+                selected = !isSeries,
+                onClick = { isSeries = false },
+                modifier = Modifier.weight(1f),
+            )
+            SegmentOption(
+                label = "Series",
+                selected = isSeries,
+                onClick = { isSeries = true },
+                modifier = Modifier.weight(1f),
+            )
         }
         if (isSeries) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(value = season, onValueChange = { season = it },
-                    label = { Text("Season") }, singleLine = true, modifier = Modifier.weight(1f))
-                OutlinedTextField(value = episode, onValueChange = { episode = it },
-                    label = { Text("Episode") }, singleLine = true, modifier = Modifier.weight(1f))
+                MsTextField(value = season, onValueChange = { season = it }, hint = "Season",
+                    modifier = Modifier.weight(1f))
+                MsTextField(value = episode, onValueChange = { episode = it }, hint = "Episode",
+                    modifier = Modifier.weight(1f))
             }
         }
 
-        Text("Subtitle file links", style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold)
+        MsSectionLabel("Subtitle file links")
         subtitleLinks.forEachIndexed { i, link ->
-            OutlinedTextField(
-                value = link,
-                onValueChange = { subtitleLinks[i] = it },
-                label = { Text("Subtitle link ${i + 1}") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            LanguagePicker(
-                selected = subtitleLangs.getOrElse(i) { subtitleLanguages.first() },
-                onSelect = {
-                    while (subtitleLangs.size <= i) subtitleLangs.add(subtitleLanguages.first())
-                    subtitleLangs[i] = it
-                },
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                MsTextField(
+                    value = link,
+                    onValueChange = { subtitleLinks[i] = it },
+                    hint = "Subtitle link ${i + 1}",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                LanguagePicker(
+                    selected = subtitleLangs.getOrElse(i) { subtitleLanguages.first() },
+                    onSelect = {
+                        while (subtitleLangs.size <= i) subtitleLangs.add(subtitleLanguages.first())
+                        subtitleLangs[i] = it
+                    },
+                )
+            }
         }
-        TextButton(onClick = {
-            subtitleLinks.add("")
-            subtitleLangs.add(subtitleLanguages.first())
-        }) {
-            Icon(Icons.Filled.Add, contentDescription = null)
-            Spacer(Modifier.width(4.dp))
-            Text("Add another subtitle")
-        }
+        LimeTextButton(
+            text = "+ Add another subtitle",
+            onClick = {
+                subtitleLinks.add("")
+                subtitleLangs.add(subtitleLanguages.first())
+            },
+        )
 
-        Button(
+        Spacer(Modifier.height(4.dp))
+        LimePillButton(
+            text = "Create Entry",
             onClick = {
                 Toast.makeText(context, "Entry created (fake)", Toast.LENGTH_SHORT).show()
             },
             modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Create Entry")
-        }
+        )
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun SegmentOption(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(if (selected) MsColors.Lime else MsColors.SurfaceAlt)
+            .then(
+                if (!selected) Modifier.border(
+                    1.dp,
+                    MsColors.TextSecondary.copy(alpha = 0.4f),
+                    CircleShape,
+                ) else Modifier,
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = if (selected) MsColors.OnLime else MsColors.TextSecondary,
+        )
     }
 }
 
@@ -178,20 +221,37 @@ private fun LanguagePicker(selected: String, onSelect: (String) -> Unit) {
     Box {
         Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(10.dp))
+                .border(1.dp, MsColors.TextSecondary.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
                 .clickable { expanded = true }
-                .padding(8.dp),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Language: $selected", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary)
-            Icon(Icons.Filled.ArrowDropDown, contentDescription = "Pick language",
-                tint = MaterialTheme.colorScheme.secondary)
+            Text(
+                "Language: $selected",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MsColors.TextSecondary,
+            )
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                Icons.Filled.ArrowDropDown,
+                contentDescription = "Pick language",
+                tint = MsColors.TextSecondary,
+            )
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
             subtitleLanguages.forEach { lang ->
                 DropdownMenuItem(
-                    text = { Text(lang) },
+                    text = {
+                        Text(
+                            lang,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                        )
+                    },
                     onClick = { onSelect(lang); expanded = false },
                 )
             }

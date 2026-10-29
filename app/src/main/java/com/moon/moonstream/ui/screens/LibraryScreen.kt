@@ -19,15 +19,9 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -41,10 +35,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.moon.moonstream.ui.components.BareIconButton
+import com.moon.moonstream.ui.components.LimePillButton
+import com.moon.moonstream.ui.components.MsSheetContent
+import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.model.FakeTitle
 import com.moon.moonstream.ui.model.fakeTitles
+import com.moon.moonstream.ui.theme.MsColors
+import com.moon.moonstream.ui.theme.MsRadii
 
 /**
  * Phase 1: library with fake data.
@@ -71,43 +72,78 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
             4 -> t.hidden
             else -> true
         }
-        val matchesQuery = query.isBlank() ||
-            t.title.contains(query, ignoreCase = true)
+        val matchesQuery = query.isBlank() || t.title.contains(query, ignoreCase = true)
         matchesTab && matchesQuery
     }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MsColors.Bg),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp, 16.dp, 16.dp, 8.dp),
+                .padding(16.dp, 16.dp, 8.dp, 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedTextField(
+            MsTextField(
                 value = query,
                 onValueChange = { query = it },
-                label = { Text("Search library") },
-                singleLine = true,
+                hint = "Search library",
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = { showFilters = true }) {
-                Icon(Icons.Filled.FilterList, contentDescription = "Filters")
-            }
+            BareIconButton(
+                icon = Icons.Filled.FilterList,
+                contentDescription = "Filters",
+                tint = MsColors.TextSecondary,
+                onClick = { showFilters = true },
+            )
         }
-        ScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
+
+        // Custom tabs: lime underline on the active tab
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+        ) {
             tabs.forEachIndexed { i, name ->
-                Tab(
-                    selected = tab == i,
-                    onClick = { tab = i },
-                    text = { Text(name) },
-                )
+                val selected = tab == i
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { tab = i }
+                        .padding(vertical = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (selected) MsColors.Lime else MsColors.TextSecondary,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.7f)
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(
+                                if (selected) MsColors.Lime else Color.Transparent,
+                            ),
+                    )
+                }
             }
         }
+
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
             contentPadding = PaddingValues(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
             items(filtered) { title ->
@@ -128,7 +164,7 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
 }
 
 @Composable
-fun PosterCell(title: FakeTitle, onClick: () -> Unit) {
+private fun PosterCell(title: FakeTitle, onClick: () -> Unit) {
     Column(
         modifier = Modifier.clickable { onClick() },
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -137,25 +173,37 @@ fun PosterCell(title: FakeTitle, onClick: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(MsRadii.Poster))
                 .background(Brush.verticalGradient(listOf(title.colorA, title.colorB))),
             contentAlignment = Alignment.BottomStart,
         ) {
+            // Bottom scrim so the title stays readable on bright posters
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(72.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color(0xB3000000)),
+                        ),
+                    ),
+            )
             Text(
                 text = title.title,
                 style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 color = Color.White,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(8.dp),
+                modifier = Modifier.padding(10.dp),
             )
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
             text = "${title.year}",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MsColors.TextSecondary,
         )
     }
 }
@@ -170,23 +218,22 @@ private fun FilterSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text("Filters", style = MaterialTheme.typography.titleLarge)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MsColors.Surface,
+        contentColor = MsColors.TextPrimary,
+    ) {
+        MsSheetContent(title = "Filters") {
             FilterRow("Quality", listOf("Any", "4K", "1080p", "720p", "480p"), quality, onQuality)
             FilterRow("Language", listOf("Any", "English", "Malayalam", "Hindi", "Dual"), language, onLanguage)
             FilterRow("Source", listOf("Any", "BluRay", "WEB-DL", "HDTV", "CAM"), source, onSource)
-            FilterRow("Sort", listOf("Recently added", "Title A–Z", "Year ↓", "Size ↓"), sort, onSort)
-            Spacer(Modifier.height(12.dp))
-            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                Text("Apply filters")
-            }
+            FilterRow("Sort", listOf("Recently added", "Title A–Z", "Year", "Size"), sort, onSort)
+            LimePillButton(
+                text = "Apply filters",
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
@@ -199,29 +246,35 @@ private fun FilterRow(
     onSelect: (String) -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Text(label, style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MsColors.TextSecondary,
+        )
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            options.take(5).forEach { opt ->
+            options.forEach { opt ->
                 val isSel = opt == selected
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(14.dp))
                         .background(
-                            if (isSel) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.surfaceVariant,
+                            if (isSel) MsColors.Lime else MsColors.SurfaceAlt,
                         )
                         .clickable { onSelect(opt) }
                         .padding(horizontal = 12.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         opt,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (isSel) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (isSel) MsColors.OnLime else MsColors.TextSecondary,
+                        maxLines = 1,
                     )
                 }
             }

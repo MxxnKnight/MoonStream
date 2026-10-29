@@ -11,27 +11,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,19 +31,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.FixMode
+import com.moon.moonstream.ui.components.LimePillButton
+import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MetadataFixSheet
+import com.moon.moonstream.ui.components.MsCard
+import com.moon.moonstream.ui.components.MsOutlinePill
+import com.moon.moonstream.ui.components.MsSheetContent
+import com.moon.moonstream.ui.components.MsTextField
+import com.moon.moonstream.ui.components.QualityChip
 import com.moon.moonstream.ui.model.FakeStream
 import com.moon.moonstream.ui.model.fakeTitles
 import com.moon.moonstream.ui.state.AppUiState
+import com.moon.moonstream.ui.theme.MsColors
 
 /**
  * Phase 1: title detail with fake data.
@@ -76,21 +75,35 @@ fun DetailScreen(titleId: String, onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(MsColors.Bg)
             .verticalScroll(rememberScrollState()),
     ) {
-        // Big poster header
+        // Gradient poster header
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp)
+                .height(230.dp)
                 .background(Brush.verticalGradient(listOf(title.colorA, title.colorB))),
         ) {
-            IconButton(
+            // Darken the bottom so the title reads well
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(110.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color(0xCC000000)),
+                        ),
+                    ),
+            )
+            BareIconButton(
+                icon = Icons.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = Color.White,
                 onClick = onBack,
                 modifier = Modifier.padding(8.dp),
-            ) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-            }
+            )
             Text(
                 text = title.title,
                 style = MaterialTheme.typography.headlineSmall,
@@ -102,26 +115,55 @@ fun DetailScreen(titleId: String, onBack: () -> Unit) {
             )
         }
 
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("${title.year} · ${title.type.replaceFirstChar { it.uppercase() }}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(title.desc, style = MaterialTheme.typography.bodyMedium)
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { fixMode = FixMode.FIX_TITLE }) {
-                    Text("Fix Metadata")
-                }
-                OutlinedButton(onClick = { showAddStream = true }) {
-                    Text("Add Custom Stream")
-                }
-                OutlinedButton(onClick = { showAddSubtitle = true }) {
-                    Text("Add Subtitle")
-                }
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    "${title.year} · ${title.type.replaceFirstChar { it.uppercase() }}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MsColors.TextSecondary,
+                )
+                Text(
+                    title.desc,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MsColors.TextPrimary,
+                )
             }
 
-            Text("Streams (${streams.size})", style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold)
+            // Action row: one lime pill + two outlined pills, equal widths.
+            // (v0.1.0 bug: "Add Subtitle" wrapped into a circle here.)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LimePillButton(
+                    text = "Fix Metadata",
+                    onClick = { fixMode = FixMode.FIX_TITLE },
+                    modifier = Modifier.weight(1f),
+                    fontSize = 13,
+                )
+                MsOutlinePill(
+                    text = "Add Custom Stream",
+                    onClick = { showAddStream = true },
+                    modifier = Modifier.weight(1f),
+                    fontSize = 12,
+                )
+                MsOutlinePill(
+                    text = "Add Subtitle",
+                    onClick = { showAddSubtitle = true },
+                    modifier = Modifier.weight(1f),
+                    fontSize = 12,
+                )
+            }
+
+            Text(
+                "Streams (${streams.size})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MsColors.TextPrimary,
+            )
 
             streams.forEach { s ->
                 StreamRow(
@@ -192,46 +234,51 @@ private fun StreamRow(
     onDelete: () -> Unit,
     onFixFile: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Column(Modifier.padding(12.dp)) {
+    MsCard(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                ) {
-                    Text(stream.quality, style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.width(8.dp))
+                QualityChip(stream.quality)
+                Spacer(Modifier.padding(horizontal = 4.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(stream.fileName, style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1)
-                    Text(stream.size, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        stream.fileName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MsColors.TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        stream.size,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextSecondary,
+                    )
                 }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                IconButton(onClick = onPlay) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = "Play")
-                }
-                IconButton(onClick = onCopy) {
-                    Icon(Icons.Filled.ContentCopy, contentDescription = "Copy Link")
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Delete")
-                }
+                BareIconButton(
+                    icon = Icons.Filled.PlayArrow,
+                    contentDescription = "Play",
+                    onClick = onPlay,
+                )
+                BareIconButton(
+                    icon = Icons.Filled.ContentCopy,
+                    contentDescription = "Copy Link",
+                    onClick = onCopy,
+                )
+                BareIconButton(
+                    icon = Icons.Filled.Delete,
+                    contentDescription = "Delete",
+                    onClick = onDelete,
+                )
             }
-            TextButton(onClick = onFixFile) {
-                Text("wrong title?", style = MaterialTheme.typography.bodySmall)
-            }
+            LimeTextButton(
+                text = "wrong title?",
+                onClick = onFixFile,
+                fontSize = 13,
+            )
         }
     }
 }
@@ -246,26 +293,26 @@ fun SimpleFormSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val values = remember { fields.associateWith { mutableStateOf("") } }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MsColors.Surface,
+        contentColor = MsColors.TextPrimary,
+    ) {
+        MsSheetContent(title = title) {
             fields.forEach { f ->
-                OutlinedTextField(
+                MsTextField(
                     value = values[f]!!.value,
                     onValueChange = { values[f]!!.value = it },
-                    label = { Text(f) },
+                    hint = f,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) {
-                Text("Save")
-            }
+            LimePillButton(
+                text = "Save",
+                onClick = onSave,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
