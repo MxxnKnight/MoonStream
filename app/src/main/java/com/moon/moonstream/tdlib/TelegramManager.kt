@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 
-class TelegramManager(private val context: Context) {
+class TelegramManager private constructor(private val context: Context) {
 
     private var client: Client? = null
 
@@ -38,7 +38,10 @@ class TelegramManager(private val context: Context) {
             is TdApi.UpdateAuthorizationState -> {
                 when (val state = update.authorizationState) {
                     is TdApi.AuthorizationStateWaitTdlibParameters -> {
-                        sendParameters()
+                        // Only send parameters if we already have api credentials
+                        if (apiId != 0 && apiHash.isNotBlank()) {
+                            sendParameters()
+                        }
                     }
                     is TdApi.AuthorizationStateWaitPhoneNumber -> {
                         _authState.value = AuthState.WaitingPhoneNumber
@@ -56,9 +59,7 @@ class TelegramManager(private val context: Context) {
                     is TdApi.AuthorizationStateClosed -> {
                         _authState.value = AuthState.LoggedOut
                     }
-                    else -> {
-                        // ignore other states for now
-                    }
+                    else -> {}
                 }
             }
         }
@@ -96,9 +97,15 @@ class TelegramManager(private val context: Context) {
         client?.send(TdApi.LogOut(), null)
     }
 
-    fun close() {
-        client?.close()
-        client = null
+    companion object {
+        @Volatile
+        private var INSTANCE: TelegramManager? = null
+
+        fun getInstance(context: Context): TelegramManager {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: TelegramManager(context.applicationContext).also { INSTANCE = it }
+            }
+        }
     }
 }
 
