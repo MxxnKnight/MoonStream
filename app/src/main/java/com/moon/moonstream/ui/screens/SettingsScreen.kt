@@ -59,6 +59,7 @@ import com.moon.moonstream.ui.components.MsOutlinePill
 import com.moon.moonstream.ui.components.MsSegmented
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.components.MsToggle
+import com.moon.moonstream.ui.components.ScanActionButton
 import com.moon.moonstream.ui.components.SettingRow
 import com.moon.moonstream.ui.components.SettingsGroup
 import com.moon.moonstream.ui.state.AppUiState
@@ -177,7 +178,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
             ) {
                 MsToggle(checked = serverOffMode, onCheckedChange = { serverOffMode = it; fakeSaved() })
             }
-            SettingRow(
+            SettingBlock(
                 title = "Public host",
                 info = "For access outside Wi-Fi: paste a Cloudflare Tunnel or Tailscale hostname here and the manifest link will use it instead of your local address.",
             ) {
@@ -186,9 +187,9 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                         value = publicHost,
                         onValueChange = { publicHost = it },
                         hint = "auto",
-                        modifier = Modifier.width(140.dp),
+                        modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(10.dp))
                     MsOutlinePill(text = "Save", fontSize = 13, onClick = { fakeSaved() })
                 }
             }
@@ -277,7 +278,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                 color = MsColors.TextSecondary,
                 modifier = Modifier.padding(vertical = 8.dp),
             )
-            SettingRow(
+            SettingBlock(
                 title = "TMDB API key",
                 info = "Your personal key for TMDB, the movie database. Lets the app look up posters and details without shared limits.",
             ) {
@@ -286,13 +287,13 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                         value = tmdbKey,
                         onValueChange = { tmdbKey = it },
                         hint = "Paste key",
-                        modifier = Modifier.width(140.dp),
+                        modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(10.dp))
                     MsOutlinePill(text = "Verify", fontSize = 13, onClick = { fakeVerify() })
                 }
             }
-            SettingRow(
+            SettingBlock(
                 title = "TVDB API key",
                 info = "Your personal key for TVDB, the series database. Same idea as the TMDB key, but for shows.",
             ) {
@@ -301,9 +302,9 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                         value = tvdbKey,
                         onValueChange = { tvdbKey = it },
                         hint = "Paste key",
-                        modifier = Modifier.width(140.dp),
+                        modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(10.dp))
                     MsOutlinePill(text = "Verify", fontSize = 13, onClick = { fakeVerify() })
                 }
             }
@@ -333,7 +334,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                     onSelect = { animeNumbering = it; fakeSaved() },
                 )
             }
-            SettingRow(
+            SettingBlock(
                 title = "Custom poster template",
                 info = "Optional: a URL pattern for your own poster source. {title} and {year} get replaced for each lookup.",
             ) {
@@ -342,9 +343,9 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                         value = posterTemplate,
                         onValueChange = { posterTemplate = it },
                         hint = "https://…",
-                        modifier = Modifier.width(140.dp),
+                        modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(10.dp))
                     MsOutlinePill(
                         text = "See Template",
                         fontSize = 13,
@@ -358,7 +359,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                     )
                 }
             }
-            SettingRow(
+            SettingBlock(
                 title = "Fanart.tv key",
                 info = "Optional key for Fanart.tv — extra backgrounds and logos for your library artwork.",
             ) {
@@ -367,9 +368,9 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                         value = fanartKey,
                         onValueChange = { fanartKey = it },
                         hint = "Paste key",
-                        modifier = Modifier.width(140.dp),
+                        modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(10.dp))
                     MsOutlinePill(text = "Save", fontSize = 13, onClick = { fakeSaved() })
                 }
             }
@@ -417,7 +418,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                     modifier = Modifier.width(120.dp),
                 )
             }
-            SettingRow(
+            SettingBlock(
                 title = "Live search filters",
                 info = "When live-searching Telegram, only consider files between these sizes. Leave empty for no limit.",
             ) {
@@ -427,15 +428,15 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                         onValueChange = { minSearchMb = it },
                         hint = "Min MB",
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.width(88.dp),
+                        modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(10.dp))
                     MsTextField(
                         value = maxSearchMb,
                         onValueChange = { maxSearchMb = it },
                         hint = "Max MB",
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.width(88.dp),
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -449,7 +450,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
         }
 
         SettingsGroup("Playback") {
-            SettingRow(
+            SettingBlock(
                 title = "Preferred quality",
                 info = "When a title has several versions, Stremio lists this quality first. You can still pick any other version.",
             ) {
@@ -457,7 +458,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                     selected = prefQuality,
                     options = listOf("4K", "1080p", "720p", "480p"),
                     onSelect = { prefQuality = it; fakeSaved() },
-                    modifier = Modifier.width(150.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
             SettingBlock(
@@ -542,24 +543,20 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                 title = "Dead links",
                 info = "Finds entries whose Telegram message was deleted while the app was off.",
             ) {
-                MsOutlinePill(
-                    text = "Check now",
-                    fontSize = 13,
-                    onClick = {
-                        Toast.makeText(context, "No dead links found (fake)", Toast.LENGTH_SHORT).show()
-                    },
+                ScanActionButton(
+                    idleText = "Check now",
+                    scanningText = "Checking",
+                    doneToast = "No dead links found (fake)",
                 )
             }
             SettingRow(
                 title = "Duplicates",
                 info = "Spots files with similar name and size on one title or episode, so you can clean up doubles.",
             ) {
-                MsOutlinePill(
-                    text = "Find duplicates",
-                    fontSize = 13,
-                    onClick = {
-                        Toast.makeText(context, "No duplicates found (fake)", Toast.LENGTH_SHORT).show()
-                    },
+                ScanActionButton(
+                    idleText = "Find duplicates",
+                    scanningText = "Scanning",
+                    doneToast = "No duplicates found (fake)",
                 )
             }
         }
@@ -603,6 +600,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                 MsOutlinePill(
                     text = "Back up now",
                     fontSize = 13,
+                    modifier = Modifier.weight(1f),
                     onClick = {
                         Toast.makeText(context, "Backup started (fake)", Toast.LENGTH_SHORT).show()
                     },
@@ -610,6 +608,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                 MsOutlinePill(
                     text = "Restore",
                     fontSize = 13,
+                    modifier = Modifier.weight(1f),
                     onClick = {
                         Toast.makeText(context, "Nothing to restore yet (fake)", Toast.LENGTH_SHORT).show()
                     },
@@ -624,6 +623,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                 MsOutlinePill(
                     text = "Export file",
                     fontSize = 13,
+                    modifier = Modifier.weight(1f),
                     onClick = {
                         Toast.makeText(context, "Export started (fake)", Toast.LENGTH_SHORT).show()
                     },
@@ -631,6 +631,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                 MsOutlinePill(
                     text = "Import file",
                     fontSize = 13,
+                    modifier = Modifier.weight(1f),
                     onClick = {
                         Toast.makeText(context, "Pick a backup file (fake)", Toast.LENGTH_SHORT).show()
                     },
@@ -924,7 +925,7 @@ private fun SettingBlock(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 9.dp),
+            .padding(vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

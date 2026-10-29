@@ -10,18 +10,23 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -42,11 +47,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,12 +65,14 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.ui.theme.MsRadii
 
@@ -596,6 +606,12 @@ fun MsDropdown(
 /**
  * Small pill segmented control for settings (poster style, anime numbering).
  * Selected pill = accent fill + dark text; unselected = dark fill + gray text.
+ *
+ * Hardened (v0.5.2): labels can NEVER stack vertically. The track fills the
+ * available width and scrolls horizontally if the segments overflow; each
+ * segment keeps a minimum width and its label is single-line, no-wrap,
+ * ellipsized. Whatever the labels, the worst case is a scrollable row —
+ * never letter-by-letter vertical text.
  */
 @Composable
 fun MsSegmented(
@@ -606,6 +622,8 @@ fun MsSegmented(
 ) {
     Row(
         modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .clip(CircleShape)
             .background(MsColors.SurfaceAlt)
             .padding(4.dp),
@@ -615,6 +633,7 @@ fun MsSegmented(
             val isSel = i == selected
             Box(
                 modifier = Modifier
+                    .defaultMinSize(minWidth = 96.dp)
                     .clip(CircleShape)
                     .background(if (isSel) MsColors.Accent else Color.Transparent)
                     .clickable { onSelect(i) }
@@ -627,6 +646,7 @@ fun MsSegmented(
                     fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
                     color = if (isSel) MsColors.OnAccent else MsColors.TextSecondary,
                     maxLines = 1,
+                    softWrap = false,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -707,6 +727,135 @@ fun CopyMorphButton(
                 tint = tint,
                 modifier = Modifier.size(24.dp),
             )
+        }
+    }
+}
+
+/**
+ * Settings action button with a scan lifecycle, in the Channels screen's
+ * scan-animation language: idle → scanning (spinner + animated dots, ~2s,
+ * not re-tappable) → done (springy accent check, then back to idle).
+ * Used for dead-link and duplicate checks.
+ * TODO(Phase 3): wire to the real scan jobs; keep the animation language.
+ */
+@Composable
+fun ScanActionButton(
+    idleText: String,
+    scanningText: String,
+    doneToast: String,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var scanning by remember { mutableStateOf(false) }
+    var done by remember { mutableStateOf(false) }
+
+    // Animated ellipsis dots while scanning.
+    var dots by remember { mutableIntStateOf(0) }
+    LaunchedEffect(scanning) {
+        if (scanning) {
+            while (true) {
+                kotlinx.coroutines.delay(400)
+                dots = (dots + 1) % 4
+            }
+        } else {
+            dots = 0
+        }
+    }
+
+    // Springy pop for the done check, matching the Channels DoneCheck.
+    val pop by animateFloatAsState(
+        targetValue = if (done) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "scanBtnPop",
+    )
+    LaunchedEffect(done) {
+        if (done) {
+            kotlinx.coroutines.delay(1800)
+            done = false
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .heightIn(min = 40.dp)
+            .clip(CircleShape)
+            .border(1.dp, MsColors.TextSecondary.copy(alpha = 0.55f), CircleShape)
+            .clickable(enabled = !scanning) {
+                if (!scanning && !done) {
+                    scanning = true
+                    scope.launch {
+                        kotlinx.coroutines.delay(2000)
+                        scanning = false
+                        done = true
+                        Toast.makeText(context, doneToast, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            scanning -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = MsColors.Accent,
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = scanningText + ".".repeat(dots),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = MsColors.Accent,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
+            }
+            done -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .scale(pop.coerceIn(0.01f, 1.2f))
+                            .background(MsColors.Accent, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = "Done",
+                            tint = MsColors.OnAccent,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Done",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = MsColors.Accent,
+                    )
+                }
+            }
+            else -> {
+                Text(
+                    text = idleText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = MsColors.Accent,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

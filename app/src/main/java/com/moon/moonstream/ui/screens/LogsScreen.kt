@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.MaterialTheme
@@ -23,7 +24,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,10 +43,13 @@ import com.moon.moonstream.ui.theme.MsColors
 @Composable
 fun LogsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val lines = AppUiState.logLines
     val listState = rememberLazyListState()
 
-    // Auto-scroll to the newest line whenever the log grows.
+    // Auto-scroll to the newest line whenever the log grows. Long-press text
+    // selection (SelectionContainer below) coexists with this: selection uses
+    // its own touch handling and the effect only fires when lines are added.
     LaunchedEffect(lines.size) {
         if (lines.isNotEmpty()) {
             listState.animateScrollToItem(lines.size - 1)
@@ -74,6 +80,16 @@ fun LogsScreen(onBack: () -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             MsOutlinePill(
+                text = "Copy",
+                fontSize = 13,
+                onClick = {
+                    val all = lines.joinToString("\n") { "${it.time} [${it.tag}] ${it.message}" }
+                    clipboard.setText(AnnotatedString(all))
+                    Toast.makeText(context, "Logs copied", Toast.LENGTH_SHORT).show()
+                },
+            )
+            Spacer(Modifier.width(8.dp))
+            MsOutlinePill(
                 text = "Clear",
                 fontSize = 13,
                 onClick = {
@@ -100,13 +116,16 @@ fun LogsScreen(onBack: () -> Unit) {
                 )
             }
         } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 124.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                items(lines, key = { it.time + it.tag + it.message }) { line ->
+            // Long-press any line to select and copy text. The container sits
+            // outside the LazyColumn so selection works across rows.
+            SelectionContainer {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 124.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    items(lines, key = { it.time + it.tag + it.message }) { line ->
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = line.time,
@@ -132,6 +151,7 @@ fun LogsScreen(onBack: () -> Unit) {
                         )
                     }
                 }
+            }
             }
         }
     }
