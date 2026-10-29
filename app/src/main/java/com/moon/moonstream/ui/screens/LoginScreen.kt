@@ -22,7 +22,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -31,7 +30,8 @@ import androidx.compose.ui.unit.dp
 import com.moon.moonstream.R
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.MsTextField
-import com.moon.moonstream.ui.state.AppUiState
+import com.moon.moonstream.backend.BackendProvider
+import com.moon.moonstream.backend.FakeMoonStreamBackend
 import com.moon.moonstream.ui.theme.MsColors
 
 /**
@@ -42,7 +42,6 @@ import com.moon.moonstream.ui.theme.MsColors
  */
 @Composable
 fun LoginScreen(onLoggedIn: () -> Unit) {
-    val context = LocalContext.current
     var step by remember { mutableStateOf(0) } // 0 = phone, 1 = code
     var phone by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
@@ -117,8 +116,7 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             LimePillButton(
                 text = "Verify",
                 onClick = {
-                    AppUiState.setLoggedIn(context)
-                    AppUiState.addLog("AUTH", "Telegram login accepted (fake)")
+                    (BackendProvider.backend as? FakeMoonStreamBackend)?.fakeLogin()
                     onLoggedIn()
                 },
                 enabled = code.length >= 4,

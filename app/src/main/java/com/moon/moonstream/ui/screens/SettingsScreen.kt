@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.moon.moonstream.BuildConfig
+import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.InfoDot
 import com.moon.moonstream.ui.components.LimePillButton
@@ -770,6 +771,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
 @Composable
 private fun AccountCard() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showLogout by remember { mutableStateOf(false) }
 
     MsGroupHeader("Account")
@@ -873,9 +875,11 @@ private fun AccountCard() {
                     text = "Log out",
                     fontSize = 14,
                     onClick = {
-                        AppUiState.setLoggedOut(context)
-                        showLogout = false
-                        Toast.makeText(context, "Logged out (fake)", Toast.LENGTH_SHORT).show()
+                        scope.launch {
+                            BackendProvider.backend.logout()
+                            showLogout = false
+                            Toast.makeText(context, "Logged out", Toast.LENGTH_SHORT).show()
+                        }
                     },
                 )
             },

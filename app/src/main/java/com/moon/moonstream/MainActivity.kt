@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.ui.components.NeutralRippleTheme
 import com.moon.moonstream.ui.screens.ChannelsScreen
 import com.moon.moonstream.ui.screens.CreateScreen
@@ -86,6 +87,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppUiState.init(this) // load persisted accent + AMOLED + login before first frame
+        BackendProvider.init(this) // plug in the backend (fake for now)
         setContent {
             MoonStreamTheme {
                 // Neutral ripple everywhere: no blue tap highlight (mockup requirement).
