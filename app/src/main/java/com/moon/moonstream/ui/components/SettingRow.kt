@@ -80,7 +80,15 @@ fun SettingRow(
 fun SettingsGroup(title: String, content: @Composable () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
         MsGroupHeader(title)
-        content()
+        MsCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+            ) {
+                content()
+            }
+        }
         Spacer(Modifier.height(4.dp))
     }
 }

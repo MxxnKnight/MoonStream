@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
+import com.moon.moonstream.ui.components.MsDropdown
 import com.moon.moonstream.ui.components.MsSectionLabel
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.model.subtitleLanguages
@@ -155,12 +156,15 @@ fun CreateScreen() {
                     hint = "Subtitle link ${i + 1}",
                     modifier = Modifier.fillMaxWidth(),
                 )
-                LanguagePicker(
+                MsDropdown(
                     selected = subtitleLangs.getOrElse(i) { subtitleLanguages.first() },
+                    options = subtitleLanguages,
                     onSelect = {
                         while (subtitleLangs.size <= i) subtitleLangs.add(subtitleLanguages.first())
                         subtitleLangs[i] = it
                     },
+                    label = "Language",
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
@@ -212,49 +216,5 @@ private fun SegmentOption(
             fontWeight = FontWeight.SemiBold,
             color = if (selected) MsColors.OnLime else MsColors.TextSecondary,
         )
-    }
-}
-
-@Composable
-private fun LanguagePicker(selected: String, onSelect: (String) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .border(1.dp, MsColors.TextSecondary.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-                .clickable { expanded = true }
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "Language: $selected",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MsColors.TextSecondary,
-            )
-            Spacer(Modifier.width(6.dp))
-            Icon(
-                Icons.Filled.ArrowDropDown,
-                contentDescription = "Pick language",
-                tint = MsColors.TextSecondary,
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            subtitleLanguages.forEach { lang ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            lang,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MsColors.TextPrimary,
-                        )
-                    },
-                    onClick = { onSelect(lang); expanded = false },
-                )
-            }
-        }
     }
 }

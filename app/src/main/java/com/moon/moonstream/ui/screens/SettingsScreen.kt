@@ -24,6 +24,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.moon.moonstream.BuildConfig
+import com.moon.moonstream.ui.components.MsDropdown
 import com.moon.moonstream.ui.components.MsOutlinePill
 import com.moon.moonstream.ui.components.MsSlider
 import com.moon.moonstream.ui.components.MsTextField
@@ -196,10 +198,11 @@ fun SettingsScreen() {
                 title = "Preferred quality",
                 info = "When a title has several versions, Stremio lists this quality first. You can still pick any other version.",
             ) {
-                MsTextField(
-                    value = prefQuality,
-                    onValueChange = { prefQuality = it },
-                    modifier = Modifier.width(120.dp),
+                MsDropdown(
+                    selected = prefQuality,
+                    options = listOf("4K", "1080p", "720p", "480p"),
+                    onSelect = { prefQuality = it; fakeSaved() },
+                    modifier = Modifier.width(150.dp),
                 )
             }
             SettingRow(
@@ -226,6 +229,30 @@ fun SettingsScreen() {
                 info = "When on, the app ignores a file it has already indexed, even if it appears again in another channel.",
             ) {
                 MsToggle(checked = dupProtection, onCheckedChange = { dupProtection = it; fakeSaved() })
+            }
+        }
+        SettingsGroup("App") {
+            SettingRow(
+                title = "Check for updates",
+                info = "Looks for a newer MoonStream release on GitHub and offers to install it. Needs the releases to be reachable.",
+            ) {
+                MsOutlinePill(
+                    text = "Check",
+                    fontSize = 13,
+                    onClick = {
+                        Toast.makeText(context, "You're on the latest version (fake)", Toast.LENGTH_SHORT).show()
+                    },
+                )
+            }
+            SettingRow(
+                title = "About",
+                info = "The app name, version and package. Useful when reporting a problem.",
+            ) {
+                Text(
+                    "MoonStream ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MsColors.TextSecondary,
+                )
             }
         }
     }

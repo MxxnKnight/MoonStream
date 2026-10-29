@@ -13,3 +13,7 @@ build/
 # Local SDK / secrets
 local.properties
 secrets.properties
+
+# Release signing (never commit)
+keystore/*.jks
+keystore.properties

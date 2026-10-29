@@ -1,9 +1,14 @@
 package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,12 +17,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -31,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -57,9 +66,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Phase 1: channels with fake data.
+ * Channels with fake data. The whole screen is ONE LazyColumn with stable keys
+ * so the unmatched list stays smooth even with 400+ items.
  * TODO(Phase 3): real channel list, scan jobs, unmatched index from Room.
  */
+private enum class ScanState { IDLE, SCANNING, DONE }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
@@ -69,119 +81,112 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
     val channels = remember { mutableStateListOf<FakeChannel>().apply { addAll(fakeChannels) } }
     val unmatched = remember { mutableStateListOf<UnmatchedFile>().apply { addAll(fakeUnmatched) } }
 
-    var scanningAll by remember { mutableStateOf(false) }
-    var scanningId by remember { mutableStateOf<String?>(null) }
+    var scanAllState by remember { mutableStateOf(ScanState.IDLE) }
+    var scanStates by remember { mutableStateOf<Map<String, ScanState>>(emptyMap()) }
     var showAdd by remember { mutableStateOf(false) }
     var linkFile by remember { mutableStateOf<UnmatchedFile?>(null) }
 
     fun fakeScan(id: String?, label: String) {
-        if (id != null) scanningId = id else scanningAll = true
+        if (id != null) {
+            scanStates = scanStates + (id to ScanState.SCANNING)
+        } else {
+            scanAllState = ScanState.SCANNING
+            scanStates = channels.associate { it.id to ScanState.SCANNING }
+        }
         scope.launch {
             delay(2000)
-            if (id != null) scanningId = null else scanningAll = false
+            if (id != null) {
+                scanStates = scanStates + (id to ScanState.DONE)
+                delay(1500)
+                scanStates = scanStates - id
+            } else {
+                scanAllState = ScanState.DONE
+                scanStates = channels.associate { it.id to ScanState.DONE }
+                delay(1500)
+                scanAllState = ScanState.IDLE
+                scanStates = emptyMap()
+            }
             Toast.makeText(context, "$label scan finished (fake)", Toast.LENGTH_SHORT).show()
         }
     }
 
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(MsColors.Bg)
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .background(MsColors.Bg),
+        contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "Channels",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MsColors.TextPrimary,
-            )
-            if (scanningAll) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MsColors.Lime,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "Scanning…",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MsColors.TextSecondary,
-                    )
-                }
-            } else {
-                LimePillButton(
-                    text = "Scan All Now",
+        item(key = "header") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Channels",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MsColors.TextPrimary,
+                )
+                ScanAllButton(
+                    state = scanAllState,
+                    busy = scanStates.values.any { it == ScanState.SCANNING },
                     onClick = { fakeScan(null, "All channels") },
-                    enabled = scanningId == null,
-                    fontSize = 14,
                 )
             }
         }
 
-        channels.forEach { ch ->
+        items(channels, key = { it.id }) { ch ->
             ChannelRow(
                 channel = ch,
-                scanning = scanningId == ch.id,
+                state = scanStates[ch.id] ?: ScanState.IDLE,
                 onToggle = { ch.enabled = !ch.enabled },
                 onScan = { fakeScan(ch.id, ch.name) },
             )
         }
 
-        LimePillButton(
-            text = "+ Add Channel",
-            onClick = { showAdd = true },
-            modifier = Modifier.fillMaxWidth(),
-        )
+        item(key = "addChannel") {
+            LimePillButton(
+                text = "+ Add Channel",
+                onClick = { showAdd = true },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
 
-        Text(
-            "Unmatched content (${unmatched.size})",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MsColors.TextPrimary,
-            modifier = Modifier.padding(top = 8.dp),
-        )
+        item(key = "unmatchedHeader") {
+            Text(
+                "Unmatched content (${unmatched.size})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MsColors.TextPrimary,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
 
-        unmatched.forEach { f ->
-            MsCard(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        f.fileName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MsColors.TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        f.size,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MsColors.TextSecondary,
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        LimeTextButton(text = "Create entry", onClick = onCreateEntry)
-                        LimeTextButton(
-                            text = "Copy Link",
-                            onClick = {
-                                clipboard.setText(AnnotatedString("${AppUiState.manifestLink}/stream/${f.id}"))
-                                Toast.makeText(context, "Stream link copied", Toast.LENGTH_SHORT).show()
-                            },
-                        )
-                        LimeTextButton(text = "Link to Title", onClick = { linkFile = f })
-                    }
-                }
-            }
+        // Dedicated entry point for custom content, separate from per-file actions.
+        item(key = "addCustomContent") {
+            LimePillButton(
+                text = "＋ Add Custom Content",
+                onClick = onCreateEntry,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        items(unmatched, key = { it.id }) { f ->
+            UnmatchedFileRow(
+                file = f,
+                onCreateEntry = onCreateEntry,
+                onCopyLink = {
+                    clipboard.setText(AnnotatedString("${AppUiState.manifestLink}/stream/${f.id}"))
+                    Toast.makeText(context, "Stream link copied", Toast.LENGTH_SHORT).show()
+                },
+                onLinkToTitle = { linkFile = f },
+            )
+        }
+
+        item(key = "bottomPad") {
+            Spacer(Modifier.height(8.dp))
         }
     }
 
@@ -210,10 +215,37 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
     }
 }
 
+/** Scan All Now button with spinner → checkmark states. */
+@Composable
+private fun ScanAllButton(state: ScanState, busy: Boolean, onClick: () -> Unit) {
+    when (state) {
+        ScanState.IDLE -> LimePillButton(
+            text = "Scan All Now",
+            onClick = onClick,
+            enabled = !busy,
+            fontSize = 14,
+        )
+        ScanState.SCANNING -> Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = MsColors.Lime,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Scanning…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MsColors.TextSecondary,
+            )
+        }
+        ScanState.DONE -> DonePill(text = "Done")
+    }
+}
+
 @Composable
 private fun ChannelRow(
     channel: FakeChannel,
-    scanning: Boolean,
+    state: ScanState,
     onToggle: () -> Unit,
     onScan: () -> Unit,
 ) {
@@ -245,22 +277,118 @@ private fun ChannelRow(
                     color = MsColors.TextSecondary,
                 )
             }
-            if (scanning) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
-                    strokeWidth = 2.dp,
-                    color = MsColors.Lime,
-                )
-            } else {
-                BareIconButton(
+            when (state) {
+                ScanState.IDLE -> BareIconButton(
                     icon = Icons.Filled.Refresh,
                     contentDescription = "Scan Now",
                     tint = MsColors.TextSecondary,
                     onClick = onScan,
                 )
+                ScanState.SCANNING -> CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp,
+                    color = MsColors.Lime,
+                )
+                ScanState.DONE -> DoneCheck()
             }
             Spacer(Modifier.width(4.dp))
             MsToggle(checked = channel.enabled, onCheckedChange = { onToggle() })
+        }
+    }
+}
+
+/** Lime check badge that pops in with a spring when a scan finishes. */
+@Composable
+private fun DoneCheck(modifier: Modifier = Modifier) {
+    val scale by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "donePop",
+    )
+    Box(
+        modifier = modifier
+            .size(28.dp)
+            .scale(scale)
+            .background(MsColors.Lime, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Check,
+            contentDescription = "Scan done",
+            tint = MsColors.OnLime,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+@Composable
+private fun DonePill(text: String) {
+    val scale by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "donePillPop",
+    )
+    Row(
+        modifier = Modifier
+            .scale(scale)
+            .background(MsColors.Lime, CircleShape)
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Check,
+            contentDescription = null,
+            tint = MsColors.OnLime,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MsColors.OnLime,
+        )
+    }
+}
+
+/** One unmatched file row — kept light for 400+ item lists. */
+@Composable
+private fun UnmatchedFileRow(
+    file: UnmatchedFile,
+    onCreateEntry: () -> Unit,
+    onCopyLink: () -> Unit,
+    onLinkToTitle: () -> Unit,
+) {
+    MsCard(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                file.fileName,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MsColors.TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                file.size,
+                style = MaterialTheme.typography.bodySmall,
+                color = MsColors.TextSecondary,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                LimeTextButton(text = "Create entry", onClick = onCreateEntry)
+                LimeTextButton(text = "Copy Link", onClick = onCopyLink)
+                LimeTextButton(text = "Link to Title", onClick = onLinkToTitle)
+            }
         }
     }
 }

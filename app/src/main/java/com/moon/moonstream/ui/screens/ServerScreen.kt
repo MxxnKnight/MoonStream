@@ -1,23 +1,32 @@
 package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -43,17 +52,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.MsCard
-import com.moon.moonstream.ui.components.MsStatBox
 import com.moon.moonstream.ui.components.PowerSwitch
 import com.moon.moonstream.ui.components.PulsingDot
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.ui.theme.MsRadii
 import kotlinx.coroutines.delay
+import java.util.Locale
 
 /**
- * Phase 1: server home screen with fake data.
- * TODO(Phase 4): wire the switch to the real foreground service + socket servers.
+ * Server home screen with fake data.
+ * - OFF: fully static card (no shimmer, no pulsing, flat dark).
+ * - ON: colored + animated (green gradient, shimmer, pulsing dot), and the
+ *   manifest card + stats dashboard appear below.
+ * TODO(Phase 4): wire the switch to the real foreground service + socket
+ * servers; replace fake stats with real telemetry.
  */
 @Composable
 fun ServerScreen() {
@@ -73,6 +86,15 @@ fun ServerScreen() {
         }
     }
 
+    val onToggle = {
+        AppUiState.serverOn = !AppUiState.serverOn
+        Toast.makeText(
+            context,
+            if (AppUiState.serverOn) "Server starting… (fake)" else "Server stopped (fake)",
+            Toast.LENGTH_SHORT,
+        ).show()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -88,74 +110,119 @@ fun ServerScreen() {
             color = MsColors.TextPrimary,
         )
 
-        ServerCard(
-            on = on,
-            uptimeSecs = uptimeSecs,
-            onToggle = {
-                AppUiState.serverOn = !AppUiState.serverOn
-                Toast.makeText(
-                    context,
-                    if (AppUiState.serverOn) "Server starting… (fake)" else "Server stopped (fake)",
-                    Toast.LENGTH_SHORT,
-                ).show()
-            },
-        )
+        if (on) {
+            ServerCardOn(uptimeSecs = uptimeSecs, onToggle = onToggle)
+        } else {
+            ServerCardOff(onToggle = onToggle)
+        }
 
-        // Manifest URL card
-        MsCard {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        "Manifest URL",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MsColors.TextSecondary,
-                    )
-                    Text(
-                        AppUiState.manifestLink,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MsColors.TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+        // Everything below only exists while the server is ON.
+        AnimatedVisibility(
+            visible = on,
+            enter = fadeIn(tween(300)) + expandVertically(tween(350)),
+            exit = fadeOut(tween(250)) + shrinkVertically(tween(300)),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // Manifest URL card
+                MsCard {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                "Manifest URL",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MsColors.TextSecondary,
+                            )
+                            Text(
+                                AppUiState.manifestLink,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MsColors.TextPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        BareIconButton(
+                            icon = Icons.Filled.ContentCopy,
+                            contentDescription = "Copy manifest link",
+                            tint = MsColors.TextSecondary,
+                            onClick = {
+                                clipboard.setText(AnnotatedString(AppUiState.manifestLink))
+                                Toast.makeText(context, "Manifest link copied", Toast.LENGTH_SHORT).show()
+                            },
+                        )
+                    }
                 }
-                BareIconButton(
-                    icon = Icons.Filled.ContentCopy,
-                    contentDescription = "Copy manifest link",
-                    tint = MsColors.TextSecondary,
-                    onClick = {
-                        clipboard.setText(AnnotatedString(AppUiState.manifestLink))
-                        Toast.makeText(context, "Manifest link copied", Toast.LENGTH_SHORT).show()
-                    },
+
+                ServerStatsCard(uptimeSecs = uptimeSecs)
+
+                LibraryDashboardCard()
+
+                Text(
+                    "Paste the manifest URL into Stremio or Nuvio to browse your library.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MsColors.TextSecondary,
                 )
             }
         }
-
-        // Stats row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            MsStatBox("Titles", "7,142", Modifier.weight(1f))
-            MsStatBox("Channels", "4", Modifier.weight(1f))
-            MsStatBox("Cache", "312 MB", Modifier.weight(1f))
-        }
-
-        Text(
-            "Paste the manifest URL into Stremio or Nuvio to browse your library.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MsColors.TextSecondary,
-        )
     }
 }
 
+/** OFF state: completely static — flat dark card, static red dot, no shimmer. */
 @Composable
-private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
-    // Animated shimmer line across the top of the card
+private fun ServerCardOff(onToggle: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(MsRadii.Card))
+            .background(MsColors.Surface)
+            .padding(20.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Static dot — deliberately NOT PulsingDot.
+                Box(
+                    Modifier
+                        .size(14.dp)
+                        .background(Color(0xFFF44336), CircleShape),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "Server OFF",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Tap the switch to start",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MsColors.TextSecondary,
+            )
+            Spacer(Modifier.height(22.dp))
+
+            PowerSwitch(on = false, onToggle = onToggle)
+
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Port ${AppUiState.port}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MsColors.TextSecondary,
+            )
+        }
+    }
+}
+
+/** ON state: green gradient, shimmer strip, pulsing green dot. */
+@Composable
+private fun ServerCardOn(uptimeSecs: Int, onToggle: () -> Unit) {
     val shimmer = rememberInfiniteTransition(label = "shimmer")
     val shimmerX by shimmer.animateFloat(
         initialValue = 0f,
@@ -163,8 +230,6 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
         animationSpec = infiniteRepeatable(tween(2400), RepeatMode.Restart),
         label = "shimmerX",
     )
-
-    val dotColor = if (on) MsColors.Lime else Color(0xFFF44336)
 
     Box(
         modifier = Modifier
@@ -177,7 +242,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
             )
             .padding(20.dp),
     ) {
-        // Shimmer strip pinned to the top edge
+        // Shimmer strip pinned to the top edge (ON only).
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -202,10 +267,10 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                PulsingDot(color = dotColor, pulse = true)
+                PulsingDot(color = MsColors.Lime, pulse = true)
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    if (on) "Server ON" else "Server OFF",
+                    "Server ON",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -213,14 +278,13 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                if (on) "Running · ${formatUptime(uptimeSecs)} · 2 devices"
-                else "Tap the switch to start",
+                "Running · ${formatUptime(uptimeSecs)} · 2 devices",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MsColors.TextSecondary,
             )
             Spacer(Modifier.height(22.dp))
 
-            PowerSwitch(on = on, onToggle = onToggle)
+            PowerSwitch(on = true, onToggle = onToggle)
 
             Spacer(Modifier.height(10.dp))
             Text(
@@ -232,9 +296,260 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
     }
 }
 
+/**
+ * Server telemetry card (ON only), NoxMedia-style information architecture:
+ * two large metrics (uptime, speed), a session/all-time shelf, and the URL row.
+ * All values fake for now.
+ * TODO(Phase 4): feed from the real server telemetry.
+ */
+@Composable
+private fun ServerStatsCard(uptimeSecs: Int) {
+    MsCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 18.dp, bottom = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LargeMetric(value = formatUptime(uptimeSecs), label = "uptime", modifier = Modifier.weight(1f))
+                LargeMetric(value = "0 B/s", label = "speed", modifier = Modifier.weight(1f))
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MsColors.Bg)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SmallMetric(label = "session", value = "0.0 MB")
+                Box(
+                    Modifier
+                        .size(3.dp)
+                        .background(MsColors.Divider, CircleShape),
+                )
+                SmallMetric(label = "all-time", value = "1.33 GB")
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "URL: ${AppUiState.manifestLink}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MsColors.TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LargeMetric(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = MsColors.TextPrimary,
+            maxLines = 1,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MsColors.TextSecondary,
+        )
+    }
+}
+
+@Composable
+private fun SmallMetric(label: String, value: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MsColors.TextSecondary,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MsColors.TextPrimary,
+        )
+    }
+}
+
+/**
+ * Purple-gradient library dashboard card with count-up animations,
+ * NoxMedia-style. Fake numbers for now.
+ * TODO(Phase 3): feed from the real Room library stats.
+ */
+@Composable
+private fun LibraryDashboardCard() {
+    val files = remember { Animatable(0f) }
+    val movies = remember { Animatable(0f) }
+    val shows = remember { Animatable(0f) }
+    val eps = remember { Animatable(0f) }
+    val sizeTb = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        files.animateTo(7142f, tween(1200))
+        movies.animateTo(5380f, tween(900))
+        shows.animateTo(175f, tween(900))
+        eps.animateTo(2236f, tween(900))
+        sizeTb.animateTo(10f, tween(1100))
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(MsRadii.Card))
+            .background(
+                Brush.linearGradient(
+                    listOf(Color(0xFF7C3AED), Color(0xFF4C1D95)),
+                ),
+            )
+            .padding(20.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Library",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFFF3E8FF),
+                )
+                Text(
+                    "›",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Light,
+                    color = Color(0xCCE9D5FF),
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = formatCount(files.value.toInt()),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    )
+                    Text(
+                        text = "files",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFFE9D5FF),
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
+                // Animated equalizer bars (Canvas-free: ui-graphics in this
+                // sandbox can't do Canvas strokes, so bars are plain Boxes).
+                EqualizerBars(modifier = Modifier.size(width = 110.dp, height = 40.dp))
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "${formatCount(movies.value.toInt())} Movies  ·  " +
+                        "${formatCount(shows.value.toInt())} Shows  ·  " +
+                        "${formatCount(eps.value.toInt())} Ep",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFFDDD6FE),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp),
+                )
+                Text(
+                    text = String.format(Locale.US, "%.1f TB", sizeTb.value),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+/** Fake-data animated equalizer: 9 bars bouncing out of phase. */
+@Composable
+private fun EqualizerBars(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "eq")
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(9) { i ->
+            val h by transition.animateFloat(
+                initialValue = 0.25f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(700 + i * 60),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "eqBar$i",
+            )
+            Box(
+                modifier = Modifier
+                    .width(5.dp)
+                    .fillMaxHeight()
+                    .padding(vertical = 2.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(5.dp)
+                        .fillMaxHeight(h)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color.White.copy(alpha = 0.85f)),
+                )
+            }
+        }
+    }
+}
+
+private fun formatCount(n: Int): String =
+    String.format(Locale.US, "%,d", n)
+
 private fun formatUptime(secs: Int): String {
     val h = secs / 3600
     val m = (secs % 3600) / 60
     val s = secs % 60
-    return String.format("%02d:%02d:%02d", h, m, s)
+    return String.format(Locale.US, "%02d:%02d:%02d", h, m, s)
 }

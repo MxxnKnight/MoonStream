@@ -31,6 +31,7 @@ import com.moon.moonstream.ui.screens.DetailScreen
 import com.moon.moonstream.ui.screens.LibraryScreen
 import com.moon.moonstream.ui.screens.ServerScreen
 import com.moon.moonstream.ui.screens.SettingsScreen
+import com.moon.moonstream.ui.screens.SplashScreen
 import com.moon.moonstream.ui.theme.MoonStreamTheme
 import com.moon.moonstream.ui.theme.MsColors
 
@@ -39,6 +40,7 @@ import com.moon.moonstream.ui.theme.MsColors
  * TODO(Phase 2): switch to navigation-compose when CI builds with network access.
  */
 sealed interface AppScreen {
+    data object Splash : AppScreen
     data object Server : AppScreen
     data object Library : AppScreen
     data class Detail(val titleId: String) : AppScreen
@@ -72,7 +74,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MoonStreamApp() {
-    val backStack = remember { mutableStateListOf<AppScreen>(AppScreen.Server) }
+    val backStack = remember { mutableStateListOf<AppScreen>(AppScreen.Splash) }
     val current = backStack.last()
 
     // Detail belongs to the Library tab; Create belongs to Channels.
@@ -82,7 +84,7 @@ fun MoonStreamApp() {
         else -> current
     }
 
-    BackHandler(enabled = backStack.size > 1) {
+    BackHandler(enabled = backStack.size > 1 && current !is AppScreen.Splash) {
         backStack.removeLast()
     }
 
@@ -98,29 +100,33 @@ fun MoonStreamApp() {
     Scaffold(
         containerColor = MsColors.Bg,
         bottomBar = {
-            NavigationBar(
-                containerColor = MsColors.Surface,
-            ) {
-                tabs.forEach { tab ->
-                    NavigationBarItem(
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) },
-                        selected = selectedTab == tab.screen,
-                        onClick = { goTab(tab.screen) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MsColors.Lime,
-                            selectedTextColor = MsColors.Lime,
-                            unselectedIconColor = MsColors.TextSecondary,
-                            unselectedTextColor = MsColors.TextSecondary,
-                            indicatorColor = MsColors.Lime.copy(alpha = 0.16f),
-                        ),
-                    )
+            // No bottom bar on the splash screen.
+            if (current !is AppScreen.Splash) {
+                NavigationBar(
+                    containerColor = MsColors.Surface,
+                ) {
+                    tabs.forEach { tab ->
+                        NavigationBarItem(
+                            icon = { Icon(tab.icon, contentDescription = tab.label) },
+                            label = { Text(tab.label) },
+                            selected = selectedTab == tab.screen,
+                            onClick = { goTab(tab.screen) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MsColors.Lime,
+                                selectedTextColor = MsColors.Lime,
+                                unselectedIconColor = MsColors.TextSecondary,
+                                unselectedTextColor = MsColors.TextSecondary,
+                                indicatorColor = MsColors.Lime.copy(alpha = 0.16f),
+                            ),
+                        )
+                    }
                 }
             }
         },
     ) { innerPadding ->
         Box(Modifier.padding(innerPadding)) {
             when (val screen = current) {
+                AppScreen.Splash -> SplashScreen(onDone = { goTab(AppScreen.Server) })
                 AppScreen.Server -> ServerScreen()
                 AppScreen.Library ->
                     LibraryScreen(onOpenDetail = { id -> go(AppScreen.Detail(id)) })

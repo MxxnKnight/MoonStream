@@ -9,11 +9,28 @@ android {
         applicationId 'com.moon.moonstream'
         minSdk 24
         targetSdk 34
-        versionCode 2
-        versionName '0.2.0'
+        versionCode 3
+        versionName '0.3.0'
 
         vectorDrawables {
             useSupportLibrary true
+        }
+    }
+
+    // Pinned release keystore: passwords live in keystore.properties
+    // (project root, gitignored — never commit it). If the file is absent
+    // (e.g. a fresh CI checkout), release builds fall back to unsigned.
+    def ksPropsFile = new File(rootDir, 'keystore.properties')
+    if (ksPropsFile.exists()) {
+        def ksProps = new Properties()
+        ksPropsFile.withInputStream { ksProps.load(it) }
+        signingConfigs {
+            release {
+                storeFile rootProject.file(ksProps['storeFile'])
+                storePassword ksProps['storePassword']
+                keyAlias ksProps['keyAlias']
+                keyPassword ksProps['keyPassword']
+            }
         }
     }
 
@@ -21,8 +38,18 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (ksPropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
+    // Release lint needs artifacts absent from the offline mirror; skip it here.
+    // TODO: re-enable when CI builds with network access.
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -32,6 +59,7 @@ android {
     }
     buildFeatures {
         compose true
+        buildConfig true
     }
     composeOptions {
         kotlinCompilerExtensionVersion '1.5.10'

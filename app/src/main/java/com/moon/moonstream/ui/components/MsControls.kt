@@ -26,6 +26,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -36,9 +38,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -375,6 +382,12 @@ fun PowerSwitch(
     val thumbSize = 54.dp
     val travel = trackWidth - thumbSize - 14.dp // 7dp inset each side
 
+    // CRASH FIX (v0.3.0): the bouncy spring overshoots below 0 when toggling
+    // 1 -> 0, which made `7.dp + travel * knobOffset` negative. Negative
+    // padding throws IllegalArgumentException ("Padding must be non-negative")
+    // and killed the app on every server-off toggle. Clamp the thumb travel.
+    val clampedOffset = knobOffset.coerceIn(0f, 1f)
+
     Box(
         modifier = modifier
             .size(trackWidth, trackHeight)
@@ -394,7 +407,7 @@ fun PowerSwitch(
     ) {
         Box(
             modifier = Modifier
-                .padding(start = 7.dp + travel * knobOffset)
+                .padding(start = 7.dp + travel * clampedOffset)
                 .size(thumbSize)
                 .background(Color.White, CircleShape),
             contentAlignment = Alignment.Center,
@@ -472,8 +485,7 @@ fun MsGroupHeader(text: String) {
 
 /** Key-value stat row used on the Server screen. */
 @Composable
-fun MsStatBox(label: String, value: String, modifier: Modifier = Modifier) {
-    MsCard(modifier = modifier) {
+fun MsStatBox(label: String, value: String, modifier: Modifier = Modifier) {    MsCard(modifier = modifier) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -491,6 +503,90 @@ fun MsStatBox(label: String, value: String, modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
             )
+        }
+    }
+}
+
+/**
+ * Design-system dropdown: SurfaceAlt field, 16dp corners, lime check on the
+ * selected option. Used by language pickers, quality pickers, etc.
+ */
+@Composable
+fun MsDropdown(
+    selected: String,
+    options: List<String>,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(MsRadii.Field))
+                .background(MsColors.SurfaceAlt)
+                .border(
+                    1.dp,
+                    if (expanded) MsColors.Lime else MsColors.TextSecondary.copy(alpha = 0.35f),
+                    RoundedCornerShape(MsRadii.Field),
+                )
+                .clickable { expanded = true }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                if (label != null) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MsColors.TextSecondary,
+                    )
+                }
+                Text(
+                    text = selected,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MsColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                imageVector = Icons.Filled.ArrowDropDown,
+                contentDescription = "Open options",
+                tint = if (expanded) MsColors.Lime else MsColors.TextSecondary,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(MsColors.SurfaceAlt),
+        ) {
+            options.forEach { option ->
+                val isSel = option == selected
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = option,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (isSel) MsColors.Lime else MsColors.TextPrimary,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (isSel) {
+                                Icon(
+                                    imageVector = Icons.Filled.Check,
+                                    contentDescription = "Selected",
+                                    tint = MsColors.Lime,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    },
+                    onClick = { onSelect(option); expanded = false },
+                )
+            }
         }
     }
 }
