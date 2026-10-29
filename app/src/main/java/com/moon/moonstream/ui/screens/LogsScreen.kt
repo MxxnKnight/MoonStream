@@ -103,7 +103,7 @@ fun LogsScreen(onBack: () -> Unit) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 124.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 items(lines, key = { it.time + it.tag + it.message }) { line ->

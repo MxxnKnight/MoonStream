@@ -844,6 +844,8 @@ private fun AccountCard() {
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+        // Room for the floating pill: last content scrolls fully into view.
+        Spacer(Modifier.height(116.dp))
     }
     Spacer(Modifier.height(4.dp))
 

@@ -176,6 +176,8 @@ fun ServerScreen() {
                     color = MsColors.TextSecondary,
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )
+                // Room for the floating pill: last content scrolls fully into view.
+                Spacer(Modifier.height(106.dp))
             }
         }
     }

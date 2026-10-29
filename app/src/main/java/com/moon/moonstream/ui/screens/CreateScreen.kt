@@ -184,7 +184,8 @@ fun CreateScreen() {
             },
             modifier = Modifier.fillMaxWidth(),
         )
-        Spacer(Modifier.height(8.dp))
+        // Room for the floating pill: last content scrolls fully into view.
+        Spacer(Modifier.height(120.dp))
     }
 }
 

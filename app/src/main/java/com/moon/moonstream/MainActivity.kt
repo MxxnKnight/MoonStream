@@ -11,7 +11,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -132,12 +136,12 @@ fun MoonStreamApp() {
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            // Content reserves room for the floating pill so lists never
-            // scroll underneath it.
+            // Content runs full-bleed behind the floating pill (NoxMedia-style);
+            // edge fades below make the scroll-under-pill effect readable.
+            // Screens keep their own bottom insets inside their scrollables
+            // so the last item can still scroll fully into view.
             Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(bottom = if (showNav) 104.dp else 0.dp),
+                Modifier.fillMaxSize(),
             ) {
                 when (val screen = current) {
                     AppScreen.Splash -> SplashScreen(
@@ -164,6 +168,34 @@ fun MoonStreamApp() {
             }
 
             if (showNav) {
+                // Bottom fade: content glides behind the pill instead of
+                // clipping hard. Drawn under the pill, above the content;
+                // it never consumes touches.
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                1f to MsColors.Bg,
+                            ),
+                        ),
+                )
+                // Top fade: slight, softens content reaching the top edge.
+                Box(
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                0f to MsColors.Bg.copy(alpha = 0.55f),
+                                1f to Color.Transparent,
+                            ),
+                        ),
+                )
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)

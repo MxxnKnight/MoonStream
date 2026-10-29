@@ -192,7 +192,7 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
     ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 124.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item(key = "header") {
@@ -280,7 +280,9 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
             panelVisible = false
             panelFinished = false
         },
-        modifier = Modifier.align(Alignment.BottomCenter),
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = 112.dp),
     )
     }
 

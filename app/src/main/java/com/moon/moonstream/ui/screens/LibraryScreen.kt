@@ -242,7 +242,7 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
             visible = selectMode,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(start = 20.dp, end = 20.dp, bottom = 18.dp),
+                .padding(start = 20.dp, end = 20.dp, bottom = 122.dp),
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
         ) {

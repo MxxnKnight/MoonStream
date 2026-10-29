@@ -283,6 +283,8 @@ fun DetailScreen(titleId: String, onBack: () -> Unit) {
                 }
             }
         }
+        // Room for the floating pill: last content scrolls fully into view.
+        Spacer(Modifier.height(120.dp))
     }
 
     fixMode?.let { mode ->
