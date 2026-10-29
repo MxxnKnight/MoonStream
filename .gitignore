@@ -1,0 +1,15 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+/build/
+.DS_Store
+# Android Studio
+*.apk
+*.aab
+# Keystores (never commit real keys)
+*.jks
+*.keystore
+# Local SDK / secrets
+local.properties
+secrets.properties
