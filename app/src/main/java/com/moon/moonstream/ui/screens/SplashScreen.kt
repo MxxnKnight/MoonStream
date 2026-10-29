@@ -49,11 +49,11 @@ fun SplashScreen(onDone: () -> Unit) {
             verticalArrangement = Arrangement.Center,
         ) {
             Image(
-                painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                painter = painterResource(id = R.drawable.app_logo),
                 contentDescription = "MoonStream",
                 modifier = Modifier
-                    .size(120.dp)
-                    .clip(RoundedCornerShape(28.dp)),
+                    .size(140.dp)
+                    .clip(RoundedCornerShape(32.dp)),
             )
             Spacer(Modifier.height(28.dp))
             Text(
