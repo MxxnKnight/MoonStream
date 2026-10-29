@@ -38,6 +38,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.ui.components.NeutralRippleTheme
 import com.moon.moonstream.ui.screens.ChannelsScreen
@@ -106,6 +109,19 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
+    val authState by telegramManager.authState.collectAsState()
+    val context = LocalContext.current
+
+    // Automatically install real backend whenever Telegram becomes Ready
+    LaunchedEffect(authState) {
+        if (authState is com.moon.moonstream.tdlib.AuthState.Ready) {
+            val realBackend = com.moon.moonstream.backend.TdlibMoonStreamBackend(
+                context = context.applicationContext,
+                telegramManager = telegramManager
+            )
+            com.moon.moonstream.backend.BackendProvider.install(realBackend)
+        }
+    }
     val backStack = remember { mutableStateListOf<AppScreen>(AppScreen.Splash) }
     val current = backStack.last()
 
