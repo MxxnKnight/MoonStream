@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -449,17 +448,30 @@ private fun LibraryDashboardCard() {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Library",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFFF3E8FF),
+                    )
+                    Text(
+                        "›",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Light,
+                        color = Color(0xCCE9D5FF),
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+                // v0.5.0: total size moved to the top-right corner (moon's ask)
+                // so the breakdown below owns the full width and can never
+                // truncate or hide behind the size again.
                 Text(
-                    "Library",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFFF3E8FF),
-                )
-                Text(
-                    "›",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Light,
-                    color = Color(0xCCE9D5FF),
+                    text = String.format(Locale.US, "%.1f TB", sizeTb.value),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    maxLines = 1,
                 )
             }
 
@@ -490,35 +502,18 @@ private fun LibraryDashboardCard() {
                 EqualizerBars(modifier = Modifier.size(width = 110.dp, height = 40.dp))
             }
 
-            Row(
+            // Breakdown owns the FULL width now — nothing competes with it.
+            Text(
+                text = "${formatCount(movies.value.toInt())} Movies  ·  " +
+                    "${formatCount(shows.value.toInt())} Shows  ·  " +
+                    "${formatCount(eps.value.toInt())} Ep",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFFDDD6FE),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Breakdown gets the flexible width and ellipsizes — the size
-                // can never be hidden behind it (item 21).
-                Text(
-                    text = "${formatCount(movies.value.toInt())} Movies  ·  " +
-                        "${formatCount(shows.value.toInt())} Shows  ·  " +
-                        "${formatCount(eps.value.toInt())} Ep",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFDDD6FE),
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f, fill = true)
-                        .padding(end = 10.dp),
-                )
-                Text(
-                    text = String.format(Locale.US, "%.1f TB", sizeTb.value),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    maxLines = 1,
-                    softWrap = false,
-                    modifier = Modifier.wrapContentWidth(Alignment.End),
-                )
-            }
+            )
         }
     }
 }

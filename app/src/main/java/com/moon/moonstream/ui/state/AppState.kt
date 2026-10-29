@@ -84,6 +84,12 @@ object AppUiState {
             .edit().putBoolean("logged_in", true).apply()
     }
 
+    fun setLoggedOut(context: Context) {
+        loggedIn = false
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("logged_in", false).apply()
+    }
+
     fun addLog(tag: String, message: String) {
         val t = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         logLines.add(LogLine(t, tag, message))
@@ -98,7 +104,7 @@ object AppUiState {
 
     private fun seedFakeLogs() {
         val seeds = listOf(
-            "APP" to "MoonStream 0.4.0 started (fake)",
+            "APP" to "MoonStream 0.5.0 started (fake)",
             "SCAN" to "Auto-scan scheduled every 30s (fake)",
             "MATCH" to "Indexed 7,142 files across 4 channels (fake)",
             "SERVER" to "Addon server idle — flip the switch to start (fake)",

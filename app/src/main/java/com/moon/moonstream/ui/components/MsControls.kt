@@ -594,6 +594,47 @@ fun MsDropdown(
 }
 
 /**
+ * Small pill segmented control for settings (poster style, anime numbering).
+ * Selected pill = accent fill + dark text; unselected = dark fill + gray text.
+ */
+@Composable
+fun MsSegmented(
+    options: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(MsColors.SurfaceAlt)
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        options.forEachIndexed { i, label ->
+            val isSel = i == selected
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(if (isSel) MsColors.Accent else Color.Transparent)
+                    .clickable { onSelect(i) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isSel) MsColors.OnAccent else MsColors.TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/**
  * Copy button that morphs into a checkmark on tap: the copy icon pops into a
  * solid accent circle with a dark check + a brief "Copied!" label, then
  * settles back. Replaces the bare toast — the state change IS the feedback.
