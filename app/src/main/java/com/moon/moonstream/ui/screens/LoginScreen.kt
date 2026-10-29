@@ -77,8 +77,17 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             }
             is AuthState.Ready -> {
     isLoading = false
-    // Keep the old system happy so other screens still work
+
+    // Create the real backend and install it
+    val realBackend = com.moon.moonstream.backend.TdlibMoonStreamBackend(
+        context = context.applicationContext,
+        telegramManager = manager
+    )
+    com.moon.moonstream.backend.BackendProvider.install(realBackend)
+
+    // Also keep the old UI state happy
     com.moon.moonstream.ui.state.AppUiState.setLoggedIn(context)
+
     onLoggedIn()
 }
             is AuthState.LoggedOut -> {
