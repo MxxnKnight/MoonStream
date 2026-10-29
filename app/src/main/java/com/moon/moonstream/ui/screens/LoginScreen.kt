@@ -76,9 +76,11 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
                 step = 3
             }
             is AuthState.Ready -> {
-                isLoading = false
-                onLoggedIn()
-            }
+    isLoading = false
+    // Keep the old system happy so other screens still work
+    com.moon.moonstream.ui.state.AppUiState.setLoggedIn(context)
+    onLoggedIn()
+}
             is AuthState.LoggedOut -> {
                 isLoading = false
             }
