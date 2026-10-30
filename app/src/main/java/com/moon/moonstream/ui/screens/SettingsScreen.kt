@@ -66,7 +66,12 @@ import com.moon.moonstream.ui.components.SettingsGroup
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.state.MsAccent
 import com.moon.moonstream.ui.theme.MsColors
+import com.moon.moonstream.index.scan.ScanPrefs
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Phase 1: settings with fake data. Every setting has an info tooltip.
@@ -76,6 +81,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     // --- Server state ---
     var portText by remember { mutableStateOf(AppUiState.port.toString()) }
@@ -95,13 +101,13 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
     var replaceSameQuality by remember { mutableStateOf(true) }
     var liveSearchFallback by remember { mutableStateOf(true) }
 
-    // --- Metadata state ---
-    var tmdbKey by remember { mutableStateOf("") }
-    var tvdbKey by remember { mutableStateOf("") }
+    // --- Metadata state (persisted via ScanPrefs so the scanner uses them) ---
+    var tmdbKey by remember { mutableStateOf(ScanPrefs.getTmdbKey(context)) }
+    var tvdbKey by remember { mutableStateOf(ScanPrefs.getTvdbKey(context)) }
     var fanartKey by remember { mutableStateOf("") }
     var posterTemplate by remember { mutableStateOf("") }
     var posterStyle by remember { mutableStateOf(0) }
-    var animeNumbering by remember { mutableStateOf(0) }
+    var animeNumbering by remember { mutableStateOf(if (ScanPrefs.isAnimeAbsolute(context)) 1 else 0) }
 
     // --- Streaming & Storage state ---
     var cacheMb by remember { mutableStateOf(AppUiState.cacheMaxMb.toString()) }
@@ -128,6 +134,41 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
 
     fun fakeSaved() = Toast.makeText(context, "Saved (fake)", Toast.LENGTH_SHORT).show()
     fun fakeVerify() = Toast.makeText(context, "API key looks valid (fake)", Toast.LENGTH_SHORT).show()
+
+    var verifyingTmdb by remember { mutableStateOf(false) }
+
+    /** Real TMDB key check: /configuration answers 200 only for a valid key. */
+    fun verifyTmdb() {
+        val key = tmdbKey.trim()
+        if (key.isEmpty()) {
+            Toast.makeText(context, "Paste a TMDB key first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        verifyingTmdb = true
+        scope.launch {
+            val ok = try {
+                withContext(Dispatchers.IO) {
+                    val conn = URL("https://api.themoviedb.org/3/configuration?api_key=$key")
+                        .openConnection() as HttpURLConnection
+                    conn.connectTimeout = 8000
+                    conn.readTimeout = 8000
+                    try {
+                        conn.responseCode == HttpURLConnection.HTTP_OK
+                    } finally {
+                        conn.disconnect()
+                    }
+                }
+            } catch (e: Exception) {
+                false
+            }
+            verifyingTmdb = false
+            Toast.makeText(
+                context,
+                if (ok) "TMDB key valid" else "TMDB key invalid",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -286,12 +327,16 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MsTextField(
                         value = tmdbKey,
-                        onValueChange = { tmdbKey = it },
+                        onValueChange = { tmdbKey = it; ScanPrefs.setTmdbKey(context, it) },
                         hint = "Paste key",
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(10.dp))
-                    MsOutlinePill(text = "Verify", fontSize = 13, onClick = { fakeVerify() })
+                    MsOutlinePill(
+                        text = if (verifyingTmdb) "Checking…" else "Verify",
+                        fontSize = 13,
+                        onClick = { verifyTmdb() },
+                    )
                 }
             }
             SettingBlock(
@@ -301,7 +346,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MsTextField(
                         value = tvdbKey,
-                        onValueChange = { tvdbKey = it },
+                        onValueChange = { tvdbKey = it; ScanPrefs.setTvdbKey(context, it) },
                         hint = "Paste key",
                         modifier = Modifier.weight(1f),
                     )
@@ -332,7 +377,10 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
                 MsSegmented(
                     options = listOf("Seasonal (TMDB+TVDB)", "Absolute"),
                     selected = animeNumbering,
-                    onSelect = { animeNumbering = it; fakeSaved() },
+                    onSelect = {
+                        animeNumbering = it
+                        ScanPrefs.setAnimeNumbering(context, it == 1)
+                    },
                 )
             }
             SettingBlock(

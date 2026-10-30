@@ -2,11 +2,8 @@ package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.AnimationVector1D
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -37,18 +34,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -57,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -65,6 +67,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.moon.moonstream.backend.BackendAuthState
+import com.moon.moonstream.backend.BackendProvider
+import com.moon.moonstream.index.db.ChannelConfigEntity
+import com.moon.moonstream.index.db.ChannelBreakdown
+import com.moon.moonstream.index.db.MsDatabase
+import com.moon.moonstream.index.db.StreamFileEntity
+import com.moon.moonstream.index.db.UnmatchedFileEntity
+import com.moon.moonstream.index.parse.FilenameParser
+import com.moon.moonstream.index.parse.normalizeTitle
+import com.moon.moonstream.index.scan.ScanMode
+import com.moon.moonstream.index.scan.ScanService
+import com.moon.moonstream.index.scan.ScanTarget
+import com.moon.moonstream.index.scan.ScanUiState
 import com.moon.moonstream.ui.components.AnimeBadge
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.FixMode
@@ -72,29 +87,49 @@ import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MetadataFixSheet
 import com.moon.moonstream.ui.components.MsCard
-import com.moon.moonstream.ui.components.MsSheetContent
-import com.moon.moonstream.ui.components.MsTextField
-import com.moon.moonstream.ui.components.MsToggle
-import com.moon.moonstream.ui.model.FakeChannel
-import com.moon.moonstream.ui.model.UnmatchedFile
-import com.moon.moonstream.ui.model.fakeChannels
-import com.moon.moonstream.ui.model.fakeUnmatched
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MsColors
 import java.util.Locale
 import kotlin.math.abs
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 
 /** Thousands separator for the scan panel stats. */
 private fun formatScanCount(n: Int): String =
     String.format(Locale.US, "%,d", n)
 
+/** "Synced just now" / "Synced 2 min ago" / "Synced 1 h ago" / "Synced yesterday". */
+private fun formatSyncedAt(at: Long): String {
+    if (at <= 0L) return "Never synced"
+    val mins = (System.currentTimeMillis() - at) / 60_000L
+    return when {
+        mins < 1 -> "Synced just now"
+        mins < 60 -> "Synced $mins min ago"
+        mins < 120 -> "Synced 1 h ago"
+        mins < 1440 -> "Synced ${mins / 60} h ago"
+        mins < 2880 -> "Synced yesterday"
+        else -> "Synced ${mins / 1440} days ago"
+    }
+}
+
+/** One channel row's data: live channel info + Room config + library stats. */
+private data class UiChannel(
+    val id: Long,
+    val title: String,
+    val breakdown: ChannelBreakdown,
+    val lastSyncedAt: Long,
+    val isAnime: Boolean,
+)
+
+private val DestructiveRed = Color(0xFFFF6B6B)
+
 /**
- * Channels with fake data. The whole screen is ONE LazyColumn with stable keys
- * so the unmatched list stays smooth even with 400+ items.
- * TODO(Phase 3): real channel list, scan jobs, unmatched index from Room.
+ * Channels — Phase 3, real data.
+ *
+ * Channel list comes from the backend contract; per-channel flags
+ * (anime, removed, last synced) live in Room. Scans run in the foreground
+ * [ScanService] so they survive navigation and backgrounding; this screen
+ * only observes the app-level [ScanUiState].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,198 +137,284 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
-    val channels = remember { mutableStateListOf<FakeChannel>().apply { addAll(fakeChannels) } }
-    val unmatched = remember { mutableStateListOf<UnmatchedFile>().apply { addAll(fakeUnmatched) } }
+    val db = remember { MsDatabase.get(context) }
 
-    // Premium scan treatment (v0.3.1): each active scan owns an Animatable
-    // progress 0→1; the row reads anim.value so the bar + % tick smoothly.
-    val scanAnims = remember { mutableStateMapOf<String, Animatable<Float, AnimationVector1D>>() }
-    var doneIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var scanAllDone by remember { mutableStateOf(false) }
-    var showAdd by remember { mutableStateOf(false) }
-    var linkFile by remember { mutableStateOf<UnmatchedFile?>(null) }
+    var channels by remember { mutableStateOf<List<UiChannel>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    val unmatched by db.unmatchedDao().observeAll()
+        .collectAsState(initial = emptyList())
 
-    // Scan results panel (item 26, TeleStremio-style): bottom card with live
-    // Indexed / Existing / Unmatched / Checked stats while scanning, flips to
-    // "Last scan finished" with final numbers, auto-dismisses after ~4s.
-    // scanGen guards the auto-dismiss against a newer scan starting meanwhile.
-    var panelVisible by remember { mutableStateOf(false) }
-    var panelFinished by remember { mutableStateOf(false) }
-    var scanStats by remember { mutableStateOf(ScanStats(0, 0, 0, 0)) }
-    var scanGen by remember { mutableStateOf(0) }
+    val scanMap by ScanUiState.channels.collectAsState()
+    val totals by ScanUiState.totals.collectAsState()
+    val scanning by ScanUiState.scanning.collectAsState()
+    val panelVisible by ScanUiState.panelVisible.collectAsState()
+    val panelFinished by ScanUiState.panelFinished.collectAsState()
 
-    fun fakeScan(id: String?, label: String) {
-        val targets = if (id != null) listOf(id) else channels.map { it.id }
-        if (targets.isEmpty()) return
-        val gen = scanGen + 1
-        scanGen = gen
-        targets.forEach { tid -> scanAnims[tid] = Animatable(0f) }
+    var menuFor by remember { mutableStateOf<Long?>(null) }
+    var confirmRemove by remember { mutableStateOf<UiChannel?>(null) }
+    var linkFile by remember { mutableStateOf<UnmatchedFileEntity?>(null) }
 
-        // Panel: show live, reset stats, tick toward fake targets over 2.4s.
-        panelFinished = false
-        scanStats = ScanStats(0, 0, 0, 0)
-        panelVisible = true
-        val n = targets.size
-        val tIndexed = n * 17 + 5
-        val tExisting = n * 34 + 12
-        val tUnmatched = n * 2 + 1
-        val tChecked = n * 53 + 9
-        scope.launch {
-            val steps = 24
-            repeat(steps) { i ->
-                delay(100)
-                if (scanGen != gen) return@launch
-                val f = (i + 1) / steps.toFloat()
-                scanStats = ScanStats(
-                    (tIndexed * f).toInt(),
-                    (tExisting * f).toInt(),
-                    (tUnmatched * f).toInt(),
-                    (tChecked * f).toInt(),
+    suspend fun reloadChannels(silent: Boolean = false) {
+        if (!silent) loading = true
+        try {
+            val backend = BackendProvider.backend
+            if (backend.authState.value != BackendAuthState.READY) {
+                channels = emptyList()
+                return
+            }
+            val list = backend.listChannels()
+            val cfgDao = db.channelConfigDao()
+            val configs = cfgDao.all().associateBy { it.channelId }
+            val result = mutableListOf<UiChannel>()
+            for (ch in list) {
+                var cfg = configs[ch.id]
+                if (cfg == null) {
+                    cfg = ChannelConfigEntity(ch.id, ch.title)
+                    cfgDao.upsert(cfg)
+                } else if (cfg.title != ch.title) {
+                    cfg = cfg.copy(title = ch.title)
+                    cfgDao.upsert(cfg)
+                }
+                if (cfg.removed) continue
+                val breakdown = db.mediaDao().breakdownByChannel(ch.id)
+                result.add(
+                    UiChannel(
+                        id = ch.id,
+                        title = cfg.title,
+                        breakdown = breakdown,
+                        lastSyncedAt = cfg.lastSyncedAt,
+                        isAnime = cfg.isAnime,
+                    ),
                 )
             }
-        }
-
-        scope.launch {
-            targets.map { tid ->
-                launch {
-                    scanAnims[tid]?.animateTo(1f, tween(2400, easing = LinearEasing))
-                    doneIds = doneIds + tid
-                    delay(1300)
-                    doneIds = doneIds - tid
-                    scanAnims.remove(tid)
-                }
-            }.joinAll()
-            if (id == null) {
-                scanAllDone = true
-                delay(1600)
-                scanAllDone = false
-            }
-            if (scanGen != gen) return@launch
-            scanStats = ScanStats(tIndexed, tExisting, tUnmatched, tChecked)
-            panelFinished = true
-            delay(4000)
-            if (scanGen == gen && panelFinished) {
-                panelVisible = false
-                panelFinished = false
-            }
+            channels = result
+        } catch (e: Exception) {
+            Toast.makeText(context, "Couldn't load channels", Toast.LENGTH_SHORT).show()
+        } finally {
+            if (!silent) loading = false
         }
     }
 
-    val anyScanning = scanAnims.isNotEmpty()
-    val total = channels.size
-    val doneCount = doneIds.size
+    LaunchedEffect(Unit) { reloadChannels() }
 
-    // The list lives in a Box so the floating scan results panel (item 26)
-    // can overlay its bottom edge without blocking the row progress bars.
+    // When a run finishes: refresh counts, then auto-dismiss the panel.
+    LaunchedEffect(panelFinished) {
+        if (panelFinished) {
+            reloadChannels(silent = true)
+            delay(4000)
+            if (ScanUiState.panelFinished.value) ScanUiState.dismissPanel()
+        }
+    }
+
+    fun quickScan(ch: UiChannel) {
+        ScanService.start(
+            context,
+            listOf(ScanTarget(ch.id, ch.title, ch.isAnime)),
+            ScanMode.INCREMENTAL,
+        )
+    }
+
+    fun rescanScratch(ch: UiChannel) {
+        ScanService.start(
+            context,
+            listOf(ScanTarget(ch.id, ch.title, ch.isAnime)),
+            ScanMode.FROM_SCRATCH,
+        )
+        Toast.makeText(context, "Full rescan started", Toast.LENGTH_SHORT).show()
+    }
+
+    fun scanAll() {
+        val targets = channels.map { ScanTarget(it.id, it.title, it.isAnime) }
+        if (targets.isEmpty()) {
+            Toast.makeText(context, "No channels to scan", Toast.LENGTH_SHORT).show()
+            return
+        }
+        ScanService.start(context, targets, ScanMode.INCREMENTAL)
+    }
+
+    fun toggleAnime(ch: UiChannel) {
+        scope.launch {
+            db.channelConfigDao().get(ch.id)?.let { cfg ->
+                db.channelConfigDao().upsert(cfg.copy(isAnime = !cfg.isAnime))
+            }
+            channels = channels.map {
+                if (it.id == ch.id) it.copy(isAnime = !it.isAnime) else it
+            }
+            Toast.makeText(
+                context,
+                if (!ch.isAnime) "Marked as anime channel" else "Unmarked as anime channel",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
+    fun removeChannel(ch: UiChannel) {
+        scope.launch {
+            db.mediaDao().deleteByChannel(ch.id)
+            db.streamDao().deleteByChannel(ch.id)
+            db.unmatchedDao().deleteByChannel(ch.id)
+            db.scanCursorDao().clear(ch.id)
+            db.channelConfigDao().get(ch.id)?.let { cfg ->
+                db.channelConfigDao().upsert(cfg.copy(removed = true))
+            }
+            channels = channels.filter { it.id != ch.id }
+            Toast.makeText(context, "Removed ${ch.title}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val doneCount = scanMap.values.count { it.state == ScanUiState.ChState.DONE }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MsColors.Bg),
     ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 124.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item(key = "header") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 124.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item(key = "header") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Channels",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MsColors.TextPrimary,
+                    )
+                    ScanAllButton(
+                        scanning = scanning,
+                        doneCount = doneCount,
+                        total = scanMap.size.coerceAtLeast(channels.size),
+                        onClick = ::scanAll,
+                    )
+                }
+            }
+
+            if (loading && channels.isEmpty()) {
+                item(key = "loading") {
+                    Text(
+                        "Loading channels…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MsColors.TextSecondary,
+                        modifier = Modifier.padding(vertical = 24.dp),
+                    )
+                }
+            }
+
+            items(channels, key = { it.id }) { ch ->
+                val prog = scanMap[ch.id]
+                ChannelRow(
+                    channel = ch,
+                    progress = prog?.progress,
+                    scanning = prog?.state == ScanUiState.ChState.SCANNING,
+                    done = prog?.state == ScanUiState.ChState.DONE,
+                    menuOpen = menuFor == ch.id,
+                    onMenuOpen = { menuFor = ch.id },
+                    onMenuClose = { menuFor = null },
+                    onScan = { quickScan(ch) },
+                    onRescanScratch = { rescanScratch(ch) },
+                    onToggleAnime = { toggleAnime(ch) },
+                    onRefreshAvatar = {
+                        Toast.makeText(
+                            context,
+                            "Avatars aren't exposed by the current backend",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    },
+                    onCopyId = {
+                        clipboard.setText(AnnotatedString(ch.id.toString()))
+                        Toast.makeText(context, "Channel ID copied", Toast.LENGTH_SHORT).show()
+                    },
+                    onRemove = { confirmRemove = ch },
+                )
+            }
+
+            item(key = "refreshChannels") {
+                LimePillButton(
+                    text = "↻ Refresh channels",
+                    onClick = { scope.launch { reloadChannels() } },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            item(key = "unmatchedHeader") {
                 Text(
-                    "Channels",
-                    style = MaterialTheme.typography.headlineSmall,
+                    "Unmatched content (${unmatched.size})",
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MsColors.TextPrimary,
+                    modifier = Modifier.padding(top = 8.dp),
                 )
-                ScanAllButton(
-                    scanning = anyScanning,
-                    doneCount = doneCount,
-                    total = total,
-                    showDone = scanAllDone,
-                    onClick = { fakeScan(null, "All channels") },
+            }
+
+            item(key = "addCustomContent") {
+                LimePillButton(
+                    text = "＋ Add Custom Content",
+                    onClick = onCreateEntry,
+                    modifier = Modifier.fillMaxWidth(),
                 )
+            }
+
+            items(unmatched, key = { it.id }) { f ->
+                UnmatchedFileRow(
+                    file = f,
+                    onCreateEntry = onCreateEntry,
+                    onCopyLink = {
+                        clipboard.setText(
+                            AnnotatedString("${AppUiState.manifestLink}/stream/${f.channelId}/${f.messageId}"),
+                        )
+                        Toast.makeText(context, "Stream link copied", Toast.LENGTH_SHORT).show()
+                    },
+                    onLinkToTitle = { linkFile = f },
+                )
+            }
+
+            item(key = "bottomPad") {
+                Spacer(Modifier.height(150.dp))
             }
         }
 
-        items(channels, key = { it.id }) { ch ->
-            ChannelRow(
-                channel = ch,
-                progress = scanAnims[ch.id]?.value,
-                done = doneIds.contains(ch.id),
-                onToggle = { ch.enabled = !ch.enabled },
-                onScan = { fakeScan(ch.id, ch.name) },
-            )
-        }
-
-        item(key = "addChannel") {
-            LimePillButton(
-                text = "+ Add Channel",
-                onClick = { showAdd = true },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
-        item(key = "unmatchedHeader") {
-            Text(
-                "Unmatched content (${unmatched.size})",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MsColors.TextPrimary,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-
-        // Dedicated entry point for custom content, separate from per-file actions.
-        item(key = "addCustomContent") {
-            LimePillButton(
-                text = "＋ Add Custom Content",
-                onClick = onCreateEntry,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
-        items(unmatched, key = { it.id }) { f ->
-            UnmatchedFileRow(
-                file = f,
-                onCreateEntry = onCreateEntry,
-                onCopyLink = {
-                    clipboard.setText(AnnotatedString("${AppUiState.manifestLink}/stream/${f.id}"))
-                    Toast.makeText(context, "Stream link copied", Toast.LENGTH_SHORT).show()
-                },
-                onLinkToTitle = { linkFile = f },
-            )
-        }
-
-        item(key = "bottomPad") {
-            // Room for the floating scan panel so it never covers content.
-            Spacer(Modifier.height(150.dp))
-        }
+        ScanResultsPanel(
+            visible = panelVisible,
+            finished = panelFinished,
+            stats = ScanStats(totals.indexed, totals.existing, totals.unmatched, totals.checked),
+            onClose = { ScanUiState.dismissPanel() },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 112.dp),
+        )
     }
 
-    ScanResultsPanel(
-        visible = panelVisible,
-        finished = panelFinished,
-        stats = scanStats,
-        onClose = {
-            panelVisible = false
-            panelFinished = false
-        },
-        modifier = Modifier
-            .align(Alignment.BottomCenter)
-            .padding(bottom = 112.dp),
-    )
-    }
-
-    if (showAdd) {
-        AddChannelSheet(
-            onDismiss = { showAdd = false },
-            onAdd = { name, anime ->
-                channels.add(FakeChannel("c${channels.size + 1}", name, 0, anime, true))
-                Toast.makeText(context, "Channel added (fake)", Toast.LENGTH_SHORT).show()
-                showAdd = false
+    confirmRemove?.let { ch ->
+        AlertDialog(
+            onDismissRequest = { confirmRemove = null },
+            title = { Text("Remove channel?") },
+            text = {
+                Text(
+                    "This deletes every indexed title, file, unmatched entry and the " +
+                        "scan history for \"${ch.title}\". The channel itself stays " +
+                        "in your Telegram account.",
+                )
             },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        removeChannel(ch)
+                        confirmRemove = null
+                    },
+                ) { Text("Remove", color = DestructiveRed, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemove = null }) { Text("Cancel") }
+            },
+            containerColor = MsColors.Surface,
+            titleContentColor = MsColors.TextPrimary,
+            textContentColor = MsColors.TextSecondary,
         )
     }
 
@@ -303,18 +424,39 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
             currentTitle = f.fileName,
             onDismiss = { linkFile = null },
             onApply = { picked ->
-                unmatched.remove(f)
-                Toast.makeText(context, "Linked to $picked (fake)", Toast.LENGTH_LONG).show()
-                linkFile = null
+                scope.launch {
+                    val norm = normalizeTitle(picked)
+                    val media = db.mediaDao().findByTitle(f.channelId, norm)
+                    if (media != null) {
+                        val parsed = FilenameParser.parse(f.fileName)
+                        db.streamDao().insert(
+                            StreamFileEntity(
+                                mediaId = media.id,
+                                channelId = f.channelId,
+                                messageId = f.messageId,
+                                fileName = f.fileName,
+                                fileSize = f.fileSize,
+                                season = parsed.season,
+                                episode = parsed.episode,
+                                quality = parsed.qualityBadge,
+                            ),
+                        )
+                        db.mediaDao().refreshAggregates(media.id, System.currentTimeMillis())
+                        db.unmatchedDao().delete(f.id)
+                        Toast.makeText(context, "Linked to ${media.title}", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "No library entry matches — use Create entry",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                    linkFile = null
+                }
             },
         )
     }
 }
-
-/**
- * Scan All Now pill: idle → collective progress ("Scanning 2/4…" with a slim
- * determinate bar) → satisfying "Done" pop. No raw spinner anywhere.
- */
 
 /** Live counters shown in the scan results panel (item 26). */
 data class ScanStats(
@@ -466,11 +608,9 @@ private fun ScanAllButton(
     scanning: Boolean,
     doneCount: Int,
     total: Int,
-    showDone: Boolean,
     onClick: () -> Unit,
 ) {
     when {
-        showDone -> DonePill(text = "All scanned")
         scanning -> {
             val progress = if (total > 0) doneCount.toFloat() / total else 0f
             Column(
@@ -506,13 +646,25 @@ private fun ScanAllButton(
     }
 }
 
+/**
+ * One channel row: name + breakdown + sync time, scan button, ⋮ overflow
+ * menu, and the slim progress bar while its scan runs.
+ */
 @Composable
 private fun ChannelRow(
-    channel: FakeChannel,
+    channel: UiChannel,
     progress: Float?,
+    scanning: Boolean,
     done: Boolean,
-    onToggle: () -> Unit,
+    menuOpen: Boolean,
+    onMenuOpen: () -> Unit,
+    onMenuClose: () -> Unit,
     onScan: () -> Unit,
+    onRescanScratch: () -> Unit,
+    onToggleAnime: () -> Unit,
+    onRefreshAvatar: () -> Unit,
+    onCopyId: () -> Unit,
+    onRemove: () -> Unit,
 ) {
     MsCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -523,12 +675,13 @@ private fun ChannelRow(
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            channel.name,
+                            channel.title,
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = MsColors.TextPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
                         )
                         if (channel.isAnime) {
                             Spacer(Modifier.width(8.dp))
@@ -536,31 +689,73 @@ private fun ChannelRow(
                         }
                     }
                     Text(
-                        "${channel.files} files",
+                        "${channel.breakdown.movies} Movies · ${channel.breakdown.shows} Shows · ${channel.breakdown.episodes} Episodes",
                         style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        formatSyncedAt(channel.lastSyncedAt),
+                        style = MaterialTheme.typography.labelSmall,
                         color = MsColors.TextSecondary,
                     )
                 }
-                // Right side: the progress lives UNDER the name (below), so
-                // here we only swap scan button → done check.
                 when {
                     done -> DoneCheck()
-                    progress == null -> BareIconButton(
+                    scanning -> { /* progress bar below carries the state */ }
+                    else -> BareIconButton(
                         icon = Icons.Filled.Refresh,
                         contentDescription = "Scan Now",
                         tint = MsColors.TextSecondary,
                         onClick = onScan,
                     )
-                    // while scanning, the toggle stays put; progress is below
                 }
                 Spacer(Modifier.width(4.dp))
-                MsToggle(checked = channel.enabled, onCheckedChange = { onToggle() })
+                Box {
+                    BareIconButton(
+                        icon = Icons.Filled.MoreVert,
+                        contentDescription = "Channel options",
+                        tint = MsColors.TextSecondary,
+                        onClick = onMenuOpen,
+                    )
+                    DropdownMenu(
+                        expanded = menuOpen,
+                        onDismissRequest = onMenuClose,
+                        modifier = Modifier.background(MsColors.Surface),
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Rescan from scratch") },
+                            onClick = { onMenuClose(); onRescanScratch() },
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (channel.isAnime) "Unmark as anime channel"
+                                    else "Mark as anime channel",
+                                )
+                            },
+                            onClick = { onMenuClose(); onToggleAnime() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Refresh channel avatar") },
+                            onClick = { onMenuClose(); onRefreshAvatar() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Copy channel ID") },
+                            onClick = { onMenuClose(); onCopyId() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Remove channel", color = DestructiveRed) },
+                            onClick = { onMenuClose(); onRemove() },
+                            colors = MenuDefaults.itemColors(textColor = DestructiveRed),
+                        )
+                    }
+                }
             }
 
-            // Sleek progress treatment under the channel name: % label +
-            // slim accent bar, morphing into the checkmark when done.
             AnimatedVisibility(
-                visible = progress != null && !done,
+                visible = scanning && !done,
                 enter = fadeIn(tween(200)) + expandVertically(tween(250)),
                 exit = fadeOut(tween(200)) + shrinkVertically(tween(250)),
             ) {
@@ -626,43 +821,10 @@ private fun DoneCheck(modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-private fun DonePill(text: String) {
-    val scale by animateFloatAsState(
-        targetValue = 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
-        label = "donePillPop",
-    )
-    Row(
-        modifier = Modifier
-            .scale(scale)
-            .background(MsColors.Accent, CircleShape)
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Filled.Check,
-            contentDescription = null,
-            tint = MsColors.OnAccent,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MsColors.OnAccent,
-        )
-    }
-}
-
 /** One unmatched file row — kept light for 400+ item lists. */
 @Composable
 private fun UnmatchedFileRow(
-    file: UnmatchedFile,
+    file: UnmatchedFileEntity,
     onCreateEntry: () -> Unit,
     onCopyLink: () -> Unit,
     onLinkToTitle: () -> Unit,
@@ -677,7 +839,7 @@ private fun UnmatchedFileRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                file.size,
+                formatBytes(file.fileSize),
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
             )
@@ -695,40 +857,15 @@ private fun UnmatchedFileRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AddChannelSheet(onDismiss: () -> Unit, onAdd: (String, Boolean) -> Unit) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var name by remember { mutableStateOf("") }
-    var anime by remember { mutableStateOf(false) }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
-    ) {
-        MsSheetContent(title = "Add Channel") {
-            MsTextField(
-                value = name,
-                onValueChange = { name = it },
-                hint = "Username, link or channel ID",
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                MsToggle(checked = anime, onCheckedChange = { anime = it })
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    "This is an anime channel",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MsColors.TextPrimary,
-                )
-            }
-            LimePillButton(
-                text = "Add",
-                onClick = { onAdd(name.ifBlank { "New Channel" }, anime) },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(4.dp))
-        }
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    var v = bytes.toDouble()
+    var u = 0
+    while (v >= 1024 && u < units.lastIndex) {
+        v /= 1024
+        u++
     }
+    return if (u == 0) "$bytes B"
+    else String.format(Locale.US, "%.1f %s", v, units[u])
 }
