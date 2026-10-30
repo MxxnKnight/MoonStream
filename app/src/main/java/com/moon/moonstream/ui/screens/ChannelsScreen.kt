@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,8 +45,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -69,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.moon.moonstream.backend.BackendAuthState
 import com.moon.moonstream.backend.BackendProvider
+import com.moon.moonstream.backend.MsChannel
 import com.moon.moonstream.index.db.ChannelConfigEntity
 import com.moon.moonstream.index.db.ChannelBreakdown
 import com.moon.moonstream.index.db.MsDatabase
@@ -87,6 +91,8 @@ import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MetadataFixSheet
 import com.moon.moonstream.ui.components.MsCard
+import com.moon.moonstream.ui.components.MsSheetContent
+import com.moon.moonstream.ui.components.MsToggle
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MsColors
 import java.util.Locale
@@ -153,6 +159,7 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
     var menuFor by remember { mutableStateOf<Long?>(null) }
     var confirmRemove by remember { mutableStateOf<UiChannel?>(null) }
     var linkFile by remember { mutableStateOf<UnmatchedFileEntity?>(null) }
+    var showAddSheet by remember { mutableStateOf(false) }
 
     suspend fun reloadChannels(silent: Boolean = false) {
         if (!silent) loading = true
@@ -165,25 +172,26 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
             val list = backend.listChannels()
             val cfgDao = db.channelConfigDao()
             val configs = cfgDao.all().associateBy { it.channelId }
+            val liveTitles = list.associate { it.id to it.title }
             val result = mutableListOf<UiChannel>()
-            for (ch in list) {
-                var cfg = configs[ch.id]
-                if (cfg == null) {
-                    cfg = ChannelConfigEntity(ch.id, ch.title)
-                    cfgDao.upsert(cfg)
-                } else if (cfg.title != ch.title) {
-                    cfg = cfg.copy(title = ch.title)
-                    cfgDao.upsert(cfg)
-                }
+            // Opt-in only: no auto-creation. Rows come from configs the user
+            // explicitly added (removed=false), joined with live titles.
+            for (cfg in configs.values) {
                 if (cfg.removed) continue
-                val breakdown = db.mediaDao().breakdownByChannel(ch.id)
+                val liveTitle = liveTitles[cfg.channelId]
+                var cur = cfg
+                if (liveTitle != null && liveTitle != cfg.title) {
+                    cur = cfg.copy(title = liveTitle)
+                    cfgDao.upsert(cur)
+                }
+                val breakdown = db.mediaDao().breakdownByChannel(cur.channelId)
                 result.add(
                     UiChannel(
-                        id = ch.id,
-                        title = cfg.title,
+                        id = cur.channelId,
+                        title = cur.title,
                         breakdown = breakdown,
-                        lastSyncedAt = cfg.lastSyncedAt,
-                        isAnime = cfg.isAnime,
+                        lastSyncedAt = cur.lastSyncedAt,
+                        isAnime = cur.isAnime,
                     ),
                 )
             }
@@ -230,6 +238,27 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
             return
         }
         ScanService.start(context, targets, ScanMode.INCREMENTAL)
+    }
+
+    /** Explicit opt-in add: create the config, then kick off its first scan. */
+    fun addChannel(id: Long, title: String, isAnime: Boolean) {
+        scope.launch {
+            db.channelConfigDao().upsert(
+                ChannelConfigEntity(
+                    channelId = id,
+                    title = title,
+                    isAnime = isAnime,
+                    removed = false,
+                ),
+            )
+            reloadChannels(silent = true)
+            ScanService.start(
+                context,
+                listOf(ScanTarget(id, title, isAnime)),
+                ScanMode.INCREMENTAL,
+            )
+            Toast.makeText(context, "Added $title — scan started", Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun toggleAnime(ch: UiChannel) {
@@ -338,6 +367,14 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
                 LimePillButton(
                     text = "↻ Refresh channels",
                     onClick = { scope.launch { reloadChannels() } },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            item(key = "addChannel") {
+                LimePillButton(
+                    text = "+ Add Channel",
+                    onClick = { showAddSheet = true },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -453,6 +490,16 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
                     }
                     linkFile = null
                 }
+            },
+        )
+    }
+
+    if (showAddSheet) {
+        AddChannelSheet(
+            onDismiss = { showAddSheet = false },
+            onAdd = { id, title, anime ->
+                showAddSheet = false
+                addChannel(id, title, anime)
             },
         )
     }
@@ -868,4 +915,130 @@ private fun formatBytes(bytes: Long): String {
     }
     return if (u == 0) "$bytes B"
     else String.format(Locale.US, "%.1f %s", v, units[u])
+}
+
+/**
+ * Add Channel bottom sheet: lists the account's channels that are not yet
+ * added (opt-in), each row with an anime toggle and an Add button.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddChannelSheet(
+    onDismiss: () -> Unit,
+    onAdd: (id: Long, title: String, isAnime: Boolean) -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val db = remember { MsDatabase.get(context) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    var candidates by remember { mutableStateOf<List<MsChannel>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var animeFor by remember { mutableStateOf<Map<Long, Boolean>>(emptyMap()) }
+    var addedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+
+    LaunchedEffect(Unit) {
+        try {
+            val backend = BackendProvider.backend
+            if (backend.authState.value == BackendAuthState.READY) {
+                val added = db.channelConfigDao().all()
+                    .filter { !it.removed }
+                    .map { it.channelId }
+                    .toSet()
+                candidates = backend.listChannels().filter { it.id !in added }
+            }
+        } catch (e: Exception) {
+            Toast.makeText(context, "Couldn't load channels", Toast.LENGTH_SHORT).show()
+        } finally {
+            loading = false
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MsColors.Surface,
+        contentColor = MsColors.TextPrimary,
+    ) {
+        MsSheetContent(title = "Add Channel") {
+            when {
+                loading -> Text(
+                    "Loading channels…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MsColors.TextSecondary,
+                )
+                candidates.isEmpty() -> Text(
+                    "All your channels are already added.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MsColors.TextSecondary,
+                )
+                else -> LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(candidates, key = { it.id }) { ch ->
+                        val added = ch.id in addedIds
+                        val anime = animeFor[ch.id] == true
+                        MsCard(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Text(
+                                        ch.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MsColors.TextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        MsToggle(
+                                            checked = anime,
+                                            onCheckedChange = {
+                                                animeFor = animeFor + (ch.id to it)
+                                            },
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            "Anime",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MsColors.TextSecondary,
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                if (added) {
+                                    Text(
+                                        "Added",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MsColors.Accent,
+                                    )
+                                } else {
+                                    LimePillButton(
+                                        text = "Add",
+                                        fontSize = 13,
+                                        onClick = {
+                                            addedIds = addedIds + ch.id
+                                            scope.launch { onAdd(ch.id, ch.title, anime) }
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+    }
 }
