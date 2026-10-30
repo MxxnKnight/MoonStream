@@ -47,8 +47,20 @@ object AppUiState {
     // Logs (fake lines; TODO Phase 4: real ring buffer from the server)
     val logLines = mutableStateListOf<LogLine>()
 
+    var currentIp by mutableStateOf("127.0.0.1")
+
     val manifestLink: String
-        get() = "http://192.168.1.8:$port/manifest.json"
+        get() = "http://$currentIp:$port/manifest.json"
+
+    fun toggleServer(context: Context) {
+        if (!serverOn) {
+            val ip = com.moon.moonstream.server.MoonStreamServer.getLocalIpAddress()
+            currentIp = ip
+            com.moon.moonstream.server.MoonStreamServerService.start(context, port)
+        } else {
+            com.moon.moonstream.server.MoonStreamServerService.stop(context)
+        }
+    }
 
     private const val PREFS = "moonstream_prefs"
 
@@ -58,6 +70,7 @@ object AppUiState {
             ?: MsAccent.LIME
         amoled = prefs.getBoolean("amoled", false)
         loggedIn = prefs.getBoolean("logged_in", false)
+        currentIp = com.moon.moonstream.server.MoonStreamServer.getLocalIpAddress()
         if (hiddenIds.isEmpty()) {
             hiddenIds.addAll(fallbackHiddenSeed())
         }
@@ -117,3 +130,5 @@ object AppUiState {
         }
     }
 }
+
+

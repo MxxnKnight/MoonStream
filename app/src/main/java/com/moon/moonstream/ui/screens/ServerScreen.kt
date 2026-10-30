@@ -89,10 +89,10 @@ fun ServerScreen() {
     }
 
     val onToggle = {
-        AppUiState.serverOn = !AppUiState.serverOn
+        AppUiState.toggleServer(context)
         Toast.makeText(
             context,
-            if (AppUiState.serverOn) "Server starting… (fake)" else "Server stopped (fake)",
+            if (AppUiState.serverOn) "Server running at ${AppUiState.manifestLink}" else "Server stopped",
             Toast.LENGTH_SHORT,
         ).show()
     }
@@ -567,3 +567,6 @@ private fun formatUptime(secs: Int): String {
     val s = secs % 60
     return String.format(Locale.US, "%02d:%02d:%02d", h, m, s)
 }
+
+
+
