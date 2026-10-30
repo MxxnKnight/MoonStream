@@ -6,19 +6,13 @@
 // network access is building this repo.
 buildscript {
     repositories {
-        maven { url '/home/hatch/localrepo' }
         google()
         mavenCentral()
         gradlePluginPortal()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.2.0'
+        classpath 'com.android.tools.build:gradle:8.4.2'
         classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22'
-    }
-    configurations.classpath {
-        // AGP's sdk-common wants kotlin-reflect 1.8.20, which the offline
-        // mirror doesn't carry — force the 1.9.22 that's present.
-        resolutionStrategy { force 'org.jetbrains.kotlin:kotlin-reflect:1.9.22' }
     }
 }
 

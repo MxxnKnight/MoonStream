@@ -13,6 +13,14 @@ import java.util.concurrent.atomic.AtomicLong;
  * Main class for interaction with the TDLib.
  */
 public final class Client {
+    static {
+        for (String lib : new String[]{"crypto", "cryptox", "ssl", "sslx", "tdjni"}) {
+            try {
+                System.loadLibrary(lib);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
     /**
      * Interface for handler for results of queries to TDLib and incoming updates from TDLib.
      */
@@ -249,3 +257,4 @@ public final class Client {
 
     private static native void nativeClientSetLogMessageHandler(int maxVerbosityLevel, LogMessageHandler logMessageHandler);
 }
+

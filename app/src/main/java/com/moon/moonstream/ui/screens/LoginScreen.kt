@@ -44,9 +44,9 @@ import com.moon.moonstream.ui.theme.MsColors
 fun LoginScreen(onLoggedIn: () -> Unit) {
     val context = LocalContext.current
 
-    // Create the manager only once
+    // Retrieve the singleton manager
     val manager = remember {
-        TelegramManager(context.applicationContext)
+        TelegramManager.getInstance(context)
     }
 
     val authState by manager.authState.collectAsState()

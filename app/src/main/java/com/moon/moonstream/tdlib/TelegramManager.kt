@@ -17,20 +17,32 @@ class TelegramManager private constructor(private val context: Context) {
 
     private var apiId: Int = 0
     private var apiHash: String = ""
+    private var isWaitingForParameters = false
+
+    init {
+        val prefs = context.getSharedPreferences("moonstream_tdlib", Context.MODE_PRIVATE)
+        apiId = prefs.getInt("api_id", 0)
+        apiHash = prefs.getString("api_hash", "") ?: ""
+    }
 
     fun setApiCredentials(apiId: Int, apiHash: String) {
         this.apiId = apiId
         this.apiHash = apiHash
+        context.getSharedPreferences("moonstream_tdlib", Context.MODE_PRIVATE)
+            .edit()
+            .putInt("api_id", apiId)
+            .putString("api_hash", apiHash)
+            .apply()
+
+        if (isWaitingForParameters && apiId != 0 && apiHash.isNotBlank()) {
+            sendParameters()
+        }
     }
 
     fun start() {
         if (client != null) return
 
-        client = Client.create(
-            { update -> handleUpdate(update) },
-            { error -> Log.e("TelegramManager", "Update exception", error) },
-            { error -> Log.e("TelegramManager", "Default exception", error) }
-        )
+        try { client = Client.create({ update -> handleUpdate(update) }, { error -> Log.e("TelegramManager", "Update exception", error) }, { error -> Log.e("TelegramManager", "Default exception", error) }) } catch (t: Throwable) { Log.e("TelegramManager", "Failed to start TDLib client", t) }
     }
 
     private fun handleUpdate(update: TdApi.Object) {
@@ -38,12 +50,14 @@ class TelegramManager private constructor(private val context: Context) {
             is TdApi.UpdateAuthorizationState -> {
                 when (val state = update.authorizationState) {
                     is TdApi.AuthorizationStateWaitTdlibParameters -> {
+                        isWaitingForParameters = true
                         // Only send parameters if we already have api credentials
                         if (apiId != 0 && apiHash.isNotBlank()) {
                             sendParameters()
                         }
                     }
                     is TdApi.AuthorizationStateWaitPhoneNumber -> {
+                        isWaitingForParameters = false
                         _authState.value = AuthState.WaitingPhoneNumber
                     }
                     is TdApi.AuthorizationStateWaitCode -> {
@@ -55,9 +69,12 @@ class TelegramManager private constructor(private val context: Context) {
                     is TdApi.AuthorizationStateReady -> {
                         _authState.value = AuthState.Ready
                     }
-                    is TdApi.AuthorizationStateLoggingOut,
+                    is TdApi.AuthorizationStateLoggingOut -> {
+                        _authState.value = AuthState.LoggedOut
+                    }
                     is TdApi.AuthorizationStateClosed -> {
                         _authState.value = AuthState.LoggedOut
+                        client = null
                     }
                     else -> {}
                 }
@@ -66,8 +83,13 @@ class TelegramManager private constructor(private val context: Context) {
     }
 
     private fun sendParameters() {
+        isWaitingForParameters = false
         val parameters = TdApi.SetTdlibParameters().apply {
             databaseDirectory = context.filesDir.absolutePath + "/tdlib"
+            filesDirectory = context.filesDir.absolutePath + "/tdlib_files"
+            databaseEncryptionKey = ByteArray(0)
+            useFileDatabase = true
+            useChatInfoDatabase = true
             useMessageDatabase = true
             useSecretChats = false
             apiId = this@TelegramManager.apiId
@@ -75,8 +97,7 @@ class TelegramManager private constructor(private val context: Context) {
             systemLanguageCode = "en"
             deviceModel = "Android"
             systemVersion = "Android"
-            applicationVersion = "1.0"
-            enableStorageOptimizer = true
+            applicationVersion = "0.5.2"
         }
         client?.send(parameters, null)
     }
@@ -117,3 +138,4 @@ sealed class AuthState {
     object Ready : AuthState()
     object LoggedOut : AuthState()
 }
+

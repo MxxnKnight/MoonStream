@@ -40,6 +40,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.ui.components.NeutralRippleTheme
@@ -176,7 +178,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
             // Try to install real backend if session is already Ready
             if (telegramManager.authState.value is com.moon.moonstream.tdlib.AuthState.Ready) {
                 val realBackend = com.moon.moonstream.backend.TdlibMoonStreamBackend(
-                    context = this@MainActivity,
+                    context = context.applicationContext,
                     telegramManager = telegramManager
                 )
                 com.moon.moonstream.backend.BackendProvider.install(realBackend)
