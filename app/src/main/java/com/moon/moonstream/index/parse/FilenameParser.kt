@@ -151,7 +151,7 @@ var episode: Int? = null
 var title: String = work
 
 fun before(match: MatchResult): String =
-work.substring(0, match.range.first).trim("._-[]()\t")
+work.substring(0, match.range.first).trim(' ', '.', '_', '-', '[', ']', '(', ')', '\t')
 
 sxxexxRe.find(work)?.let { m ->
 season = m.groupValues[1].toIntOrNull()
@@ -183,7 +183,7 @@ if (sOnly!= null && eOnly!= null) {
 season = sOnly.groupValues[1].toIntOrNull()
 episode = eOnly.groupValues[1].toIntOrNull()
 val first = minOf(sOnly.range.first, eOnly.range.first)
-title = work.substring(0, first).trim("._-[]()\t")
+title = work.substring(0, first).trim(' ', '.', '_', '-', '[', ']', '(', ')', '\t')
 } else if (isAnime) {
 // Anime absolute numbering: trailing bare number.
 trailingNumRe.find(work)?.let { m ->
