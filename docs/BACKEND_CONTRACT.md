@@ -3,16 +3,19 @@
 This is the deal between the app's screens and Telegram. Written for moon
 (the Director), not for devs.
 
+Status 2026-10-31: the real implementation EXISTS and is live —
+`TdlibMoonStreamBackend` (moon's TDLib code) installs itself at startup via
+`BackendProvider.install(...)` whenever TDLib reports Ready, including on
+cold start when a saved session restores silently. The fake
+(`FakeMoonStreamBackend`) is kept for previews/tests only.
+
 ## The idea in one paragraph
 
 The app never talks to Telegram directly. It only talks to a **contract**
 (a fixed list of promises) defined in
 `app/src/main/java/com/moon/moonstream/backend/MoonStreamBackend.kt`.
-Right now a **fake** version of that contract is plugged in
-(`FakeMoonStreamBackend.kt`) — pretend channels, pretend files, everything
-works, nothing is real. When the real Telegram piece is ready, it gets
-plugged in at one single spot (`BackendProvider.install(...)`) and every
-screen goes real without changing.
+Screens were built against the fake first; now they run against the real
+thing through the same contract, unchanged.
 
 ## The split
 
@@ -20,9 +23,9 @@ screen goes real without changing.
 |---|---|---|
 | All screens (Library, Detail, Channels, Settings, …) | Assistant | Only speak to the contract. Done. |
 | The contract itself (`MoonStreamBackend`) | Assistant | Frozen. Don't change it without both sides agreeing. |
-| The fake (`FakeMoonStreamBackend`) | Assistant | Done. Deleted or ignored once the real one lands. |
-| **The real Telegram implementation** | **moon** | **Your part, in Spck.** |
-| The real login screens (phone → code → password) | moon | Your part — they drive your implementation. |
+| The fake (`FakeMoonStreamBackend`) | Assistant | Done. Kept for previews/tests. |
+| **The real Telegram implementation** | **moon** | **DONE — `TdlibMoonStreamBackend`, live since 2026-10-31.** |
+| The real login screens (phone → code → password) | moon | Done — they drive your implementation. |
 
 The assistant cannot help with the real Telegram/login code — not writing
 it, not step-by-step guidance. That part is genuinely yours.
@@ -61,13 +64,14 @@ restored), calls:
 BackendProvider.install(YourRealBackend(...))
 ```
 
-Once. After that call the fake is gone and the app is live. The current
-fake login/logout buttons keep working until then, so the app is always
-testable.
+Once. After that call the fake is gone and the app is live. This already
+happens at startup: `MainActivity` starts the `TelegramManager` early, and
+the real backend installs whenever auth state becomes Ready.
 
 ## What the assistant will build against the contract
 
 Phase 3 (indexing: scan channels → parse filenames → match metadata →
-library), Phase 4 (in-phone server), Phase 5 (streaming) — all written
-against `MoonStreamBackend`, verified against the fake. When your
-implementation lands, they run against the real thing unchanged.
+library), Phase 5 (streaming extras) — all written against
+`MoonStreamBackend`, verified against the fake, then run against the real
+thing unchanged. (Phase 4's first server version was built by moon's AI and
+is awaiting assistant review.)
