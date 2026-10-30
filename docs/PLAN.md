@@ -27,7 +27,7 @@ learned from REA inspection of TeleStremio v1.0.7 (own fresh implementation).
 Real backend installs via `BackendProvider.install(...)` whenever TDLib
 reports Ready, including cold-start session restore.
 
-## Phase 3 — Scan, index, library (NEXT — assistant)
+## Phase 3 — Scan, index, library (BUILT 2026-10-31, awaiting device test)
 Channel add (incl. anime toggle), ScanManager (paged history, resume cursors),
 Indexer queue, Room database (media, streams, episodes, parts, subtitles,
 catalogs), filename parsing + fuzzy title matching, metadata via
