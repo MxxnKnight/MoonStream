@@ -1,9 +1,8 @@
 name: Build Android APK
 
+# Manual only — run it from the Actions tab with "Run workflow".
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
 
 jobs:
   build:
@@ -29,9 +28,36 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew :app:assembleDebug --stacktrace
 
-      - name: Upload Debug APKs
+      # One artifact per ABI so each downloads as its own file.
+      # The POCO M4 Pro needs arm64-v8a.
+      - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: MoonStream-APKs
-          path: app/build/outputs/apk/debug/*.apk
+          name: MoonStream-arm64-v8a
+          path: app/build/outputs/apk/debug/*arm64-v8a*.apk
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload armeabi-v7a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonStream-armeabi-v7a
+          path: app/build/outputs/apk/debug/*armeabi-v7a*.apk
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonStream-x86_64
+          path: app/build/outputs/apk/debug/*x86_64*.apk
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonStream-universal
+          path: app/build/outputs/apk/debug/*universal*.apk
+          if-no-files-found: warn
           retention-days: 14
