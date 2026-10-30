@@ -32,6 +32,10 @@
             android:name=".server.MoonStreamServerService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+        <service
+            android:name=".index.scan.ScanService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
     </application>
 </manifest>
 
