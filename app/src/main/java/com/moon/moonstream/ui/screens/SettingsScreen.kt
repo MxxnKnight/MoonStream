@@ -32,6 +32,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.moon.moonstream.BuildConfig
 import com.moon.moonstream.backend.BackendProvider
+import com.moon.moonstream.backend.MsProfile
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.InfoDot
 import com.moon.moonstream.ui.components.LimePillButton
@@ -79,7 +81,7 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
+fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -185,7 +187,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
             color = MsColors.TextPrimary,
         )
 
-        AccountCard()
+        AccountCard(onLoggedOut = onLoggedOut)
 
         SettingsGroup("Server") {
             SettingRow(
@@ -813,14 +815,28 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}) {
 }
 
 /**
- * Account profile card: fake Telegram identity + logout.
- * TODO(Phase 2): fill from the real TDLib session; logout ends the real session.
+ * Account profile card: real Telegram identity (via the backend contract's
+ * getMe()) + logout. Logging out ends the real TDLib session, clears the
+ * logged-in flag, and returns to the Login screen.
  */
 @Composable
-private fun AccountCard() {
+private fun AccountCard(onLoggedOut: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showLogout by remember { mutableStateOf(false) }
+    var profile by remember { mutableStateOf<MsProfile?>(null) }
+
+    LaunchedEffect(Unit) {
+        profile = try {
+            BackendProvider.backend.getMe()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    val displayName = profile?.firstName ?: "…"
+    val displayHandle = profile?.username?.let { "@$it" } ?: "…"
+    val initial = displayName.firstOrNull()?.uppercaseChar()?.toString() ?: "•"
 
     MsGroupHeader("Account")
     MsCard(modifier = Modifier.fillMaxWidth()) {
@@ -839,7 +855,7 @@ private fun AccountCard() {
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        "M",
+                        initial,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp,
@@ -849,20 +865,20 @@ private fun AccountCard() {
                 Spacer(Modifier.width(14.dp))
                 Column {
                     Text(
-                        "moon",
+                        displayName,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MsColors.TextPrimary,
                     )
                     Text(
-                        "@moon",
+                        displayHandle,
                         style = MaterialTheme.typography.bodySmall,
                         color = MsColors.TextSecondary,
                     )
                 }
             }
-            AccountDetailRow(label = "Telegram ID", value = "123456789")
-            AccountDetailRow(label = "Phone", value = "+91 ••••• •••••")
+            AccountDetailRow(label = "Telegram ID", value = profile?.id?.toString() ?: "…")
+            AccountDetailRow(label = "Phone", value = profile?.phone ?: "…")
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "Status",
@@ -884,11 +900,6 @@ private fun AccountCard() {
                     color = Color(0xFF4CAF50),
                 )
             }
-            Text(
-                "Fake profile for now — the real Telegram account details arrive with the real login (Phase 2).",
-                style = MaterialTheme.typography.bodySmall,
-                color = MsColors.TextSecondary,
-            )
             LimePillButton(
                 text = "Log out of Telegram Account",
                 onClick = { showLogout = true },
@@ -913,7 +924,7 @@ private fun AccountCard() {
             },
             text = {
                 Text(
-                    "You'll need to enter your phone number again next time. (Fake for now.)",
+                    "You'll need to enter your phone number again next time.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MsColors.TextSecondary,
                 )
@@ -924,9 +935,17 @@ private fun AccountCard() {
                     fontSize = 14,
                     onClick = {
                         scope.launch {
-                            BackendProvider.backend.logout()
+                            try {
+                                BackendProvider.backend.logout()
+                            } catch (e: Exception) {
+                                // Session teardown is best-effort; the local
+                                // state must still reset so the app can't get
+                                // stuck half-logged-in.
+                            }
+                            AppUiState.setLoggedOut(context)
                             showLogout = false
                             Toast.makeText(context, "Logged out", Toast.LENGTH_SHORT).show()
+                            onLoggedOut()
                         }
                     },
                 )

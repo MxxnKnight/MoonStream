@@ -87,7 +87,17 @@ object ScanUiState {
     fun finishRun() {
         _scanning.value = false
         _panelFinished.value = true
+        // Library stats changed — channel rows cached by the UI are stale.
+        _channelListVersion.value++
     }
+
+    /**
+     * Bumps whenever the underlying channel stats may have changed (scan
+     * finished). Screens caching channel rows observe this to know when to
+     * reload instead of refetching on every navigation.
+     */
+    private val _channelListVersion = MutableStateFlow(0)
+    val channelListVersion: StateFlow<Int> = _channelListVersion.asStateFlow()
 
     /** User dismissed the results panel. */
     fun dismissPanel() {

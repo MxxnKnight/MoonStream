@@ -130,6 +130,17 @@ private data class UiChannel(
 private val DestructiveRed = Color(0xFFFF6B6B)
 
 /**
+ * App-level cache of channel rows. Tab switches destroy this screen's
+ * composition, and refetching channels + breakdowns on every switch felt
+ * like lag. Rows are cached here and only reloaded when the cache is empty
+ * or [ScanUiState.channelListVersion] moved (a scan finished elsewhere).
+ */
+private object ChannelRowCache {
+    var rows: List<UiChannel>? = null
+    var version: Int = -1
+}
+
+/**
  * Channels — Phase 3, real data.
  *
  * Channel list comes from the backend contract; per-channel flags
@@ -145,8 +156,11 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     val db = remember { MsDatabase.get(context) }
 
-    var channels by remember { mutableStateOf<List<UiChannel>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    // Channel rows are cached at app level (ChannelRowCache) so tab switches
+    // don't refetch — that refetch-on-every-visit was the tab-switch lag.
+    var channels by remember { mutableStateOf(ChannelRowCache.rows ?: emptyList()) }
+    var loading by remember { mutableStateOf(ChannelRowCache.rows == null) }
+    val listVersion by ScanUiState.channelListVersion.collectAsState()
     val unmatched by db.unmatchedDao().observeAll()
         .collectAsState(initial = emptyList())
 
@@ -167,6 +181,8 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
             val backend = BackendProvider.backend
             if (backend.authState.value != BackendAuthState.READY) {
                 channels = emptyList()
+                ChannelRowCache.rows = null
+                ChannelRowCache.version = -1
                 return
             }
             val list = backend.listChannels()
@@ -196,6 +212,8 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
                 )
             }
             channels = result
+            ChannelRowCache.rows = result
+            ChannelRowCache.version = ScanUiState.channelListVersion.value
         } catch (e: Exception) {
             Toast.makeText(context, "Couldn't load channels", Toast.LENGTH_SHORT).show()
         } finally {
@@ -203,7 +221,17 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
         }
     }
 
-    LaunchedEffect(Unit) { reloadChannels() }
+    // Load once; reuse the app-level cache on tab switches unless a scan
+    // finished while we were away (version moved).
+    LaunchedEffect(Unit) {
+        val cached = ChannelRowCache.rows
+        if (cached != null && ChannelRowCache.version == ScanUiState.channelListVersion.value) {
+            channels = cached
+            loading = false
+        } else {
+            reloadChannels()
+        }
+    }
 
     // When a run finishes: refresh counts, then auto-dismiss the panel.
     LaunchedEffect(panelFinished) {

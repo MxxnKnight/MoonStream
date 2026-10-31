@@ -252,7 +252,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 }
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
+                    columns = GridCells.Fixed(2),
                     contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 120.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -482,10 +482,11 @@ private fun PosterCell(
             }
 
             if ((item.type == "series" || item.type == "anime") && item.episodeCount > 0) {
+                // Top-left: the bottom placement covered the title on artwork.
                 Box(
                     modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(6.dp)
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
                         .clip(RoundedCornerShape(6.dp))
                         .background(Color(0xFF6B21A8).copy(alpha = 0.9f))
                         .padding(horizontal = 6.dp, vertical = 2.dp),

@@ -201,7 +201,13 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     AppScreen.Channels ->
                         ChannelsScreen(onCreateEntry = { go(AppScreen.Create) })
                     AppScreen.Create -> CreateScreen()
-                    AppScreen.Settings -> SettingsScreen(onOpenLogs = { go(AppScreen.Logs) })
+                    AppScreen.Settings -> SettingsScreen(
+                        onOpenLogs = { go(AppScreen.Logs) },
+                        onLoggedOut = {
+                            backStack.clear()
+                            backStack.add(AppScreen.Login)
+                        },
+                    )
                     AppScreen.Logs -> LogsScreen(onBack = { backStack.removeLast() })
                 }
             }
