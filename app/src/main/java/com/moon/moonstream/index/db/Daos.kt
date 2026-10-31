@@ -14,6 +14,15 @@ interface MediaDao {
     @Query("SELECT * FROM media_items")
     suspend fun getAll(): List<MediaItemEntity>
 
+    @Query("SELECT COUNT(*) FROM media_items")
+    suspend fun countAll(): Int
+
+    @Query("SELECT COUNT(*) FROM media_items WHERE type = :type")
+    suspend fun countByType(type: String): Int
+
+    @Query("SELECT COALESCE(SUM(episodeCount), 0) FROM media_items WHERE type IN ('series', 'anime')")
+    suspend fun episodeTotal(): Int
+
     @Query("SELECT * FROM media_items WHERE channelId = :channelId ORDER BY title COLLATE NOCASE")
     fun observeByChannel(channelId: Long): Flow<List<MediaItemEntity>>
 
@@ -107,6 +116,12 @@ interface StreamDao {
 
     @Query("SELECT * FROM stream_files")
     suspend fun getAll(): List<StreamFileEntity>
+
+    @Query("SELECT COUNT(*) FROM stream_files")
+    suspend fun countAll(): Int
+
+    @Query("SELECT COALESCE(SUM(fileSize), 0) FROM stream_files")
+    suspend fun totalSize(): Long
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(file: StreamFileEntity): Long
