@@ -52,6 +52,7 @@ import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.FilePickerSheet
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
+import com.moon.moonstream.ui.components.MsOutlinePill
 import com.moon.moonstream.ui.components.MsDropdown
 import com.moon.moonstream.ui.components.MsSectionLabel
 import com.moon.moonstream.ui.components.MsTextField
@@ -124,6 +125,51 @@ fun CreateScreen(
     var pickerMode by remember { mutableStateOf<PickerMode?>(null) }
     val unmatched = remember { mutableStateListOf<UnmatchedFileEntity>() }
     var saving by remember { mutableStateOf(false) }
+
+    // Split-file state: toggle + one link box per part.
+    var isSplit by remember { mutableStateOf(false) }
+    val splitLinks = remember { mutableStateListOf<String>() }
+    val splitFetching = remember { mutableStateListOf<Int>() }
+
+    fun fetchSplitLink(i: Int) {
+        val link = splitLinks.getOrNull(i)?.trim().orEmpty()
+        if (link.isBlank() || splitFetching.contains(i)) return
+        splitFetching.add(i)
+        scope.launch(Dispatchers.IO) {
+            try {
+                val parsed = com.moon.moonstream.ui.screens.parseTgLink(link)
+                if (parsed == null) {
+                    withContext(Dispatchers.Main) {
+                        MsToast.show("That link didn't look like a t.me/c/…/… message link")
+                    }
+                    return@launch
+                }
+                val (chId, msgId) = parsed
+                val msg = com.moon.moonstream.backend.BackendProvider.backend
+                    .fetchMessages(chId, msgId, 1).firstOrNull { it.id == msgId }
+                if (msg == null) {
+                    withContext(Dispatchers.Main) { MsToast.show("Couldn't read that link") }
+                    return@launch
+                }
+                val p = com.moon.moonstream.index.parse.FilenameParser.parse(msg.fileName)
+                val entry = com.moon.moonstream.ui.model.PrefillFile(
+                    channelId = chId,
+                    messageId = msgId,
+                    fileName = msg.fileName,
+                    fileSize = msg.fileSize,
+                    season = if (isSeries) p.season else null,
+                    episode = if (isSeries) p.episode else null,
+                )
+                withContext(Dispatchers.Main) {
+                    files.add(entry)
+                    splitLinks[i] = ""
+                    MsToast.show("Part ${i + 1} added: ${msg.fileName.take(40)}")
+                }
+            } finally {
+                withContext(Dispatchers.Main) { splitFetching.remove(i) }
+            }
+        }
+    }
 
     // Load unmatched files for the picker.
     LaunchedEffect(Unit) {
@@ -356,6 +402,59 @@ fun CreateScreen(
             onClick = { pickerMode = PickerMode.FILES },
         )
 
+        // Split-file toggle: when ON, link boxes appear for pasting each
+        // part's t.me link (part 1, part 2, ...). The server joins them
+        // into one stream.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Split file",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MsColors.TextPrimary,
+                )
+                Text(
+                    "Multiple parts (.001, .002…) play as one",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MsColors.TextSecondary,
+                )
+            }
+            androidx.compose.material3.Switch(
+                checked = isSplit,
+                onCheckedChange = {
+                    isSplit = it
+                    if (it && splitLinks.isEmpty()) {
+                        splitLinks.add("")
+                        splitLinks.add("")
+                    }
+                },
+                colors = androidx.compose.material3.SwitchDefaults.colors(
+                    checkedThumbColor = MsColors.Accent,
+                    checkedTrackColor = MsColors.Accent.copy(alpha = 0.4f),
+                ),
+            )
+        }
+        if (isSplit) {
+            splitLinks.forEachIndexed { i, link ->
+                SplitLinkRow(
+                    index = i,
+                    link = link,
+                    fetching = splitFetching.contains(i),
+                    onLinkChange = { splitLinks[i] = it },
+                    onFetch = { fetchSplitLink(i) },
+                    onRemove = { if (splitLinks.size > 1) splitLinks.removeAt(i) },
+                )
+            }
+            LimeTextButton(
+                text = "+ Add part",
+                onClick = { splitLinks.add("") },
+            )
+        }
+
         MsSectionLabel("Subtitles (${subtitles.size})")
         subtitles.forEachIndexed { i, s ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -416,6 +515,55 @@ fun CreateScreen(
 }
 
 private enum class PickerMode { FILES, SUBTITLES }
+
+/** One split-part link box: paste the t.me link, Fetch resolves and adds it. */
+@Composable
+private fun SplitLinkRow(
+    index: Int,
+    link: String,
+    fetching: Boolean,
+    onLinkChange: (String) -> Unit,
+    onFetch: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MsColors.SurfaceAlt)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Part ${index + 1}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MsColors.TextPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            BareIconButton(
+                icon = Icons.Filled.Close,
+                contentDescription = "Remove part",
+                onClick = onRemove,
+            )
+        }
+        MsTextField(
+            value = link,
+            onValueChange = onLinkChange,
+            hint = "Part ${index + 1} link (t.me/c/…/…)",
+            modifier = Modifier.fillMaxWidth(),
+        )
+        MsOutlinePill(
+            text = if (fetching) "Fetching…" else "Fetch part",
+            onClick = onFetch,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
 
 /** A picked file with a remove button; series files get season/episode inputs. */
 @Composable
