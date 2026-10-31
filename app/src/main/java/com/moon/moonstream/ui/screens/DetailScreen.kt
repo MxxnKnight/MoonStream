@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import com.moon.moonstream.ui.components.MsToast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -42,6 +43,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.moon.moonstream.backend.BackendProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -163,14 +165,14 @@ fun DetailScreen(
 
     fun copyLink(file: StreamFileEntity) {
         clipboard.setText(AnnotatedString("$streamBase/stream/file/${m.id}/${file.id}"))
-        Toast.makeText(context, "Stream link copied", Toast.LENGTH_SHORT).show()
+        MsToast.show("Stream link copied")
     }
 
     /** Open the system "Play with" sheet so the phone's own video players
      *  (VLC, mpvRx, …) handle the stream. Needs the server running. */
     fun playExternal(file: StreamFileEntity) {
         if (!AppUiState.serverOn) {
-            Toast.makeText(context, "Turn the server on first, then play", Toast.LENGTH_SHORT).show()
+            MsToast.show("Turn the server on first, then play")
             return
         }
         val uri = Uri.parse("$streamBase/stream/file/${m.id}/${file.id}")
@@ -182,7 +184,7 @@ fun DetailScreen(
         try {
             context.startActivity(Intent.createChooser(intent, "Play with"))
         } catch (e: ActivityNotFoundException) {
-            Toast.makeText(context, "No video player found on this phone", Toast.LENGTH_SHORT).show()
+            MsToast.show("No video player found on this phone")
         }
     }
 
@@ -190,18 +192,14 @@ fun DetailScreen(
         scope.launch {
             db.streamDao().deleteById(file.id)
             db.mediaDao().refreshAggregates(m.id, System.currentTimeMillis())
-            Toast.makeText(context, "File removed", Toast.LENGTH_SHORT).show()
+            MsToast.show("File removed")
         }
     }
 
     fun toggleHide() {
         scope.launch {
             db.mediaDao().setHidden(m.id, !m.hidden)
-            Toast.makeText(
-                context,
-                if (!m.hidden) "Hidden — find it in the Hidden tab" else "Unhidden",
-                Toast.LENGTH_SHORT,
-            ).show()
+            MsToast.show(if (!m.hidden) "Hidden — find it in the Hidden tab" else "Unhidden")
             if (!m.hidden) onBack()
         }
     }
@@ -231,7 +229,7 @@ fun DetailScreen(
                 now = System.currentTimeMillis(),
             )
             withContext(Dispatchers.Main) {
-                Toast.makeText(context, "Metadata updated", Toast.LENGTH_SHORT).show()
+                MsToast.show("Metadata updated")
             }
         }
     }
@@ -272,7 +270,7 @@ fun DetailScreen(
             db.mediaDao().refreshAggregates(m.id, now)
             db.mediaDao().refreshAggregates(target.id, now)
             withContext(Dispatchers.Main) {
-                Toast.makeText(context, "File moved to ${target.title}", Toast.LENGTH_SHORT).show()
+                MsToast.show("File moved to ${target.title}")
             }
         }
     }
@@ -364,10 +362,14 @@ fun DetailScreen(
                     color = MsColors.Accent,
                 )
                 if (!m.overview.isNullOrBlank()) {
+                    var expanded by remember { mutableStateOf(false) }
                     Text(
                         m.overview!!,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MsColors.TextPrimary,
+                        maxLines = if (expanded) Int.MAX_VALUE else 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clickable { expanded = !expanded },
                     )
                 }
             }
@@ -380,11 +382,7 @@ fun DetailScreen(
                 LimePillButton(
                     text = "Play",
                     onClick = {
-                        Toast.makeText(
-                            context,
-                            "In-app player is coming — use Copy Link with Stremio for now",
-                            Toast.LENGTH_LONG,
-                        ).show()
+                        MsToast.show("In-app player is coming — use Copy Link with Stremio for now")
                     },
                     modifier = Modifier.weight(1f),
                     fontSize = 13,
@@ -394,7 +392,7 @@ fun DetailScreen(
                     onClick = {
                         val first = files.firstOrNull()
                         if (first != null) copyLink(first)
-                        else Toast.makeText(context, "No files to link", Toast.LENGTH_SHORT).show()
+                        else MsToast.show("No files to link")
                     },
                     modifier = Modifier.weight(1f),
                     fontSize = 13,
@@ -440,7 +438,7 @@ fun DetailScreen(
                     onUnlinkSub = { sub ->
                         scope.launch {
                             db.subtitleDao().delete(sub.id)
-                            Toast.makeText(context, "Subtitle removed", Toast.LENGTH_SHORT).show()
+                            MsToast.show("Subtitle removed")
                         }
                     },
                 )
@@ -474,7 +472,7 @@ fun DetailScreen(
                     onUnlink = { sub ->
                         scope.launch {
                             db.subtitleDao().delete(sub.id)
-                            Toast.makeText(context, "Subtitle removed", Toast.LENGTH_SHORT).show()
+                            MsToast.show("Subtitle removed")
                         }
                     },
                 )
@@ -501,7 +499,7 @@ fun DetailScreen(
                         onDelete = {
                             scope.launch {
                                 db.subtitleDao().delete(sub.id)
-                                Toast.makeText(context, "Subtitle removed", Toast.LENGTH_SHORT).show()
+                                MsToast.show("Subtitle removed")
                             }
                         },
                     )
@@ -561,11 +559,7 @@ fun DetailScreen(
                     val parsed = parseTgLink(link)
                     if (parsed == null) {
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(
-                                context,
-                                "That link didn't look like a t.me/c/…/… message link",
-                                Toast.LENGTH_LONG,
-                            ).show()
+                            MsToast.show("That link didn't look like a t.me/c/…/… message link")
                         }
                         return@launch
                     }
@@ -584,7 +578,7 @@ fun DetailScreen(
                     )
                     db.mediaDao().refreshAggregates(m.id, System.currentTimeMillis())
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Custom stream added", Toast.LENGTH_SHORT).show()
+                        MsToast.show("Custom stream added")
                         showAddStream = false
                     }
                 }
@@ -595,26 +589,31 @@ fun DetailScreen(
     if (showAddSubtitle) {
         AddSubtitleSheet(
             unlinked = unlinkedSubs,
+            isSeries = isSeries,
             onAttachExisting = { attachSub = it; showAddSubtitle = false },
             onDismiss = { showAddSubtitle = false },
-            onSaveLink = { link, language ->
+            onFetchFileName = { link ->
+                val parsed = parseTgLink(link) ?: return@AddSubtitleSheet null
+                val (chId, msgId) = parsed
+                // Pull the real filename from Telegram via the backend.
+                BackendProvider.backend.fetchMessages(chId, msgId, 1)
+                    .firstOrNull { it.id == msgId }?.fileName
+            },
+            onSaveLink = { link, language, fileName, season, episode ->
                 scope.launch(Dispatchers.IO) {
                     val parsed = parseTgLink(link)
                     if (parsed == null || channelId == null) {
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(
-                                context,
-                                "That link didn't look like a t.me/c/…/… message link",
-                                Toast.LENGTH_LONG,
-                            ).show()
+                            MsToast.show("That link didn't look like a t.me/c/…/… message link")
                         }
                         return@launch
                     }
                     val (chId, msgId) = parsed
-                    val fileName = "subtitle_$msgId.srt"
                     val p = com.moon.moonstream.index.parse.FilenameParser.parse(fileName)
+                    val useSeason = season ?: p.season
+                    val useEpisode = episode ?: p.episode
                     val mediaId = ScanManager.resolveSubtitleMedia(
-                        db, chId, normalizeTitle(p.title), p.season, p.episode,
+                        db, chId, normalizeTitle(p.title), useSeason, useEpisode,
                     ) ?: m.id
                     db.subtitleDao().insert(
                         SubtitleFileEntity(
@@ -623,13 +622,13 @@ fun DetailScreen(
                             fileName = fileName,
                             fileSize = 0L,
                             mediaId = mediaId,
-                            season = p.season,
-                            episode = p.episode,
+                            season = useSeason,
+                            episode = useEpisode,
                             language = language,
                         ),
                     )
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Subtitle added", Toast.LENGTH_SHORT).show()
+                        MsToast.show("Subtitle added")
                         showAddSubtitle = false
                     }
                 }
@@ -645,7 +644,7 @@ fun DetailScreen(
             onAttach = { season, episode ->
                 scope.launch {
                     db.subtitleDao().attach(sub.id, m.id, season, episode)
-                    Toast.makeText(context, "Subtitle attached", Toast.LENGTH_SHORT).show()
+                    MsToast.show("Subtitle attached")
                     attachSub = null
                 }
             },

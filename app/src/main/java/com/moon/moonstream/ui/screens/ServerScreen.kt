@@ -6,6 +6,7 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.moon.moonstream.ui.components.MsToast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -42,10 +43,12 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.moon.moonstream.server.ServerTelemetry
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -88,22 +91,20 @@ import java.util.Locale
  */
 
 @Composable
-fun ServerScreen() {
+fun ServerScreen(onOpenLibrary: () -> Unit = {}) {
     val context = LocalContext.current
     val on = AppUiState.serverOn
-    var uptimeSecs by remember { mutableStateOf(0) }
-
+    // Uptime comes from ServerTelemetry's start timestamp — surviving navigation,
+    // unlike the old remember counter that reset every time the screen recomposed.
+    // Tick once a second just to redraw the label.
+    var tick by remember { mutableIntStateOf(0) }
     LaunchedEffect(on) {
-        if (on) {
-            while (true) {
-                delay(1000)
-                uptimeSecs++
-            }
-        } else {
-            uptimeSecs = 0
+        while (true) {
+            delay(1000)
+            tick++
         }
     }
-
+    val uptimeSecs = if (on) ServerTelemetry.uptimeSecs() else 0
     // Android 13+ needs the notification permission at runtime; without it the
     // foreground service runs but its notification (with the Stop button) is
     // silently hidden. Ask the moment the user turns the server on.
@@ -112,13 +113,9 @@ fun ServerScreen() {
     ) { granted ->
         AppUiState.toggleServer(context)
         if (!granted) {
-            Toast.makeText(
-                context,
-                "Server starting — allow notifications to see its status and Stop button.",
-                Toast.LENGTH_LONG,
-            ).show()
+            MsToast.show("Server starting — allow notifications to see its status and Stop button.")
         } else {
-            Toast.makeText(context, "Starting server…", Toast.LENGTH_SHORT).show()
+            MsToast.show("Starting server…")
         }
     }
 
@@ -133,11 +130,7 @@ fun ServerScreen() {
             notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
             AppUiState.toggleServer(context)
-            Toast.makeText(
-                context,
-                if (turningOn) "Starting server…" else "Stopping server…",
-                Toast.LENGTH_SHORT,
-            ).show()
+            MsToast.show(if (turningOn) "Starting server…" else "Stopping server…")
         }
     }
 
@@ -175,7 +168,7 @@ fun ServerScreen() {
                 ServerStatsCard(uptimeSecs = uptimeSecs)
 
                 MsSectionEyebrow("LIBRARY")
-                LibraryDashboardCard()
+                LibraryDashboardCard(onOpenLibrary = onOpenLibrary)
 
                 Text(
                     "Paste the manifest URL into Stremio or Nuvio to browse your library.",
@@ -249,22 +242,48 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
             .background(borderBrush)
             .padding(1.5.dp),
     ) {
+        // Premium ambient background: dark base, soft glow washing down from
+        // the top (not a centered ball), plus a thin top-edge highlight.
+        // matchParentSize so the layers cover the content Column exactly.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clip(RoundedCornerShape(26.5.dp))
+                .background(Color(0xFF131316)),
+        ) {
+            if (on) {
+                // Soft top-down ambient wash (vertical gradient fades evenly —
+                // it can't form a concentrated "ball" like a centered radial).
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0.00f to MsColors.GlowDeep.copy(alpha = 0.30f),
+                                0.35f to MsColors.GlowDeep.copy(alpha = 0.12f),
+                                0.70f to MsColors.GlowDeep.copy(alpha = 0.03f),
+                                1.00f to Color.Transparent,
+                            ),
+                        ),
+                )
+                // Thin top highlight line.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.5.dp)
+                        .background(
+                            Brush.horizontalGradient(
+                                0.0f to Color.Transparent,
+                                0.5f to MsColors.GlowLight.copy(alpha = 0.55f),
+                                1.0f to Color.Transparent,
+                            ),
+                        ),
+                )
+            }
+        }
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(26.5.dp))
-                .background(
-                    if (on) {
-                        Brush.radialGradient(
-                            0.0f to MsColors.GlowDeep.copy(alpha = 0.35f),
-                            0.7f to MsColors.GlowDeep.copy(alpha = 0.12f),
-                            1.0f to Color(0xFF131316),
-                        )
-                    } else {
-                        Brush.linearGradient(
-                            listOf(Color(0xFF15151B), Color(0xFF15151B)),
-                        )
-                    },
-                ),
+                .clip(RoundedCornerShape(26.5.dp)),
         ) {
             // --- Server section ---
             Column(
@@ -354,7 +373,7 @@ private fun ManifestDrawer() {
             .clickable {
                 clipboard.setText(AnnotatedString(url))
                 copied = true
-                Toast.makeText(context, "Manifest URL copied", Toast.LENGTH_SHORT).show()
+                MsToast.show("Manifest URL copied")
             }
             .padding(18.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -395,11 +414,13 @@ private fun ManifestDrawer() {
 /**
  * Server telemetry card (ON only), NoxMedia-style information architecture:
  * two large metrics (uptime, speed), a session/all-time shelf.
- * All values fake for now.
- * TODO(Phase 4): feed from the real server telemetry.
+ * All values are real, fed by [ServerTelemetry].
  */
 @Composable
 private fun ServerStatsCard(uptimeSecs: Int) {
+    // Re-read on every recomposition (the parent ticks each second while on).
+    val session = ServerTelemetry.sessionBytes
+    val total = ServerTelemetry.totalBytes
     MsCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
@@ -415,7 +436,7 @@ private fun ServerStatsCard(uptimeSecs: Int) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 LargeMetric(value = formatUptime(uptimeSecs), label = "uptime", modifier = Modifier.weight(1f))
-                LargeMetric(value = "0 B/s", label = "speed", modifier = Modifier.weight(1f))
+                LargeMetric(value = "${formatBytes(ServerTelemetry.speedBps())}/s", label = "speed", modifier = Modifier.weight(1f))
             }
 
             Row(
@@ -428,13 +449,13 @@ private fun ServerStatsCard(uptimeSecs: Int) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SmallMetric(label = "session", value = "0.0 MB")
+                SmallMetric(label = "session", value = formatBytes(session))
                 Box(
                     Modifier
                         .size(3.dp)
                         .background(MsColors.Divider, CircleShape),
                 )
-                SmallMetric(label = "all-time", value = "1.33 GB")
+                SmallMetric(label = "all-time", value = formatBytes(total))
             }
         }
     }
@@ -494,9 +515,10 @@ private data class LibraryStats(
  * no looping animation, so it costs nothing after the first second.
  */
 @Composable
-private fun LibraryDashboardCard() {
+private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
     val context = LocalContext.current
     var stats by remember { mutableStateOf(LibraryStats()) }
+    var latest by remember { mutableStateOf(emptyList<String>()) }
 
     LaunchedEffect(Unit) {
         val loaded = withContext(Dispatchers.IO) {
@@ -511,9 +533,10 @@ private fun LibraryDashboardCard() {
                 movies = movies,
                 shows = series + anime,
                 episodes = db.mediaDao().episodeTotal(),
-            )
+            ) to db.mediaDao().latestTitles()
         }
-        stats = loaded
+        stats = loaded.first
+        latest = loaded.second
     }
 
     // One-shot count-ups toward the real values.
@@ -535,6 +558,7 @@ private fun LibraryDashboardCard() {
                     listOf(Color(0xFF8B5CF6), Color(0xFF4C1D95), Color(0xFF2A1A5E)),
                 ),
             )
+            .clickable(onClick = onOpenLibrary)
             .padding(1.5.dp),
     ) {
         Box(
@@ -616,6 +640,19 @@ private fun LibraryDashboardCard() {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth(),
                 )
+
+                // Latest indexed titles — one line, NoxMedia-style.
+                if (latest.isNotEmpty()) {
+                    Text(
+                        text = "New: " + latest.take(3).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFDDD6FE).copy(alpha = 0.75f),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
     }

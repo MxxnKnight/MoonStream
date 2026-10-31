@@ -133,11 +133,40 @@ object MetadataMatcher {
         if (query.isBlank()) return emptyList()
         return try {
             if (isAnime) searchKitsu(query, limit)
-            else if (tmdbKey.isNotBlank()) searchTmdb(query, type, tmdbKey, limit)
-            else emptyList()
+            else {
+                // TMDB first (when a key is set), Cinemeta as the no-key fallback.
+                val tmdb = if (tmdbKey.isNotBlank()) searchTmdb(query, type, tmdbKey, limit) else emptyList()
+                if (tmdb.isNotEmpty()) tmdb else searchCinemeta(query, type, limit)
+            }
         } catch (e: Exception) {
             Log.d(TAG, "search failed for '$query': ${e.message}")
             emptyList()
+        }
+    }
+
+    /**
+     * Cinemeta (Stremio's free metadata API) — no API key needed.
+     * https://v3-cinemeta.strem.io/search/{movie|series}/{query}.json
+     */
+    private fun searchCinemeta(query: String, type: String, limit: Int): List<EnrichedMeta> {
+        val kind = if (type == "movie") "movie" else "series"
+        val q = URLEncoder.encode(query, "UTF-8")
+        val root = getJson("https://v3-cinemeta.strem.io/search/$kind/$q.json")
+            ?: return emptyList()
+        val metas = root.optJSONArray("metas") ?: return emptyList()
+        return (0 until minOf(metas.length(), limit)).mapNotNull { i ->
+            val obj = metas.optJSONObject(i) ?: return@mapNotNull null
+            val name = obj.optString("name")
+            if (name.isBlank()) return@mapNotNull null
+            EnrichedMeta(
+                title = name,
+                year = Regex("""^(\d{4})""").find(obj.optString("releaseInfo"))
+                    ?.groupValues?.get(1),
+                overview = obj.optString("description").takeIf { it.isNotBlank() },
+                posterUrl = obj.optString("poster").takeIf { it.isNotBlank() },
+                imdbId = obj.optString("id").takeIf { it.startsWith("tt") },
+                tmdbId = null,
+            )
         }
     }
 

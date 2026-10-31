@@ -119,8 +119,10 @@ class TdlibMoonStreamBackend(
         }
     }
 
-    // Cache messageId -> fileId mapping so seeking requests don't repeatedly fetch the same message
-    private val messageFileIdCache = java.util.concurrent.ConcurrentHashMap<Long, Int>()
+    // Cache (channelId, messageId) -> fileId so seeking requests don't repeatedly
+    // fetch the same message. Keyed by BOTH ids — messageIds repeat across
+    // channels, so a messageId-only key returns the wrong file.
+    private val messageFileIdCache = java.util.concurrent.ConcurrentHashMap<Pair<Long, Long>, Int>()
 
     override suspend fun readFileRange(
         channelId: Long,
@@ -130,7 +132,7 @@ class TdlibMoonStreamBackend(
     ): ByteArray {
         if (length <= 0) return ByteArray(0)
         return try {
-            val fileId = messageFileIdCache.getOrPut(messageId) {
+            val fileId = messageFileIdCache.getOrPut(channelId to messageId) {
                 val msgRes = telegramManager.send(TdApi.GetMessage(channelId, messageId))
                 if (msgRes.isFailure) return ByteArray(0)
                 val msg = msgRes.getOrThrow()

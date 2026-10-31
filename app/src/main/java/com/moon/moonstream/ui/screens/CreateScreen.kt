@@ -1,6 +1,7 @@
 package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
+import com.moon.moonstream.ui.components.MsToast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -90,11 +91,23 @@ fun CreateScreen(
     var year by remember {
         mutableStateOf(Calendar.getInstance().get(Calendar.YEAR).toString())
     }
-    var isSeries by remember { mutableStateOf(false) }
+    var isSeries by remember {
+        // Default to Series when the prefilled files already carry
+        // season/episode info (e.g. from the "wrong title?" flow).
+        mutableStateOf(prefill.files.any { it.season != null || it.episode != null })
+    }
 
     val files = remember {
         mutableStateListOf<PrefillFile>().apply {
-            addAll(prefill.files.filter { !it.isSubtitle })
+            addAll(prefill.files.filter { !it.isSubtitle }.map { f ->
+                // Auto-parse season/episode from the filename when missing,
+                // so the boxes are pre-filled but still editable.
+                if (f.season == null && f.episode == null) {
+                    val p = com.moon.moonstream.index.parse.FilenameParser.parse(f.fileName)
+                    if (p.season != null || p.episode != null) f.copy(season = p.season, episode = p.episode)
+                    else f
+                } else f
+            })
         }
     }
     val subtitles = remember {
@@ -204,17 +217,13 @@ fun CreateScreen(
                 }
                 db.mediaDao().refreshAggregates(mediaId, System.currentTimeMillis())
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Entry created", Toast.LENGTH_SHORT).show()
+                    MsToast.show("Entry created")
                     onDone(mediaId)
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     saving = false
-                    Toast.makeText(
-                        context,
-                        "Couldn't save: ${e.message ?: "unknown error"}",
-                        Toast.LENGTH_LONG,
-                    ).show()
+                    MsToast.show("Couldn't save: ${e.message ?: "unknown error"}")
                 }
             }
         }

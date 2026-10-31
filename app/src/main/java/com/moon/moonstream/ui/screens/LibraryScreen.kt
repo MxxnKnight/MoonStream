@@ -1,6 +1,7 @@
 package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
+import com.moon.moonstream.ui.components.MsToast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -98,6 +99,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     var showFilters by remember { mutableStateOf(false) }
     var quality by remember { mutableStateOf("Any") }
     var subFilter by remember { mutableStateOf("Any") }
+    var subLangFilter by remember { mutableStateOf("Any") }
     var sort by remember { mutableStateOf("Recently added") }
 
     // Multi-select state — Select button or long-press; bottom action bar.
@@ -107,6 +109,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     // Real filter id-sets, loaded when the filter changes.
     var qualityIds by remember { mutableStateOf<Set<Long>?>(null) }
     var subIds by remember { mutableStateOf<Set<Long>?>(null) }
+    var subLangIds by remember { mutableStateOf<Set<Long>?>(null) }
     LaunchedEffect(quality) {
         qualityIds = if (quality == "Any") null
         else db.streamDao().mediaIdsWithQuality(quality).toSet()
@@ -114,6 +117,15 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     LaunchedEffect(subFilter) {
         subIds = if (subFilter == "Any") null
         else db.subtitleDao().mediaIdsWithSubtitles().toSet()
+    }
+    // Subtitle language codes used by the indexer.
+    val subLangCodes = mapOf(
+        "Malayalam" to "Mal", "English" to "Eng", "Hindi" to "Hin",
+        "Tamil" to "Tam", "Telugu" to "Tel",
+    )
+    LaunchedEffect(subLangFilter) {
+        subLangIds = if (subLangFilter == "Any") null
+        else subLangCodes[subLangFilter]?.let { db.subtitleDao().mediaIdsWithSubtitleLang(it).toSet() }
     }
 
     val filtered = allItems.filter { t ->
@@ -132,7 +144,8 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             "No subtitles" -> subIds?.contains(t.id) != true
             else -> true
         }
-        matchesSegment && matchesQuery && matchesQuality && matchesSubs
+        val matchesSubLang = subLangIds?.contains(t.id) ?: true
+        matchesSegment && matchesQuery && matchesQuality && matchesSubs && matchesSubLang
     }.let { list ->
         when (sort) {
             "Title A–Z" -> list.sortedBy { it.title.lowercase() }
@@ -152,11 +165,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     fun setHidden(ids: List<Long>, hidden: Boolean) {
         scope.launch {
             ids.forEach { db.mediaDao().setHidden(it, hidden) }
-            Toast.makeText(
-                context,
-                if (hidden) "${ids.size} hidden" else "${ids.size} unhidden",
-                Toast.LENGTH_SHORT,
-            ).show()
+            MsToast.show(if (hidden) "${ids.size} hidden" else "${ids.size} unhidden")
             exitSelectMode()
         }
     }
@@ -369,6 +378,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
         FilterSheet(
             quality = quality, onQuality = { quality = it },
             subFilter = subFilter, onSubFilter = { subFilter = it },
+            subLangFilter = subLangFilter, onSubLangFilter = { subLangFilter = it },
             sort = sort, onSort = { sort = it },
             onDismiss = { showFilters = false },
         )
@@ -567,6 +577,7 @@ private fun PosterCell(
 private fun FilterSheet(
     quality: String, onQuality: (String) -> Unit,
     subFilter: String, onSubFilter: (String) -> Unit,
+    subLangFilter: String, onSubLangFilter: (String) -> Unit,
     sort: String, onSort: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -580,6 +591,11 @@ private fun FilterSheet(
         MsSheetContent(title = "Filters") {
             FilterRow("Quality", listOf("Any", "4K", "1080p", "720p", "480p"), quality, onQuality)
             FilterRow("Subtitles", listOf("Any", "Has subtitles", "No subtitles"), subFilter, onSubFilter)
+            FilterRow(
+                "Subtitle language",
+                listOf("Any", "Malayalam", "English", "Hindi", "Tamil", "Telugu"),
+                subLangFilter, onSubLangFilter,
+            )
             FilterRow("Sort", listOf("Recently added", "Title A–Z", "Year", "Size"), sort, onSort)
             LimePillButton(
                 text = "Apply filters",

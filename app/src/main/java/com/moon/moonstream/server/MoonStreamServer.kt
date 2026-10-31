@@ -375,6 +375,7 @@ class MoonStreamServer(
                 val bytes = readGlobalRange(offset, chunk)
                 if (bytes.isEmpty()) break
                 output.write(bytes)
+                ServerTelemetry.addBytes(appContext, bytes.size.toLong())
                 offset += bytes.size
                 remaining -= bytes.size
             }

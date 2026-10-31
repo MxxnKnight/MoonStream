@@ -1,6 +1,7 @@
 package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
+import com.moon.moonstream.ui.components.MsToast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
@@ -217,7 +218,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
             ChannelRowCache.rows = result
             ChannelRowCache.version = ScanUiState.channelListVersion.value
         } catch (e: Exception) {
-            Toast.makeText(context, "Couldn't load channels", Toast.LENGTH_SHORT).show()
+            MsToast.show("Couldn't load channels")
         } finally {
             if (!silent) loading = false
         }
@@ -258,13 +259,13 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
             listOf(ScanTarget(ch.id, ch.title, ch.isAnime)),
             ScanMode.FROM_SCRATCH,
         )
-        Toast.makeText(context, "Full rescan started", Toast.LENGTH_SHORT).show()
+        MsToast.show("Full rescan started")
     }
 
     fun scanAll() {
         val targets = channels.map { ScanTarget(it.id, it.title, it.isAnime) }
         if (targets.isEmpty()) {
-            Toast.makeText(context, "No channels to scan", Toast.LENGTH_SHORT).show()
+            MsToast.show("No channels to scan")
             return
         }
         ScanService.start(context, targets, ScanMode.INCREMENTAL)
@@ -287,7 +288,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 listOf(ScanTarget(id, title, isAnime)),
                 ScanMode.INCREMENTAL,
             )
-            Toast.makeText(context, "Added $title — scan started", Toast.LENGTH_SHORT).show()
+            MsToast.show("Added $title — scan started")
         }
     }
 
@@ -299,11 +300,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
             channels = channels.map {
                 if (it.id == ch.id) it.copy(isAnime = !it.isAnime) else it
             }
-            Toast.makeText(
-                context,
-                if (!ch.isAnime) "Marked as anime channel" else "Unmarked as anime channel",
-                Toast.LENGTH_SHORT,
-            ).show()
+            MsToast.show(if (!ch.isAnime) "Marked as anime channel" else "Unmarked as anime channel")
         }
     }
 
@@ -317,7 +314,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 db.channelConfigDao().upsert(cfg.copy(removed = true))
             }
             channels = channels.filter { it.id != ch.id }
-            Toast.makeText(context, "Removed ${ch.title}", Toast.LENGTH_SHORT).show()
+            MsToast.show("Removed ${ch.title}")
         }
     }
 
@@ -379,15 +376,11 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                     onRescanScratch = { rescanScratch(ch) },
                     onToggleAnime = { toggleAnime(ch) },
                     onRefreshAvatar = {
-                        Toast.makeText(
-                            context,
-                            "Avatars aren't exposed by the current backend",
-                            Toast.LENGTH_SHORT,
-                        ).show()
+                        MsToast.show("Avatars aren't exposed by the current backend")
                     },
                     onCopyId = {
                         clipboard.setText(AnnotatedString(ch.id.toString()))
-                        Toast.makeText(context, "Channel ID copied", Toast.LENGTH_SHORT).show()
+                        MsToast.show("Channel ID copied")
                     },
                     onRemove = { confirmRemove = ch },
                 )
@@ -435,7 +428,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                         clipboard.setText(
                             AnnotatedString("${AppUiState.manifestLink}/stream/${f.channelId}/${f.messageId}"),
                         )
-                        Toast.makeText(context, "Stream link copied", Toast.LENGTH_SHORT).show()
+                        MsToast.show("Stream link copied")
                     },
                     onLinkToTitle = { linkFile = f },
                 )
@@ -534,11 +527,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                             )
                             db.mediaDao().refreshAggregates(mediaId, now)
                             db.unmatchedDao().delete(f.id)
-                            Toast.makeText(
-                                context,
-                                "Created “${picked.title}”",
-                                Toast.LENGTH_SHORT,
-                            ).show()
+                            MsToast.show("Created “${picked.title}”")
                         }
                         else -> {
                             val media = db.mediaDao().findByTitle(f.channelId, norm)
@@ -557,13 +546,9 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                                 )
                                 db.mediaDao().refreshAggregates(media.id, now)
                                 db.unmatchedDao().delete(f.id)
-                                Toast.makeText(context, "Linked to ${media.title}", Toast.LENGTH_SHORT).show()
+                                MsToast.show("Linked to ${media.title}")
                             } else {
-                                Toast.makeText(
-                                    context,
-                                    "No library entry matches — use Create entry",
-                                    Toast.LENGTH_LONG,
-                                ).show()
+                                MsToast.show("No library entry matches — use Create entry")
                             }
                         }
                     }
@@ -1027,7 +1012,7 @@ private fun AddChannelSheet(
                 candidates = backend.listChannels().filter { it.id !in added }
             }
         } catch (e: Exception) {
-            Toast.makeText(context, "Couldn't load channels", Toast.LENGTH_SHORT).show()
+            MsToast.show("Couldn't load channels")
         } finally {
             loading = false
         }

@@ -57,6 +57,9 @@ interface MediaDao {
     @Query("SELECT * FROM media_items WHERE stremioId = :stremioId LIMIT 1")
     suspend fun findByStremioId(stremioId: String): MediaItemEntity?
 
+    @Query("SELECT title FROM media_items ORDER BY updatedAt DESC LIMIT 5")
+    suspend fun latestTitles(): List<String>
+
     @Query("UPDATE media_items SET stremioId = :stremioId WHERE id = :id")
     suspend fun setStremioId(id: Long, stremioId: String)
 
@@ -212,6 +215,10 @@ interface SubtitleDao {
     /** Media ids having at least one linked subtitle. */
     @Query("SELECT DISTINCT mediaId FROM subtitle_files WHERE mediaId IS NOT NULL")
     suspend fun mediaIdsWithSubtitles(): List<Long>
+
+    /** Media ids having at least one linked subtitle in the given language ("Mal", "Eng", ...). */
+    @Query("SELECT DISTINCT mediaId FROM subtitle_files WHERE mediaId IS NOT NULL AND language = :lang")
+    suspend fun mediaIdsWithSubtitleLang(lang: String): List<Long>
 }
 
 @Dao

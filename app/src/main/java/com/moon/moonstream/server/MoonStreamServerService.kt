@@ -70,6 +70,7 @@ class MoonStreamServerService : Service() {
         server = s
         if (s.start()) {
             AppUiState.serverOn = true
+            ServerTelemetry.onServerStart()
             val ip = MoonStreamServer.getLocalIpAddress()
             AppUiState.currentIp = ip
             AppUiState.addLog("SERVER", "Addon server running: ${s.addonManifestUrl()}")
@@ -87,6 +88,8 @@ class MoonStreamServerService : Service() {
         server = null
         if (AppUiState.serverOn) {
             AppUiState.serverOn = false
+            ServerTelemetry.flush(this)
+            ServerTelemetry.onServerStop()
             AppUiState.addLog("SERVER", "Addon server stopped")
         }
         stopForeground(STOP_FOREGROUND_REMOVE)

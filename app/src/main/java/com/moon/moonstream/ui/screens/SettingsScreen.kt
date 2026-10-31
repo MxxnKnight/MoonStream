@@ -8,6 +8,7 @@ import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.moon.moonstream.ui.components.MsToast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -196,15 +197,15 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 withContext(Dispatchers.Main) {
                     if (msgId != null) {
                         markBackedUp()
-                        Toast.makeText(context, "Cloud backup pushed to Saved Messages", Toast.LENGTH_SHORT).show()
+                        MsToast.show("Cloud backup pushed to Saved Messages")
                         onDone()
                     } else {
-                        Toast.makeText(context, "Telegram cloud backup failed", Toast.LENGTH_SHORT).show()
+                        MsToast.show("Telegram cloud backup failed")
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Backup error: ${e.message}", Toast.LENGTH_LONG).show()
+                    MsToast.show("Backup error: ${e.message}")
                 }
             } finally {
                 backupWorking = false
@@ -220,14 +221,14 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 val ref = BackendProvider.backend.findLatestBackup()
                 if (ref == null) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "No backup found in Saved Messages", Toast.LENGTH_SHORT).show()
+                        MsToast.show("No backup found in Saved Messages")
                     }
                     return@launch
                 }
                 val bytes = BackendProvider.backend.downloadBackup(ref)
                 if (bytes == null) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Could not download backup file from Telegram", Toast.LENGTH_SHORT).show()
+                        MsToast.show("Could not download backup file from Telegram")
                     }
                     return@launch
                 }
@@ -236,15 +237,11 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 com.moon.moonstream.index.scan.ScanUiState.bumpChannelListVersion()
                 withContext(Dispatchers.Main) {
                     markBackedUp()
-                    Toast.makeText(
-                        context,
-                        "Restored from Telegram: ${summary.channels} channels, ${summary.media} titles, ${summary.files} files",
-                        Toast.LENGTH_LONG,
-                    ).show()
+                    MsToast.show("Restored from Telegram: ${summary.channels} channels, ${summary.media} titles, ${summary.files} files")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Restore error: ${e.message}", Toast.LENGTH_LONG).show()
+                    MsToast.show("Restore error: ${e.message}")
                 }
             } finally {
                 backupWorking = false
@@ -274,11 +271,11 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     }
                     context.startActivity(Intent.createChooser(share, "Save backup"))
                     markBackedUp()
-                    Toast.makeText(context, "Backup ready — pick where to save it", Toast.LENGTH_SHORT).show()
+                    MsToast.show("Backup ready — pick where to save it")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Backup failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    MsToast.show("Backup failed: ${e.message}")
                 }
             } finally {
                 backupWorking = false
@@ -316,11 +313,11 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 }
                 withContext(Dispatchers.Main) {
                     markBackedUp()
-                    Toast.makeText(context, "Saved to Downloads/MoonStream/$name", Toast.LENGTH_LONG).show()
+                    MsToast.show("Saved to Downloads/MoonStream/$name")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    MsToast.show("Export failed: ${e.message}")
                 }
             } finally {
                 backupWorking = false
@@ -342,16 +339,11 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 com.moon.moonstream.index.scan.ScanUiState.bumpChannelListVersion()
                 withContext(Dispatchers.Main) {
                     markBackedUp()
-                    Toast.makeText(
-                        context,
-                        "Restored: ${summary.channels} channels, ${summary.media} titles, " +
-                            "${summary.files} files, ${summary.subtitles} subtitles",
-                        Toast.LENGTH_LONG,
-                    ).show()
+                    MsToast.show("Restored: ${summary.channels} channels, ${summary.media} titles, " + "${summary.files} files, ${summary.subtitles} subtitles")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Restore failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    MsToast.show("Restore failed: ${e.message}")
                 }
             } finally {
                 backupWorking = false
@@ -384,9 +376,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 withContext(Dispatchers.Main) {
                     checkingUpdate = false
                     if (info != null) updateInfo = info
-                    else Toast.makeText(
-                        context, "You're on the latest version", Toast.LENGTH_SHORT,
-                    ).show()
+                    else MsToast.show("You're on the latest version")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -419,8 +409,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         }
     }
 
-    fun fakeSaved() = Toast.makeText(context, "Saved (fake)", Toast.LENGTH_SHORT).show()
-    fun fakeVerify() = Toast.makeText(context, "API key looks valid (fake)", Toast.LENGTH_SHORT).show()
+    fun fakeSaved() = MsToast.show("Saved (fake)")
+    fun fakeVerify() = MsToast.show("API key looks valid (fake)")
 
     var verifyingTmdb by remember { mutableStateOf(false) }
 
@@ -428,7 +418,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     fun verifyTmdb() {
         val key = tmdbKey.trim()
         if (key.isEmpty()) {
-            Toast.makeText(context, "Paste a TMDB key first", Toast.LENGTH_SHORT).show()
+            MsToast.show("Paste a TMDB key first")
             return
         }
         verifyingTmdb = true
@@ -449,11 +439,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 false
             }
             verifyingTmdb = false
-            Toast.makeText(
-                context,
-                if (ok) "TMDB key valid" else "TMDB key invalid",
-                Toast.LENGTH_SHORT,
-            ).show()
+            MsToast.show(if (ok) "TMDB key valid" else "TMDB key invalid")
         }
     }
 
@@ -686,11 +672,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         text = "See Template",
                         fontSize = 13,
                         onClick = {
-                            Toast.makeText(
-                                context,
-                                "Example: https://my-posters.example/{title}-{year}.jpg (fake)",
-                                Toast.LENGTH_LONG,
-                            ).show()
+                            MsToast.show("Example: https://my-posters.example/{title}-{year}.jpg (fake)")
                         },
                     )
                 }
@@ -1099,7 +1081,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     contentDescription = "Support the developer",
                     tint = Color(0xFFF44336),
                     onClick = {
-                        Toast.makeText(context, "Thank you! (fake)", Toast.LENGTH_SHORT).show()
+                        MsToast.show("Thank you! (fake)")
                     },
                 )
             }
@@ -1336,7 +1318,7 @@ private fun AccountCard(onLoggedOut: () -> Unit) {
                             }
                             AppUiState.setLoggedOut(context)
                             showLogout = false
-                            Toast.makeText(context, "Logged out", Toast.LENGTH_SHORT).show()
+                            MsToast.show("Logged out")
                             onLoggedOut()
                         }
                     },
@@ -1453,11 +1435,7 @@ private fun CacheStorageBlock() {
             )
             Spacer(Modifier.width(10.dp))
             InfoDot(onClick = {
-                Toast.makeText(
-                    context,
-                    "Temporary files the app keeps on your phone (update downloads). Clearing never touches your library or channels. Video streams straight from Telegram and isn't stored.",
-                    Toast.LENGTH_LONG,
-                ).show()
+                MsToast.show("Temporary files the app keeps on your phone (update downloads). Clearing never touches your library or channels. Video streams straight from Telegram and isn't stored.")
             })
         }
         Row(
@@ -1479,11 +1457,7 @@ private fun CacheStorageBlock() {
                         val freed = CacheManager.clear(context)
                         AppUiState.refreshCacheUsed(context)
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(
-                                context,
-                                if (freed > 0) "Cache cleared" else "Cache is already empty",
-                                Toast.LENGTH_SHORT,
-                            ).show()
+                            MsToast.show(if (freed > 0) "Cache cleared" else "Cache is already empty")
                         }
                     }
                 },

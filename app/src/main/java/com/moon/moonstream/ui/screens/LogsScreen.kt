@@ -1,6 +1,7 @@
 package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
+import com.moon.moonstream.ui.components.MsToast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -85,7 +86,7 @@ fun LogsScreen(onBack: () -> Unit) {
                 onClick = {
                     val all = lines.joinToString("\n") { "${it.time} [${it.tag}] ${it.message}" }
                     clipboard.setText(AnnotatedString(all))
-                    Toast.makeText(context, "Logs copied", Toast.LENGTH_SHORT).show()
+                    MsToast.show("Logs copied")
                 },
             )
             Spacer(Modifier.width(8.dp))
@@ -94,7 +95,7 @@ fun LogsScreen(onBack: () -> Unit) {
                 fontSize = 13,
                 onClick = {
                     AppUiState.clearLogs()
-                    Toast.makeText(context, "Logs cleared", Toast.LENGTH_SHORT).show()
+                    MsToast.show("Logs cleared")
                 },
             )
         }

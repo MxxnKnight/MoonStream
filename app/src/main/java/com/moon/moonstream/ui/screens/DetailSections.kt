@@ -1,6 +1,10 @@
 package com.moon.moonstream.ui.screens
 
-import android.widget.Toast
+import com.moon.moonstream.ui.components.MsToast
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -582,14 +586,22 @@ fun AddStreamSheet(
 @Composable
 fun AddSubtitleSheet(
     unlinked: List<SubtitleFileEntity>,
+    isSeries: Boolean,
     onAttachExisting: (SubtitleFileEntity) -> Unit,
     onDismiss: () -> Unit,
-    onSaveLink: (link: String, language: String) -> Unit,
+    onFetchFileName: suspend (link: String) -> String?,
+    onSaveLink: (link: String, language: String, fileName: String, season: Int?, episode: Int?) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
     var link by remember { mutableStateOf("") }
     var language by remember { mutableStateOf("Mal") }
-    val langOptions = listOf("Mal" to "Malayalam", "Eng" to "English", "Hin" to "Hindi", "Tam" to "Tamil", "Tel" to "Telugu")
+    // moon only uploads English and Malayalam subtitles.
+    val langOptions = listOf("Mal" to "Malayalam", "Eng" to "English")
+    var fetchedName by remember { mutableStateOf<String?>(null) }
+    var fetching by remember { mutableStateOf(false) }
+    var seasonText by remember { mutableStateOf("") }
+    var episodeText by remember { mutableStateOf("") }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -628,7 +640,7 @@ fun AddSubtitleSheet(
                 color = MsColors.TextSecondary,
             )
             MsTextField(
-                value = link, onValueChange = { link = it },
+                value = link, onValueChange = { link = it; fetchedName = null },
                 hint = "Subtitle message link (t.me/c/…/…)",
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -655,11 +667,73 @@ fun AddSubtitleSheet(
                     }
                 }
             }
-            LimePillButton(
-                text = "Add subtitle",
-                onClick = { onSaveLink(link, language) },
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (isSeries) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    MsTextField(
+                        value = seasonText,
+                        onValueChange = { seasonText = it.filter(Char::isDigit).take(2) },
+                        hint = "Season",
+                        modifier = Modifier.weight(1f),
+                    )
+                    MsTextField(
+                        value = episodeText,
+                        onValueChange = { episodeText = it.filter(Char::isDigit).take(4) },
+                        hint = "Episode",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            // Fetched filename preview (after Fetch).
+            fetchedName?.let { name ->
+                Text(
+                    name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MsColors.TextSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (fetchedName == null) {
+                MsOutlinePill(
+                    text = if (fetching) "Fetching…" else "Fetch filename",
+                    onClick = {
+                        if (fetching || link.isBlank()) return@MsOutlinePill
+                        fetching = true
+                        scope.launch(Dispatchers.IO) {
+                            val name = onFetchFileName(link)
+                            withContext(Dispatchers.Main) {
+                                fetching = false
+                                if (name != null) {
+                                    fetchedName = name
+                                    // Auto-parse season/episode from the filename;
+                                    // user can still edit the boxes.
+                                    val p = com.moon.moonstream.index.parse.FilenameParser.parse(name)
+                                    if (p.season != null) seasonText = p.season.toString()
+                                    if (p.episode != null) episodeText = p.episode.toString()
+                                } else {
+                                    MsToast.show("Couldn't read that link")
+                                }
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                LimePillButton(
+                    text = "Add subtitle",
+                    onClick = {
+                        onSaveLink(
+                            link, language, fetchedName ?: "subtitle.srt",
+                            seasonText.toIntOrNull(), episodeText.toIntOrNull(),
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }

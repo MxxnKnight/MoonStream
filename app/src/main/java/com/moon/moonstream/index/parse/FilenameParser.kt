@@ -149,8 +149,14 @@ object FilenameParser {
         // Leading uploader tag: "[ToonWorld] Solo Leveling..." -> "Solo Leveling..."
         val leading = Regex("""^(\[[^\]]+\]|\([^)]+\)|【[^】]+】)\s*""").find(work)
         if (leading != null) {
-            val rest = work.substring(leading.range.last + 1)
-            if (Regex("[a-zA-Z]{2,}").containsMatchIn(rest)) work = rest
+            val tag = leading.groupValues[1]
+            // Don't strip the tag if it carries the season/episode itself
+            // (e.g. "[S01 E24] Seven Deadly Sins ...").
+            val tagHasSeEp = sxxexxRe.containsMatchIn(tag) || nxnRe.containsMatchIn(tag)
+            if (!tagHasSeEp) {
+                val rest = work.substring(leading.range.last + 1)
+                if (Regex("[a-zA-Z]{2,}").containsMatchIn(rest)) work = rest
+            }
         }
         // Trailing lone bracket group.
         work = Regex("""\s*[\(\[][A-Za-z0-9_\-\.\s]{1,30}[\)\]]\s*$""").replace(work, "")

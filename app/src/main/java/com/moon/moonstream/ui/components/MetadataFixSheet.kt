@@ -98,6 +98,8 @@ fun MetadataFixSheet(
     var selected by remember { mutableStateOf<EnrichedMeta?>(null) }
     var searchJob by remember { mutableStateOf<Job?>(null) }
     var noKeyHint by remember { mutableStateOf(false) }
+    // Movie/Series toggle for the search (anime always uses Kitsu).
+    var searchType by remember { mutableStateOf(if (mediaType == "movie") "movie" else "series") }
 
     val heading = when (mode) {
         FixMode.FIX_TITLE -> "Fix Metadata — This Title"
@@ -106,7 +108,7 @@ fun MetadataFixSheet(
     }
 
     // Debounced live search.
-    LaunchedEffect(query) {
+    LaunchedEffect(query, searchType) {
         searchJob?.cancel()
         selected = null
         if (query.isBlank()) {
@@ -119,12 +121,13 @@ fun MetadataFixSheet(
             delay(450)
             searching = true
             val key = ScanPrefs.getTmdbKey(context)
-            noKeyHint = !isAnime && key.isBlank()
+            // Cinemeta needs no key — only hint when TMDB is the sole source.
+            noKeyHint = false
             results = MetadataMatcher.searchTitles(
                 query = query,
-                // Anime goes through Kitsu; otherwise match the entry's real
-                // type — movies were wrongly searching TV shows.
-                type = if (isAnime) "series" else mediaType,
+                // Anime goes through Kitsu; otherwise use the toggle —
+                // movies were wrongly searching TV shows.
+                type = if (isAnime) "series" else searchType,
                 isAnime = isAnime,
                 tmdbKey = key,
             )
@@ -154,6 +157,32 @@ fun MetadataFixSheet(
                 hint = "Search title",
                 modifier = Modifier.fillMaxWidth(),
             )
+            // Movie / Series search toggle (anime always searches Kitsu).
+            if (!isAnime) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    listOf("movie" to "Movies", "series" to "Series").forEach { (v, label) ->
+                        val sel = searchType == v
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (sel) MsColors.Accent else MsColors.SurfaceAlt)
+                                .clickable { searchType = v }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (sel) MsColors.OnAccent else MsColors.TextSecondary,
+                            )
+                        }
+                    }
+                }
+            }
             when {
                 searching -> {
                     Row(
@@ -335,6 +364,16 @@ private fun MetaResultRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
             )
+            if (!result.overview.isNullOrBlank()) {
+                Text(
+                    result.overview!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MsColors.TextSecondary.copy(alpha = 0.8f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         }
         if (selected) {
             Box(

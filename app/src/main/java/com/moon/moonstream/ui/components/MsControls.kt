@@ -1,5 +1,6 @@
 package com.moon.moonstream.ui.components
 
+import com.moon.moonstream.ui.components.MsToast
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -875,7 +876,7 @@ fun ScanActionButton(
                         kotlinx.coroutines.delay(2000)
                         scanning = false
                         done = true
-                        Toast.makeText(context, doneToast, Toast.LENGTH_SHORT).show()
+                        MsToast.show(doneToast)
                     }
                 }
             }

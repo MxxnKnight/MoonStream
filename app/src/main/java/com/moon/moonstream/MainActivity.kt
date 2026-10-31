@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
 
     AppUiState.init(this)
     BackendProvider.init(this)
+    com.moon.moonstream.server.ServerTelemetry.load(this)
 
     // Start TelegramManager early so it can restore the saved session
     val telegramManager = com.moon.moonstream.tdlib.TelegramManager.getInstance(this)
@@ -192,7 +193,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     },
 )
                     AppScreen.Login -> LoginScreen(onLoggedIn = { goTab(AppScreen.Server) })
-                    AppScreen.Server -> ServerScreen()
+                    AppScreen.Server -> ServerScreen(onOpenLibrary = { goTab(AppScreen.Library) })
                     AppScreen.Library ->
                         LibraryScreen(onOpenDetail = { id -> go(AppScreen.Detail(id)) })
                     is AppScreen.Detail ->
@@ -301,6 +302,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     }
                 }
             }
+            // In-app toast overlay (above content, below nothing — it's last).
+            com.moon.moonstream.ui.components.MsToastHost(
+                state = com.moon.moonstream.ui.components.MsToast.host,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
     }
 }
