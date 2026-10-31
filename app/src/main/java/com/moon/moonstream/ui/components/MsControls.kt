@@ -9,6 +9,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -63,6 +66,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -191,32 +195,107 @@ fun MsTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     trailingIcon: @Composable (() -> Unit)? = null,
 ) {
-    // Single-line fields get a compact fixed height so the box hugs the
-    // text instead of floating in Material's roomy default padding.
-    // Multi-line fields keep their natural height.
-    val compact = if (singleLine && minLines <= 1) Modifier.height(48.dp) else Modifier
-    OutlinedTextField(
+    // Single-line fields get a compact 48dp field so the box hugs the text
+    // instead of floating in Material's roomy default padding. Multi-line
+    // fields keep the standard OutlinedTextField.
+    // NOTE: forcing 48dp on OutlinedTextField clips the top of the text —
+    // its inner padding is built for a 56dp+ box (and this Compose version
+    // has no contentPadding override). So the compact field is a
+    // BasicTextField with a hand-drawn border: exact height, text perfectly
+    // centered, nothing to clip.
+    val compact = singleLine && minLines <= 1
+    if (compact) {
+        CompactTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier,
+            hint = hint,
+            keyboardOptions = keyboardOptions,
+            trailingIcon = trailingIcon,
+        )
+    } else {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier,
+            textStyle = MaterialTheme.typography.bodyMedium,
+            placeholder = if (hint.isNotEmpty()) {
+                { Text(hint, color = MsColors.TextSecondary) }
+            } else null,
+            singleLine = singleLine,
+            minLines = minLines,
+            keyboardOptions = keyboardOptions,
+            shape = RoundedCornerShape(MsRadii.Field),
+            trailingIcon = trailingIcon,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = MsColors.TextPrimary,
+                unfocusedTextColor = MsColors.TextPrimary,
+                cursorColor = MsColors.Accent,
+                focusedBorderColor = MsColors.Accent,
+                unfocusedBorderColor = MsColors.TextSecondary.copy(alpha = 0.35f),
+                focusedPlaceholderColor = MsColors.TextSecondary,
+                unfocusedPlaceholderColor = MsColors.TextSecondary,
+            ),
+        )
+    }
+}
+
+/**
+ * Compact 48dp single-line text field with a hand-drawn border.
+ * The text is vertically centered in the full inner height, so it can
+ * never clip the way a height-forced OutlinedTextField does.
+ */
+@Composable
+private fun CompactTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    hint: String = "",
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    trailingIcon: @Composable (() -> Unit)? = null,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val borderColor =
+        if (focused) MsColors.Accent else MsColors.TextSecondary.copy(alpha = 0.35f)
+    val borderWidth = if (focused) 2.dp else 1.dp
+
+    BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.then(compact),
-        textStyle = MaterialTheme.typography.bodyMedium,
-        placeholder = if (hint.isNotEmpty()) {
-            { Text(hint, color = MsColors.TextSecondary) }
-        } else null,
-        singleLine = singleLine,
-        minLines = minLines,
+        modifier = modifier.height(48.dp),
+        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MsColors.TextPrimary),
+        singleLine = true,
         keyboardOptions = keyboardOptions,
-        shape = RoundedCornerShape(MsRadii.Field),
-        trailingIcon = trailingIcon,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = MsColors.TextPrimary,
-            unfocusedTextColor = MsColors.TextPrimary,
-            cursorColor = MsColors.Accent,
-            focusedBorderColor = MsColors.Accent,
-            unfocusedBorderColor = MsColors.TextSecondary.copy(alpha = 0.35f),
-            focusedPlaceholderColor = MsColors.TextSecondary,
-            unfocusedPlaceholderColor = MsColors.TextSecondary,
-        ),
+        cursorBrush = SolidColor(MsColors.Accent),
+        interactionSource = interactionSource,
+        decorationBox = { innerTextField ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(MsRadii.Field))
+                    .border(borderWidth, borderColor, RoundedCornerShape(MsRadii.Field))
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    if (value.isEmpty() && hint.isNotEmpty()) {
+                        Text(
+                            hint,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    innerTextField()
+                }
+                if (trailingIcon != null) {
+                    Spacer(Modifier.width(8.dp))
+                    trailingIcon()
+                }
+            }
+        },
     )
 }
 
