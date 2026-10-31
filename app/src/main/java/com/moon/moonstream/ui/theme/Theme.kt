@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.moon.moonstream.R
@@ -54,10 +55,13 @@ object MsRadii {
 }
 
 // ---------------------------------------------------------------------------
-// Bundled font. The target device's handwriting system font restyles any UI
-// that falls back to the system default — so Inter is forced through EVERY
-// MaterialTheme typography style below, and every custom component uses these
-// styles (or an explicit Inter fontFamily) instead of raw Text defaults.
+// Bundled fonts. The target device's handwriting system font restyles any UI
+// that falls back to the system default — so every family below is bundled
+// and forced through the typography styles; no style may fall back to the
+// system default.
+//   - Inter: body/UI text (readability)
+//   - Doto: display + headline styles (main screen titles, NoxMedia-style)
+//   - Redaction35: accents/metas (serif counterpoint, applied per-screen)
 // ---------------------------------------------------------------------------
 val Inter = FontFamily(
     Font(R.font.inter_regular, FontWeight.Normal),
@@ -66,24 +70,36 @@ val Inter = FontFamily(
     Font(R.font.inter_bold, FontWeight.Bold),
 )
 
-private fun Typography.withInter(): Typography {
-    fun TextStyle.i() = copy(fontFamily = Inter)
+val Doto = FontFamily(
+    Font(R.font.doto_regular, FontWeight.Normal),
+    Font(R.font.doto_bold, FontWeight.Bold),
+)
+
+val Redaction35 = FontFamily(
+    Font(R.font.redaction35_regular, FontWeight.Normal),
+    Font(R.font.redaction35_italic, FontWeight.Normal, FontStyle.Italic),
+    Font(R.font.redaction35_bold, FontWeight.Bold),
+)
+
+private fun Typography.withBrandFonts(): Typography {
+    fun TextStyle.inter() = copy(fontFamily = Inter)
+    fun TextStyle.doto() = copy(fontFamily = Doto)
     return copy(
-        displayLarge = displayLarge.i(),
-        displayMedium = displayMedium.i(),
-        displaySmall = displaySmall.i(),
-        headlineLarge = headlineLarge.i(),
-        headlineMedium = headlineMedium.i(),
-        headlineSmall = headlineSmall.i(),
-        titleLarge = titleLarge.i(),
-        titleMedium = titleMedium.i(),
-        titleSmall = titleSmall.i(),
-        bodyLarge = bodyLarge.i(),
-        bodyMedium = bodyMedium.i(),
-        bodySmall = bodySmall.i(),
-        labelLarge = labelLarge.i(),
-        labelMedium = labelMedium.i(),
-        labelSmall = labelSmall.i(),
+        displayLarge = displayLarge.doto(),
+        displayMedium = displayMedium.doto(),
+        displaySmall = displaySmall.doto(),
+        headlineLarge = headlineLarge.doto(),
+        headlineMedium = headlineMedium.doto(),
+        headlineSmall = headlineSmall.doto(),
+        titleLarge = titleLarge.inter(),
+        titleMedium = titleMedium.inter(),
+        titleSmall = titleSmall.inter(),
+        bodyLarge = bodyLarge.inter(),
+        bodyMedium = bodyMedium.inter(),
+        bodySmall = bodySmall.inter(),
+        labelLarge = labelLarge.inter(),
+        labelMedium = labelMedium.inter(),
+        labelSmall = labelSmall.inter(),
     )
 }
 
@@ -105,7 +121,7 @@ fun MoonStreamTheme(content: @Composable () -> Unit) {
     )
     MaterialTheme(
         colorScheme = scheme,
-        typography = Typography().withInter(),
+        typography = Typography().withBrandFonts(),
         content = content,
     )
 }

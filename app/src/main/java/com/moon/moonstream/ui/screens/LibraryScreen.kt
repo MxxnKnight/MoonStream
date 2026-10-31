@@ -76,6 +76,7 @@ import com.moon.moonstream.ui.components.MsSheetContent
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.model.formatBytes
 import com.moon.moonstream.ui.theme.MsColors
+import com.moon.moonstream.ui.theme.Redaction35
 import kotlinx.coroutines.launch
 
 /**
@@ -175,7 +176,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             )
             Text(
                 "${allItems.size} titles · $totalStreams streams indexed",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = Redaction35),
                 color = MsColors.TextSecondary,
                 modifier = Modifier.padding(start = 20.dp, top = 2.dp, end = 20.dp, bottom = 12.dp),
             )

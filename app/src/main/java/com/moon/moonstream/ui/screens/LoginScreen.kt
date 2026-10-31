@@ -5,12 +5,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
@@ -54,7 +56,12 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
     var step by remember { mutableStateOf(0) } // 0=api, 1=phone, 2=code, 3=password
     var apiIdText by remember { mutableStateOf("") }
     var apiHash by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
+    var countryCode by remember { mutableStateOf("+91") }
+    var numberPart by remember { mutableStateOf("") }
+    // The full international number — the only thing the auth call sees,
+    // exactly as the old single field produced it. Splitting the UI never
+    // changes what TDLib receives.
+    val phone = countryCode + numberPart
     var code by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -185,17 +192,40 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
         }
 
         // ========== STEP 1: PHONE ==========
+        // Split input: short country-code field on the left, the number
+        // filling the rest. Both feed the single `phone` value above.
         if (step == 1) {
-            MsTextField(
-                value = phone,
-                onValueChange = {
-                    phone = it.filter { c -> c.isDigit() || c == '+' }.take(16)
-                    errorMessage = null
-                },
-                hint = "Phone number (e.g. +919876543210)",
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-            )
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MsTextField(
+                    value = countryCode,
+                    onValueChange = {
+                        var clean = it.filter { c -> c.isDigit() || c == '+' }.take(5)
+                        clean = clean.filterIndexed { i, c -> c != '+' || i == 0 }
+                        if (clean.isNotEmpty() && !clean.startsWith("+")) clean = "+$clean"
+                        countryCode = clean
+                        errorMessage = null
+                    },
+                    hint = "+91",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.width(88.dp),
+                )
+
+                Spacer(Modifier.width(10.dp))
+
+                MsTextField(
+                    value = numberPart,
+                    onValueChange = {
+                        numberPart = it.filter { c -> c.isDigit() }.take(15)
+                        errorMessage = null
+                    },
+                    hint = "Phone number",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.weight(1f),
+                )
+            }
 
             Spacer(Modifier.height(16.dp))
 

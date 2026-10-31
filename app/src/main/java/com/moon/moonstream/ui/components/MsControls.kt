@@ -191,10 +191,15 @@ fun MsTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     trailingIcon: @Composable (() -> Unit)? = null,
 ) {
+    // Single-line fields get a compact fixed height so the box hugs the
+    // text instead of floating in Material's roomy default padding.
+    // Multi-line fields keep their natural height.
+    val compact = if (singleLine && minLines <= 1) Modifier.height(48.dp) else Modifier
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier,
+        modifier = modifier.then(compact),
+        textStyle = MaterialTheme.typography.bodyMedium,
         placeholder = if (hint.isNotEmpty()) {
             { Text(hint, color = MsColors.TextSecondary) }
         } else null,
