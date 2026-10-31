@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * The on-phone library database. Lazily built; call [get] from a background
@@ -18,7 +20,7 @@ import androidx.room.RoomDatabase
         UnmatchedFileEntity::class,
         ChannelConfigEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class MsDatabase : RoomDatabase() {
@@ -33,6 +35,17 @@ abstract class MsDatabase : RoomDatabase() {
         @Volatile
         private var instance: MsDatabase? = null
 
+        /**
+         * v2 -> v3: adds media_items.stremioId (the Stremio-facing tt/tg ID).
+         * Non-destructive — the library survives; missing values are
+         * backfilled at startup (see AppUiState.init).
+         */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE media_items ADD COLUMN stremioId TEXT")
+            }
+        }
+
         fun get(context: Context): MsDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -40,8 +53,10 @@ abstract class MsDatabase : RoomDatabase() {
                     MsDatabase::class.java,
                     "moonstream.db",
                 )
-                    // Pre-release app: schema changes wipe and rescan. Never
-                    // ship a destructive migration past v1.0 without a real one.
+                    .addMigrations(MIGRATION_2_3)
+                    // Pre-release app: unknown schema jumps still wipe and
+                    // rescan. Never ship a destructive migration past v1.0
+                    // without a real one.
                     .fallbackToDestructiveMigration()
                     .build().also { instance = it }
             }

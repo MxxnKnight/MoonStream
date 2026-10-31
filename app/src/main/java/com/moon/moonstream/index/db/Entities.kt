@@ -26,6 +26,11 @@ data class MediaItemEntity(
     val type: String,
     val imdbId: String?,
     val tmdbId: Int?,
+    /**
+     * Stremio-facing ID: real `tt...` when matched, else synthetic `tg...`
+     * (see StremioIds). Set at index time; backfilled for older rows.
+     */
+    val stremioId: String? = null,
     val posterUrl: String?,
     val overview: String?,
     val totalSize: Long,

@@ -54,6 +54,12 @@ interface MediaDao {
     @Query("SELECT * FROM media_items WHERE imdbId = :imdbId LIMIT 1")
     suspend fun findByImdb(imdbId: String): MediaItemEntity?
 
+    @Query("SELECT * FROM media_items WHERE stremioId = :stremioId LIMIT 1")
+    suspend fun findByStremioId(stremioId: String): MediaItemEntity?
+
+    @Query("UPDATE media_items SET stremioId = :stremioId WHERE id = :id")
+    suspend fun setStremioId(id: Long, stremioId: String)
+
     @Query("SELECT * FROM media_items WHERE channelId = :channelId")
     suspend fun getAllByChannel(channelId: Long): List<MediaItemEntity>
 

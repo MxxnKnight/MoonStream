@@ -3,6 +3,7 @@ package com.moon.moonstream.backup
 import android.content.Context
 import android.provider.Settings
 import com.moon.moonstream.index.db.MsDatabase
+import com.moon.moonstream.index.StremioIds
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.state.MsAccent
 import org.json.JSONArray
@@ -88,6 +89,7 @@ object BackupManager {
                     .put("type", m.type)
                     .put("imdbId", m.imdbId)
                     .put("tmdbId", m.tmdbId)
+                    .put("stremioId", m.stremioId)
                     .put("posterUrl", m.posterUrl)
                     .put("overview", m.overview)
                     .put("totalSize", m.totalSize)
@@ -197,6 +199,15 @@ object BackupManager {
                     type = o.optString("type", "movie"),
                     imdbId = o.optString("imdbId", null),
                     tmdbId = if (o.isNull("tmdbId")) null else o.optInt("tmdbId"),
+                    // Preserved from the backup when present; old backups
+                    // (or hand-edited ones) fall back to the deterministic
+                    // synthetic ID — never null after this point.
+                    stremioId = o.optString("stremioId", null)
+                        ?: StremioIds.forNewItem(
+                            o.getLong("channelId"),
+                            o.optString("normalizedTitle", o.optString("title", "")),
+                            o.optString("imdbId", null),
+                        ),
                     posterUrl = o.optString("posterUrl", null),
                     overview = o.optString("overview", null),
                     totalSize = o.optLong("totalSize", 0),

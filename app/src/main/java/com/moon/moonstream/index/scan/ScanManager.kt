@@ -9,6 +9,7 @@ import com.moon.moonstream.index.db.ScanCursorEntity
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.index.db.SubtitleFileEntity
 import com.moon.moonstream.index.db.UnmatchedFileEntity
+import com.moon.moonstream.index.StremioIds
 import com.moon.moonstream.index.match.EnrichedMeta
 import com.moon.moonstream.index.match.MetadataMatcher
 import com.moon.moonstream.index.parse.FilenameParser
@@ -212,6 +213,9 @@ object ScanManager {
                     type = type,
                     imdbId = meta?.imdbId,
                     tmdbId = meta?.tmdbId,
+                    // Real tt ID when matched, else a stable synthetic tg ID —
+                    // this is what Stremio clients (e.g. Nuvio) key on.
+                    stremioId = StremioIds.forNewItem(target.channelId, norm, meta?.imdbId),
                     posterUrl = meta?.posterUrl,
                     overview = meta?.overview,
                     totalSize = 0L,

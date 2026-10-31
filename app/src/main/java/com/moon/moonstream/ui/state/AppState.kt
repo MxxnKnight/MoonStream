@@ -7,9 +7,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import com.moon.moonstream.R
+import com.moon.moonstream.index.StremioIds
+import com.moon.moonstream.index.db.MsDatabase
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Phase 1: in-memory UI state shared across screens (fake data, no backend).
@@ -117,6 +122,22 @@ object AppUiState {
         currentIp = com.moon.moonstream.server.MoonStreamServer.getLocalIpAddress()
         if (logLines.isEmpty()) {
             seedFakeLogs()
+        }
+        // One-time backfill: rows created before the Stremio-ID scheme get
+        // their stable tt/tg ID now, so the addon serves them to clients
+        // like Nuvio without a rescan.
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val dao = MsDatabase.get(context).mediaDao()
+                dao.getAll()
+                    .filter { it.stremioId.isNullOrBlank() }
+                    .forEach { m ->
+                        dao.setStremioId(m.id, StremioIds.forMedia(m))
+                    }
+            } catch (_: Exception) {
+                // Best-effort: the server falls back to computing IDs on the
+                // fly, so a failed backfill is never fatal.
+            }
         }
     }
 

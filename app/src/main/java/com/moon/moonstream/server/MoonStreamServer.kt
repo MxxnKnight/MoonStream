@@ -8,6 +8,7 @@ import com.moon.moonstream.index.db.MediaItemEntity
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.index.db.SubtitleFileEntity
+import com.moon.moonstream.index.StremioIds
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStream
@@ -176,7 +177,10 @@ class MoonStreamServer(
             .put("resources", JSONArray(listOf("catalog", "meta", "stream", "subtitles")))
             .put("types", JSONArray(listOf("movie", "series")))
             .put("catalogs", catalogs)
-            .put("idPrefixes", JSONArray(listOf("ms_", "tt")))
+            // tt = real IMDb IDs, tg = stable synthetic IDs for everything
+            // else (Telegram-Stremio scheme — this is what lets clients like
+            // Nuvio accept and route our items), ms_ = legacy MoonStream IDs.
+            .put("idPrefixes", JSONArray(listOf("tt", "tg", "ms_")))
     }
 
     /** /catalog/{movie|series}/{id}.json */
@@ -194,7 +198,7 @@ class MoonStreamServer(
         return JSONObject().put("metas", metas)
     }
 
-    /** /meta/{movie|series}/{id}.json — id is ms_<dbId>[:s:e] or tt<imdbid>. */
+    /** /meta/{movie|series}/{id}.json — id is tt... / tg... [:s:e], or legacy ms_<dbId>[:s:e]. */
     private fun handleMeta(path: String): JSONObject {
         val trimmed = path.removePrefix("/meta/").removeSuffix(".json")
         val rawId = trimmed.split("/").getOrNull(1).orEmpty()
@@ -202,12 +206,13 @@ class MoonStreamServer(
         if (media == null) return JSONObject().put("meta", JSONObject())
 
         val meta = metaJson(media)
+        val sid = StremioIds.forMedia(media)
         val files = runBlocking { db.streamDao().listByMedia(media.id) }
         val videos = JSONArray()
         if (media.type == "movie") {
             for (f in files) {
                 videos.put(JSONObject()
-                    .put("id", stremioId(media.id, null, null))
+                    .put("id", sid)
                     .put("title", f.fileName)
                     .put("released", ""))
             }
@@ -219,7 +224,7 @@ class MoonStreamServer(
             for ((se, _) in episodes) {
                 val (s, e) = se
                 videos.put(JSONObject()
-                    .put("id", stremioId(media.id, s, e))
+                    .put("id", "$sid:$s:$e")
                     .put("title", if (s == 1) "Episode $e" else "S${s} E$e")
                     .put("season", s)
                     .put("episode", e))
@@ -229,15 +234,14 @@ class MoonStreamServer(
         return JSONObject().put("meta", meta)
     }
 
-    /** /stream/{movie|series}/{id}.json — id is ms_<dbId>[:s:e]. */
+    /** /stream/{movie|series}/{id}.json — id is tt... / tg... [:s:e], or legacy ms_<dbId>[:s:e]. */
     private fun handleStreamList(path: String): JSONObject {
         val trimmed = path.removePrefix("/stream/").removeSuffix(".json")
         val rawId = trimmed.split("/").getOrNull(1).orEmpty()
         val streams = JSONArray()
-        val parsed = parseStremioId(rawId) ?: return JSONObject().put("streams", streams)
-        val (mediaId, season, episode) = parsed
-        val media = runBlocking { db.mediaDao().getById(mediaId) } ?: return JSONObject().put("streams", streams)
-        val files = runBlocking { db.streamDao().listByMedia(mediaId) }
+        val media = runBlocking { resolveMedia(rawId) } ?: return JSONObject().put("streams", streams)
+        val (season, episode) = parseSeasonEpisode(rawId)
+        val files = runBlocking { db.streamDao().listByMedia(media.id) }
             .filter { f ->
                 if (season != null && episode != null) f.season == season && f.episode == episode
                 else true
@@ -257,14 +261,14 @@ class MoonStreamServer(
         return JSONObject().put("streams", streams)
     }
 
-    /** /subtitles/{movie|series}/{id}.json — id is ms_<dbId>[:s:e]. */
+    /** /subtitles/{movie|series}/{id}.json — id is tt... / tg... [:s:e], or legacy ms_<dbId>[:s:e]. */
     private fun handleSubtitles(path: String): JSONObject {
         val trimmed = path.removePrefix("/subtitles/").removeSuffix(".json")
         val rawId = trimmed.split("/").getOrNull(1).orEmpty()
         val subs = JSONArray()
-        val parsed = parseStremioId(rawId) ?: return JSONObject().put("subtitles", subs)
-        val (mediaId, season, episode) = parsed
-        val list = runBlocking { db.subtitleDao().listByMedia(mediaId) }
+        val media = runBlocking { resolveMedia(rawId) } ?: return JSONObject().put("subtitles", subs)
+        val (season, episode) = parseSeasonEpisode(rawId)
+        val list = runBlocking { db.subtitleDao().listByMedia(media.id) }
             .filter { s ->
                 if (season != null && episode != null) s.season == season && s.episode == episode
                 else true
@@ -366,8 +370,13 @@ class MoonStreamServer(
     // ---------------------------------------------------------------- helpers
 
     private fun metaJson(m: MediaItemEntity): JSONObject {
+        // The Stremio-facing ID: real tt... when matched, else a stable
+        // synthetic tg... — every item gets one, so clients like Nuvio
+        // accept the whole library, not just matched titles.
+        val sid = StremioIds.forMedia(m)
         val o = JSONObject()
-        o.put("id", stremioId(m.id, null, null))
+        o.put("id", sid)
+        o.put("imdb_id", sid)
         o.put("type", if (m.type == "anime") "series" else m.type)
         o.put("name", m.title)
         if (!m.year.isNullOrBlank()) o.put("year", m.year)
@@ -376,14 +385,16 @@ class MoonStreamServer(
             o.put("poster", m.posterUrl)
             o.put("background", m.posterUrl)
         }
-        if (!m.imdbId.isNullOrBlank()) o.put("imdb_id", m.imdbId)
         return o
     }
 
-    private fun stremioId(mediaId: Long, season: Int?, episode: Int?): String =
-        if (season != null && episode != null) "ms_${mediaId}:$season:$episode" else "ms_$mediaId"
+    /** "tt...[:s:e]" / "tg...[:s:e]" / "ms_<dbId>[:s:e]" → (season, episode). */
+    private fun parseSeasonEpisode(rawId: String): Pair<Int?, Int?> {
+        val parts = rawId.split(":")
+        return parts.getOrNull(1)?.toIntOrNull() to parts.getOrNull(2)?.toIntOrNull()
+    }
 
-    /** Parses ms_<id>[:s:e]; returns null when unparseable. */
+    /** Parses legacy ms_<id>[:s:e]; returns null when unparseable. */
     private fun parseStremioId(raw: String): Triple<Long, Int?, Int?>? {
         val id = raw.removePrefix("ms_")
         if (id == raw) return null
@@ -396,7 +407,14 @@ class MoonStreamServer(
 
     private suspend fun resolveMedia(rawId: String): MediaItemEntity? {
         val dao = db.mediaDao()
-        if (rawId.startsWith("tt")) return dao.findByImdb(rawId)
+        // Strip any :season:episode suffix — the lookup key is parts[0].
+        val base = rawId.split(":").first()
+        if (base.startsWith("tt")) {
+            dao.findByImdb(base)?.let { return it }
+            return dao.findByStremioId(base)
+        }
+        if (base.startsWith("tg")) return dao.findByStremioId(base)
+        // Legacy ms_<dbId> links (older installs / old copy-links).
         val parsed = parseStremioId(rawId) ?: return null
         return dao.getById(parsed.first)
     }
