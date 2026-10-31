@@ -50,14 +50,26 @@ object MetadataMatcher {
         return try {
             // Anime first: Kitsu needs no key and knows anime best.
             if (isAnime || type == "anime") {
-                tryKitsu(title)?.let { return it }
+                tryKitsu(title)?.let {
+                    com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → Kitsu: ${it.title}")
+                    return it
+                }
             }
             if (tmdbKey.isNotBlank()) {
-                tryTmdb(title, year, type, tmdbKey)?.let { return it }
+                tryTmdb(title, year, type, tmdbKey)?.let {
+                    com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → TMDB: ${it.title}")
+                    return it
+                }
             }
+            tryCinemeta(title, type)?.let {
+                com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → Cinemeta: ${it.title}")
+                return it
+            }
+            com.moon.moonstream.util.AppLog.w("MATCH", "No match for '$title'")
             null
         } catch (e: Exception) {
             Log.d(TAG, "match failed for '$title': ${e.message}")
+            com.moon.moonstream.util.AppLog.e("MATCH", "'$title' failed: ${e.message}")
             null
         }
     }
@@ -146,12 +158,13 @@ object MetadataMatcher {
 
     /**
      * Cinemeta (Stremio's free metadata API) — no API key needed.
-     * https://v3-cinemeta.strem.io/search/{movie|series}/{query}.json
+     * Search via the catalog endpoint:
+     * https://v3-cinemeta.strem.io/catalog/{movie|series}/top/search={query}.json
      */
     private fun searchCinemeta(query: String, type: String, limit: Int): List<EnrichedMeta> {
         val kind = if (type == "movie") "movie" else "series"
         val q = URLEncoder.encode(query, "UTF-8")
-        val root = getJson("https://v3-cinemeta.strem.io/search/$kind/$q.json")
+        val root = getJson("https://v3-cinemeta.strem.io/catalog/$kind/top/search=$q.json")
             ?: return emptyList()
         val metas = root.optJSONArray("metas") ?: return emptyList()
         return (0 until minOf(metas.length(), limit)).mapNotNull { i ->
@@ -223,6 +236,11 @@ object MetadataMatcher {
                 tmdbId = null,
             )
         }
+    }
+
+    private fun tryCinemeta(title: String, type: String): EnrichedMeta? {
+        // Single-result lookup for auto-matching (no key needed).
+        return searchCinemeta(title, type, 1).firstOrNull()
     }
 
     private fun tryKitsu(title: String): EnrichedMeta? {

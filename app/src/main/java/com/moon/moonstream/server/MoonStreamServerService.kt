@@ -73,12 +73,12 @@ class MoonStreamServerService : Service() {
             ServerTelemetry.onServerStart()
             val ip = MoonStreamServer.getLocalIpAddress()
             AppUiState.currentIp = ip
-            AppUiState.addLog("SERVER", "Addon server running: ${s.addonManifestUrl()}")
+            com.moon.moonstream.util.AppLog.i("SERVER", "Addon server running: ${s.addonManifestUrl()}")
             startForeground(NOTIFICATION_ID, buildNotification())
         } else {
             server = null
             AppUiState.serverOn = false
-            AppUiState.addLog("SERVER", "Failed to start server on ports $port/$streamPort")
+            com.moon.moonstream.util.AppLog.i("SERVER", "Failed to start server on ports $port/$streamPort")
             stopSelf()
         }
     }
@@ -90,7 +90,7 @@ class MoonStreamServerService : Service() {
             AppUiState.serverOn = false
             ServerTelemetry.flush(this)
             ServerTelemetry.onServerStop()
-            AppUiState.addLog("SERVER", "Addon server stopped")
+            com.moon.moonstream.util.AppLog.i("SERVER", "Addon server stopped")
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
         notificationManager?.cancel(NOTIFICATION_ID)
@@ -112,7 +112,7 @@ class MoonStreamServerService : Service() {
         val ip = MoonStreamServer.getLocalIpAddress()
         if (ip != AppUiState.currentIp) {
             AppUiState.currentIp = ip
-            AppUiState.addLog("SERVER", "Network $reason — now at $ip")
+            com.moon.moonstream.util.AppLog.i("SERVER", "Network $reason — now at $ip")
             notificationManager?.notify(NOTIFICATION_ID, buildNotification())
         }
     }

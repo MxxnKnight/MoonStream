@@ -829,6 +829,7 @@ fun ScanActionButton(
     scanningText: String,
     doneToast: String,
     modifier: Modifier = Modifier,
+    onScan: (suspend () -> String)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -873,10 +874,15 @@ fun ScanActionButton(
                 if (!scanning && !done) {
                     scanning = true
                     scope.launch {
-                        kotlinx.coroutines.delay(2000)
+                        val result = try {
+                            onScan?.invoke() ?: doneToast
+                        } catch (e: Exception) {
+                            "Failed: ${e.message}"
+                        }
+                        kotlinx.coroutines.delay(500)
                         scanning = false
                         done = true
-                        MsToast.show(doneToast)
+                        MsToast.show(result)
                     }
                 }
             }

@@ -67,6 +67,7 @@ object ScanManager {
         // Metadata lookups are cached per run: one title = one set of API calls.
         val metaCache = mutableMapOf<String, EnrichedMeta?>()
 
+        com.moon.moonstream.util.AppLog.i("SCAN", "Starting scan of ${targets.size} channel(s)")
         ScanUiState.beginRun(targets.map { it.channelId to it.title })
         try {
             targets.forEachIndexed { index, target ->
@@ -74,12 +75,14 @@ object ScanManager {
                     scanOneChannel(db, backend, target, mode, tmdbKey, metaCache)
                 } catch (e: Exception) {
                     Log.e(TAG, "channel ${target.channelId} failed: ${e.message}")
+                    com.moon.moonstream.util.AppLog.e("SCAN", "Channel ${target.title} failed: ${e.message}")
                 }
                 ScanUiState.markDone(target.channelId)
                 if (index < targets.lastIndex) delay(CHANNEL_DELAY_MS)
             }
         } finally {
             ScanUiState.finishRun()
+            com.moon.moonstream.util.AppLog.i("SCAN", "Scan complete")
         }
     }
 

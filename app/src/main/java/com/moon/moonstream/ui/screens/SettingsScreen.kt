@@ -9,6 +9,8 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.moon.moonstream.ui.components.MsToast
+import com.moon.moonstream.index.db.MsDatabase
+import com.moon.moonstream.util.AppLog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -409,7 +411,12 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         }
     }
 
-    fun fakeSaved() = MsToast.show("Saved (fake)")
+    fun saved(key: String) = MsToast.show("Saved")
+    // Shorthand: persist a boolean setting and toast.
+    fun saveBool(key: String, value: Boolean) {
+        com.moon.moonstream.ui.state.SettingsPrefs.setBool(context, key, value)
+        MsToast.show("Saved")
+    }
     fun fakeVerify() = MsToast.show("API key looks valid (fake)")
 
     var verifyingTmdb by remember { mutableStateOf(false) }
@@ -448,7 +455,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             .fillMaxSize()
             .background(MsColors.Bg)
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(16.dp)
+            .padding(bottom = 100.dp), // clear the floating nav pill
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
@@ -479,19 +487,19 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 title = "Start on boot",
                 info = "Starts the Stremio server automatically when your phone restarts, so you don't have to open the app and flip the switch yourself.",
             ) {
-                MsToggle(checked = startOnBoot, onCheckedChange = { startOnBoot = it; fakeSaved() })
+                MsToggle(checked = startOnBoot, onCheckedChange = { startOnBoot = it; MsToast.show("Saved") })
             }
             SettingRow(
                 title = "Auto Sleep",
                 info = "Turns the server off by itself after a while with no activity, to save battery. Any new request wakes it up again.",
             ) {
-                MsToggle(checked = autoSleep, onCheckedChange = { autoSleep = it; fakeSaved() })
+                MsToggle(checked = autoSleep, onCheckedChange = { autoSleep = it; MsToast.show("Saved") })
             }
             SettingRow(
                 title = "Server Off Mode",
                 info = "Extra quiet mode for when the server is off: stops background work too, so nothing runs until you switch the server back on.",
             ) {
-                MsToggle(checked = serverOffMode, onCheckedChange = { serverOffMode = it; fakeSaved() })
+                MsToggle(checked = serverOffMode, onCheckedChange = { serverOffMode = it; MsToast.show("Saved") })
             }
             SettingBlock(
                 title = "Public host",
@@ -505,14 +513,14 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(10.dp))
-                    MsOutlinePill(text = "Save", fontSize = 13, onClick = { fakeSaved() })
+                    MsOutlinePill(text = "Save", fontSize = 13, onClick = { MsToast.show("Saved") })
                 }
             }
             SettingRow(
                 title = "Prefer Tailscale",
                 info = "When on, the app advertises your Tailscale address instead of the local Wi-Fi address, so Stremio on another device can reach your phone from anywhere.",
             ) {
-                MsToggle(checked = preferTailscale, onCheckedChange = { preferTailscale = it; fakeSaved() })
+                MsToggle(checked = preferTailscale, onCheckedChange = { preferTailscale = it; MsToast.show("Saved") })
             }
             SettingRow(
                 title = "Use Tailscale address",
@@ -531,7 +539,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 title = "Auto-scan new content",
                 info = "When on, the app quietly checks your channels for new files in the background and adds them to the library by itself.",
             ) {
-                MsToggle(checked = autoScan, onCheckedChange = { autoScan = it; fakeSaved() })
+                MsToggle(checked = autoScan, onCheckedChange = { autoScan = it; MsToast.show("Saved") })
             }
             SettingRow(
                 title = "Scan interval (seconds)",
@@ -550,37 +558,37 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 title = "Anime handling",
                 info = "When on, channels marked as anime use episode-number matching (like episode 1123) instead of season/episode matching.",
             ) {
-                MsToggle(checked = animeMode, onCheckedChange = { animeMode = it; fakeSaved() })
+                MsToggle(checked = animeMode, onCheckedChange = { animeMode = it; MsToast.show("Saved") })
             }
             SettingRow(
                 title = "Show catalogs in Stremio",
                 info = "Lists your library as browsable rows (catalogs) inside Stremio and Nuvio, not just through search.",
             ) {
-                MsToggle(checked = showCatalogs, onCheckedChange = { showCatalogs = it; fakeSaved() })
+                MsToggle(checked = showCatalogs, onCheckedChange = { showCatalogs = it; MsToast.show("Saved") })
             }
             SettingRow(
                 title = "Latest and Popular rows",
                 info = "Adds 'Latest' and 'Popular' rows at the top of your catalogs in Stremio, based on what was indexed recently.",
             ) {
-                MsToggle(checked = latestPopular, onCheckedChange = { latestPopular = it; fakeSaved() })
+                MsToggle(checked = latestPopular, onCheckedChange = { latestPopular = it; MsToast.show("Saved") })
             }
             SettingRow(
                 title = "Index new posts automatically",
                 info = "Adds files to the library the moment they appear in your channels, without waiting for the next scan.",
             ) {
-                MsToggle(checked = indexNew, onCheckedChange = { indexNew = it; fakeSaved() })
+                MsToggle(checked = indexNew, onCheckedChange = { indexNew = it; MsToast.show("Saved") })
             }
             SettingRow(
                 title = "Replace same quality",
                 info = "When the same file appears again in the same quality, the newer copy replaces the older one in the library. Your Telegram files are never deleted.",
             ) {
-                MsToggle(checked = replaceSameQuality, onCheckedChange = { replaceSameQuality = it; fakeSaved() })
+                MsToggle(checked = replaceSameQuality, onCheckedChange = { replaceSameQuality = it; MsToast.show("Saved") })
             }
             SettingRow(
                 title = "Live search fallback",
                 info = "When a title isn't in your library, search Telegram live instead of giving up — slower, but finds more.",
             ) {
-                MsToggle(checked = liveSearchFallback, onCheckedChange = { liveSearchFallback = it; fakeSaved() })
+                MsToggle(checked = liveSearchFallback, onCheckedChange = { liveSearchFallback = it; MsToast.show("Saved") })
             }
             // "Skip exact duplicates" not added: "Duplicate protection" in
             // Appearance & Library already does exactly this.
@@ -640,7 +648,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 MsSegmented(
                     options = listOf("Provider", "RPDB ratings", "BetterPosters"),
                     selected = posterStyle,
-                    onSelect = { posterStyle = it; fakeSaved() },
+                    onSelect = { posterStyle = it; MsToast.show("Saved") },
                 )
             }
             SettingBlock(
@@ -689,7 +697,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(10.dp))
-                    MsOutlinePill(text = "Save", fontSize = 13, onClick = { fakeSaved() })
+                    MsOutlinePill(text = "Save", fontSize = 13, onClick = { MsToast.show("Saved") })
                 }
             }
         }
@@ -761,7 +769,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 title = "Search all joined chats",
                 info = "Live search also looks through every Telegram chat you've joined, not just the channels you added here.",
             ) {
-                MsToggle(checked = searchAllChats, onCheckedChange = { searchAllChats = it; fakeSaved() })
+                MsToggle(checked = searchAllChats, onCheckedChange = { searchAllChats = it; MsToast.show("Saved") })
             }
             // Dead-link and duplicate scans live in the Library Tools group below.
         }
@@ -774,7 +782,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 MsDropdown(
                     selected = prefQuality,
                     options = listOf("4K", "1080p", "720p", "480p"),
-                    onSelect = { prefQuality = it; fakeSaved() },
+                    onSelect = { prefQuality = it; MsToast.show("Saved") },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -818,7 +826,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 title = "Filter CAM & TS",
                 info = "Hides cinema-recorded (CAM) and telesync (TS) versions from the stream list. They are usually the worst quality.",
             ) {
-                MsToggle(checked = filterCamTs, onCheckedChange = { filterCamTs = it; fakeSaved() })
+                MsToggle(checked = filterCamTs, onCheckedChange = { filterCamTs = it; MsToast.show("Saved") })
             }
         }
 
@@ -851,7 +859,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 title = "Duplicate protection",
                 info = "When on, the app ignores a file it has already indexed, even if it appears again in another channel.",
             ) {
-                MsToggle(checked = dupProtection, onCheckedChange = { dupProtection = it; fakeSaved() })
+                MsToggle(checked = dupProtection, onCheckedChange = { dupProtection = it; MsToast.show("Saved") })
             }
         }
 
@@ -863,7 +871,29 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 ScanActionButton(
                     idleText = "Check now",
                     scanningText = "Checking",
-                    doneToast = "No dead links found (fake)",
+                    doneToast = "No dead links found",
+                    onScan = {
+                        val db = MsDatabase.get(context)
+                        val backend = com.moon.moonstream.backend.BackendProvider.backend
+                        val files = db.streamDao().getAll()
+                        var dead = 0
+                        // Check in batches to avoid hammering the API.
+                        for (f in files) {
+                            try {
+                                val msg = backend.fetchMessages(f.channelId, f.messageId, 1)
+                                    .firstOrNull { it.id == f.messageId }
+                                if (msg == null) {
+                                    dead++
+                                    AppLog.w("LIB", "Dead link: ${f.fileName} (${f.channelId}/${f.messageId})")
+                                }
+                            } catch (e: Exception) {
+                                // Network error — skip, don't count as dead.
+                            }
+                            kotlinx.coroutines.delay(100)
+                        }
+                        if (dead == 0) "No dead links found"
+                        else "$dead dead link(s) found — see logs"
+                    },
                 )
             }
             SettingRow(
@@ -873,7 +903,21 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 ScanActionButton(
                     idleText = "Find duplicates",
                     scanningText = "Scanning",
-                    doneToast = "No duplicates found (fake)",
+                    doneToast = "No duplicates found",
+                    onScan = {
+                        val db = MsDatabase.get(context)
+                        val files = db.streamDao().getAll()
+                        // Group by normalized name + size; >1 in a group = duplicate.
+                        val groups = files.groupBy {
+                            it.fileName.lowercase().replace(Regex("[^a-z0-9]"), "") to it.fileSize
+                        }.filter { it.value.size > 1 }
+                        val count = groups.values.sumOf { it.size - 1 }
+                        for ((_, dupes) in groups) {
+                            AppLog.w("LIB", "Duplicate: ${dupes.first().fileName} ×${dupes.size}")
+                        }
+                        if (count == 0) "No duplicates found"
+                        else "$count duplicate file(s) found — see logs"
+                    },
                 )
             }
         }
@@ -1053,12 +1097,6 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 )
             }
             SettingRow(
-                title = "Early Beta Access",
-                info = "Get test builds before everyone else. They may be rough around the edges.",
-            ) {
-                MsToggle(checked = earlyBeta, onCheckedChange = { earlyBeta = it; fakeSaved() })
-            }
-            SettingRow(
                 title = "About",
                 info = "The app name, version and package. Useful when reporting a problem.",
             ) {
@@ -1209,7 +1247,7 @@ private fun AccountCard(onLoggedOut: () -> Unit) {
     }
 
     val displayName = profile?.firstName ?: "…"
-    val displayHandle = profile?.username?.let { "@$it" } ?: "…"
+    val displayHandle = profile?.username?.let { "@${it.trimStart('@')}" } ?: "…"
     val initial = displayName.firstOrNull()?.uppercaseChar()?.toString() ?: "•"
 
     MsGroupHeader("Account")

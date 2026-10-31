@@ -150,6 +150,8 @@ class MoonStreamServer(
                     sendJson(output, 200, handleSubtitles(path).toString(), headOnly)
                 path.startsWith("/stream/file/") ->
                     serveMediaBytes(output, path.removePrefix("/stream/file/"), headers, headOnly)
+                path.startsWith("/stream/direct/") ->
+                    serveDirectBytes(output, path.removePrefix("/stream/direct/"), headers, headOnly)
                 path.startsWith("/sub/") ->
                     serveSubtitleBytes(output, path.removePrefix("/sub/"), headOnly)
                 else ->
@@ -384,6 +386,68 @@ class MoonStreamServer(
             Log.e(TAG, "Error streaming file ${targetFile.id}", e)
         }
     }
+
+    /**
+     * GET/HEAD /stream/direct/{channelId}/{messageId} — streams a Telegram file
+     * that isn't in the library (e.g. unmatched files), straight from the
+     * backend. HTTP Range aware.
+     */
+    private fun serveDirectBytes(output: OutputStream, rest: String, headers: Map<String, String>, headOnly: Boolean) {
+        val parts = rest.split("/")
+        val channelId = parts.getOrNull(0)?.toLongOrNull()
+        val messageId = parts.getOrNull(1)?.toLongOrNull()
+        if (channelId == null || messageId == null) {
+            sendJson(output, 400, errJson("Bad channel/message id").toString(), headOnly); return
+        }
+        val msg = runBlocking {
+            backend.fetchMessages(channelId, messageId, 1).firstOrNull { it.id == messageId }
+        }
+        if (msg == null) { sendJson(output, 404, errJson("Message not found").toString(), headOnly); return }
+        val total = msg.fileSize
+        if (total <= 0) { sendJson(output, 502, errJson("Unknown file size").toString(), headOnly); return }
+
+        val range = parseRange(headers["range"], total)
+        val (start, end) = range ?: run {
+            sendJson(output, 416, errJson("Bad range").toString(), headOnly); return
+        }
+        val length = (end - start + 1).coerceAtMost(total - start)
+        val mime = mimeFor(msg.fileName)
+        val extra = mutableMapOf(
+            "Accept-Ranges" to "bytes",
+            "Content-Type" to mime,
+        )
+        val status = if (range != null) {
+            extra["Content-Range"] = "bytes $start-$end/$total"
+            206 to "Partial Content"
+        } else 200 to "OK"
+
+        if (headOnly) {
+            sendResponse(output, status.first, status.second, mime, ByteArray(0),
+                contentLengthOverride = length, extraHeaders = extra)
+            return
+        }
+        try {
+            val header = buildHeader(status.first, status.second, mime, length, extra)
+            output.write(header.toString().toByteArray(Charsets.UTF_8))
+            var offset = start
+            var remaining = length
+            while (remaining > 0) {
+                val chunk = minOf(CHUNK_SIZE.toLong(), remaining).toInt()
+                val bytes = runBlocking {
+                    backend.readFileRange(channelId, messageId, offset, chunk)
+                }
+                if (bytes.isEmpty()) break
+                output.write(bytes)
+                ServerTelemetry.addBytes(appContext, bytes.size.toLong())
+                offset += bytes.size
+                remaining -= bytes.size
+            }
+            output.flush()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error streaming direct $channelId/$messageId", e)
+        }
+    }
+
     private fun serveSubtitleBytes(output: OutputStream, rest: String, headOnly: Boolean) {
         val subId = rest.split("/").firstOrNull()?.toLongOrNull()
         if (subId == null) { sendJson(output, 400, errJson("Bad subtitle id").toString(), headOnly); return }

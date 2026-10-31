@@ -2,6 +2,7 @@ package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
+import com.moon.moonstream.ui.components.MsTextField
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
@@ -375,9 +376,6 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                     onScan = { quickScan(ch) },
                     onRescanScratch = { rescanScratch(ch) },
                     onToggleAnime = { toggleAnime(ch) },
-                    onRefreshAvatar = {
-                        MsToast.show("Avatars aren't exposed by the current backend")
-                    },
                     onCopyId = {
                         clipboard.setText(AnnotatedString(ch.id.toString()))
                         MsToast.show("Channel ID copied")
@@ -421,16 +419,32 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
             }
 
             items(unmatched, key = { it.id }) { f ->
+                // Direct stream URL for files not in the library.
+                val directUrl = "http://${AppUiState.currentIp}:${AppUiState.streamPort}/stream/direct/${f.channelId}/${f.messageId}"
                 UnmatchedFileRow(
                     file = f,
                     onCreateEntry = onCreateEntry,
                     onCopyLink = {
-                        clipboard.setText(
-                            AnnotatedString("${AppUiState.manifestLink}/stream/${f.channelId}/${f.messageId}"),
-                        )
+                        clipboard.setText(AnnotatedString(directUrl))
                         MsToast.show("Stream link copied")
                     },
                     onLinkToTitle = { linkFile = f },
+                    onPlay = {
+                        if (!AppUiState.serverOn) {
+                            MsToast.show("Turn the server on first, then play")
+                        } else {
+                            val uri = android.net.Uri.parse(directUrl)
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, mimeForFile(f.fileName))
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            try {
+                                context.startActivity(android.content.Intent.createChooser(intent, "Play with"))
+                            } catch (e: android.content.ActivityNotFoundException) {
+                                MsToast.show("No video player found on this phone")
+                            }
+                        }
+                    },
                 )
             }
 
@@ -773,7 +787,6 @@ private fun ChannelRow(
     onScan: () -> Unit,
     onRescanScratch: () -> Unit,
     onToggleAnime: () -> Unit,
-    onRefreshAvatar: () -> Unit,
     onCopyId: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -847,10 +860,6 @@ private fun ChannelRow(
                                 )
                             },
                             onClick = { onMenuClose(); onToggleAnime() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Refresh channel avatar") },
-                            onClick = { onMenuClose(); onRefreshAvatar() },
                         )
                         DropdownMenuItem(
                             text = { Text("Copy channel ID") },
@@ -939,6 +948,7 @@ private fun UnmatchedFileRow(
     onCreateEntry: (UnmatchedFileEntity?) -> Unit,
     onCopyLink: () -> Unit,
     onLinkToTitle: () -> Unit,
+    onPlay: () -> Unit,
 ) {
     MsCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -960,6 +970,7 @@ private fun UnmatchedFileRow(
                     .padding(top = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
+                LimeTextButton(text = "Play", onClick = onPlay)
                 LimeTextButton(text = "Create entry", onClick = { onCreateEntry(file) })
                 LimeTextButton(text = "Copy Link", onClick = onCopyLink)
                 LimeTextButton(text = "Link to Title", onClick = onLinkToTitle)
@@ -981,6 +992,19 @@ private fun formatBytes(bytes: Long): String {
     else String.format(Locale.US, "%.1f %s", v, units[u])
 }
 
+private fun mimeForFile(fileName: String): String {
+    val ext = fileName.substringAfterLast('.', "").lowercase()
+    return when (ext) {
+        "mkv" -> "video/x-matroska"
+        "mp4", "m4v" -> "video/mp4"
+        "avi" -> "video/x-msvideo"
+        "webm" -> "video/webm"
+        "mov" -> "video/quicktime"
+        "srt" -> "text/plain"
+        else -> "video/*"
+    }
+}
+
 /**
  * Add Channel bottom sheet: lists the account's channels that are not yet
  * added (opt-in), each row with an anime toggle and an Add button.
@@ -991,32 +1015,12 @@ private fun AddChannelSheet(
     onDismiss: () -> Unit,
     onAdd: (id: Long, title: String, isAnime: Boolean) -> Unit,
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val db = remember { MsDatabase.get(context) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var candidates by remember { mutableStateOf<List<MsChannel>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    var animeFor by remember { mutableStateOf<Map<Long, Boolean>>(emptyMap()) }
-    var addedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-
-    LaunchedEffect(Unit) {
-        try {
-            val backend = BackendProvider.backend
-            if (backend.authState.value == BackendAuthState.READY) {
-                val added = db.channelConfigDao().all()
-                    .filter { !it.removed }
-                    .map { it.channelId }
-                    .toSet()
-                candidates = backend.listChannels().filter { it.id !in added }
-            }
-        } catch (e: Exception) {
-            MsToast.show("Couldn't load channels")
-        } finally {
-            loading = false
-        }
-    }
+    var channelId by remember { mutableStateOf("") }
+    var isAnime by remember { mutableStateOf(false) }
+    var adding by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1025,83 +1029,45 @@ private fun AddChannelSheet(
         contentColor = MsColors.TextPrimary,
     ) {
         MsSheetContent(title = "Add Channel") {
-            when {
-                loading -> Text(
-                    "Loading channels…",
+            Text(
+                "Paste the channel ID (the number from a t.me/c/… link).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MsColors.TextSecondary,
+            )
+            MsTextField(
+                value = channelId,
+                onValueChange = { channelId = it.filter { c -> c.isDigit() || c == '-' } },
+                hint = "Channel ID, e.g. 1234567890",
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    "Anime channel",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MsColors.TextSecondary,
+                    color = MsColors.TextPrimary,
                 )
-                candidates.isEmpty() -> Text(
-                    "All your channels are already added.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MsColors.TextSecondary,
-                )
-                else -> LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 420.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(candidates, key = { it.id }) { ch ->
-                        val added = ch.id in addedIds
-                        val anime = animeFor[ch.id] == true
-                        MsCard(modifier = Modifier.fillMaxWidth()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    Text(
-                                        ch.title,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MsColors.TextPrimary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        MsToggle(
-                                            checked = anime,
-                                            onCheckedChange = {
-                                                animeFor = animeFor + (ch.id to it)
-                                            },
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            "Anime",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MsColors.TextSecondary,
-                                        )
-                                    }
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                if (added) {
-                                    Text(
-                                        "Added",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MsColors.Accent,
-                                    )
-                                } else {
-                                    LimePillButton(
-                                        text = "Add",
-                                        fontSize = 13,
-                                        onClick = {
-                                            addedIds = addedIds + ch.id
-                                            scope.launch { onAdd(ch.id, ch.title, anime) }
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+                MsToggle(checked = isAnime, onCheckedChange = { isAnime = it })
             }
+            LimePillButton(
+                text = if (adding) "Adding…" else "Add channel",
+                onClick = {
+                    val id = channelId.trim().toLongOrNull()
+                    if (id == null || adding) {
+                        if (id == null) MsToast.show("Enter a valid channel ID")
+                        return@LimePillButton
+                    }
+                    adding = true
+                    scope.launch {
+                        // Use the ID as the title; the scanner fills the real name.
+                        onAdd(id, "Channel $id", isAnime)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
             Spacer(Modifier.height(4.dp))
         }
     }

@@ -37,15 +37,13 @@ import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MsColors
 
 /**
- * Diagnostics log viewer. Fake lines for now; auto-scrolls to the newest.
- * TODO(Phase 4): feed from a real ring buffer written by the addon server
- * and the scan/index pipeline.
+ * Diagnostics log viewer. Real lines from AppLog; auto-scrolls to the newest.
  */
 @Composable
 fun LogsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val lines = AppUiState.logLines
+    val lines = com.moon.moonstream.util.AppLog.lines
     val listState = rememberLazyListState()
 
     // Auto-scroll to the newest line whenever the log grows. Long-press text
@@ -94,7 +92,7 @@ fun LogsScreen(onBack: () -> Unit) {
                 text = "Clear",
                 fontSize = 13,
                 onClick = {
-                    AppUiState.clearLogs()
+                    com.moon.moonstream.util.AppLog.clear()
                     MsToast.show("Logs cleared")
                 },
             )

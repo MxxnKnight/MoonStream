@@ -715,7 +715,10 @@ fun AddSubtitleSheet(
                                     if (p.season != null) seasonText = p.season.toString()
                                     if (p.episode != null) episodeText = p.episode.toString()
                                 } else {
-                                    MsToast.show("Couldn't read that link")
+                                    MsToast.show("Couldn't read that link — you can still add it manually")
+                                    // Fall through to manual add: use a placeholder
+                                    // filename so the user isn't stuck.
+                                    fetchedName = "subtitle_manual.srt"
                                 }
                             }
                         }
