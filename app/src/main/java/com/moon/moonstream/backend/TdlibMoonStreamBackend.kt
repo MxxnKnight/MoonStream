@@ -119,14 +119,61 @@ class TdlibMoonStreamBackend(
         }
     }
 
+    // Cache messageId -> fileId mapping so seeking requests don't repeatedly fetch the same message
+    private val messageFileIdCache = java.util.concurrent.ConcurrentHashMap<Long, Int>()
+
     override suspend fun readFileRange(
         channelId: Long,
         messageId: Long,
         offset: Long,
         length: Int
     ): ByteArray {
-        // TODO(Phase 5): download file via TDLib and read range
-        return ByteArray(0)
+        if (length <= 0) return ByteArray(0)
+        return try {
+            val fileId = messageFileIdCache.getOrPut(messageId) {
+                val msgRes = telegramManager.send(TdApi.GetMessage(channelId, messageId))
+                if (msgRes.isFailure) return ByteArray(0)
+                val msg = msgRes.getOrThrow()
+                when (val c = msg.content) {
+                    is TdApi.MessageDocument -> c.document.document?.id ?: 0
+                    is TdApi.MessageVideo -> c.video.video?.id ?: 0
+                    else -> 0
+                }
+            }
+            if (fileId == 0) return ByteArray(0)
+
+            // Step 1: Trigger download of the required chunk range synchronously
+            val dlRes = telegramManager.send(TdApi.DownloadFile(fileId, 32, offset, length.toLong(), true))
+            val localFile = if (dlRes.isSuccess) dlRes.getOrThrow().local else null
+
+            // Step 2: If file is locally available on disk, read directly with RandomAccessFile (fastest)
+            val path = localFile?.path
+            if (!path.isNullOrBlank()) {
+                val f = java.io.File(path)
+                if (f.exists() && f.length() > offset) {
+                    java.io.RandomAccessFile(f, "r").use { raf ->
+                        raf.seek(offset)
+                        val bytesToRead = minOf(length.toLong(), f.length() - offset).toInt()
+                        val buf = ByteArray(bytesToRead)
+                        val read = raf.read(buf)
+                        return if (read > 0) {
+                            if (read == buf.size) buf else buf.copyOf(read)
+                        } else ByteArray(0)
+                    }
+                }
+            }
+
+            // Step 3: Fallback to TDLib's internal file cache reader
+            val readRes = telegramManager.send(TdApi.ReadFilePart(fileId, offset, length.toLong()))
+            if (readRes.isSuccess) {
+                readRes.getOrThrow().data ?: ByteArray(0)
+            } else {
+                ByteArray(0)
+            }
+        } catch (e: Exception) {
+            Log.e("TdlibBackend", "readFileRange error for msg=${messageId} offset=${offset} length=${length}", e)
+            ByteArray(0)
+        }
     }
 
     override suspend fun getMe(): MsProfile {

@@ -234,7 +234,7 @@ class MoonStreamServer(
         return JSONObject().put("meta", meta)
     }
 
-    /** /stream/{movie|series}/{id}.json — id is tt... / tg... [:s:e], or legacy ms_<dbId>[:s:e]. */
+    /** /stream/{movie|series}/{id}.json - id is tt... / tg... [:s:e], or legacy ms_<dbId>[:s:e]. */
     private fun handleStreamList(path: String): JSONObject {
         val trimmed = path.removePrefix("/stream/").removeSuffix(".json")
         val rawId = trimmed.split("/").getOrNull(1).orEmpty()
@@ -246,22 +246,35 @@ class MoonStreamServer(
                 if (season != null && episode != null) f.season == season && f.episode == episode
                 else true
             }
+
+        // Group split parts (.001, .002, etc.) so they stream as a joined single stream
+        val splitRegex = Regex("""(?i)\.(?:(?:mkv|mp4|avi|webm)\.)?0*\d{1,3}$""")
+        val groups = files.groupBy { f ->
+            val base = splitRegex.replace(f.fileName, "")
+            "$base|${f.season ?: ""}|${f.episode ?: ""}"
+        }
+
         val base = streamBaseUrl()
-        for (f in files) {
+        for ((_, groupFiles) in groups) {
+            val sorted = groupFiles.sortedBy { it.fileName }
+            val first = sorted.first()
+            val isSplit = sorted.size > 1 || splitRegex.containsMatchIn(first.fileName)
+            val totalSize = sorted.sumOf { it.fileSize }
+
             val label = buildString {
                 append(media.title)
-                if (f.quality.isNotBlank()) append(" [${f.quality}]")
-                append(" (${formatSize(f.fileSize)})")
+                if (isSplit) append(" [MULTI-PART ${sorted.size} files]")
+                else if (first.quality.isNotBlank()) append(" [${first.quality}]")
+                append(" (${formatSize(totalSize)})")
             }
+
             streams.put(JSONObject()
                 .put("name", "MoonStream")
                 .put("title", label)
-                .put("url", "$base/stream/file/${media.id}/${f.id}"))
+                .put("url", "$base/stream/file/${media.id}/${first.id}"))
         }
         return JSONObject().put("streams", streams)
     }
-
-    /** /subtitles/{movie|series}/{id}.json — id is tt... / tg... [:s:e], or legacy ms_<dbId>[:s:e]. */
     private fun handleSubtitles(path: String): JSONObject {
         val trimmed = path.removePrefix("/subtitles/").removeSuffix(".json")
         val rawId = trimmed.split("/").getOrNull(1).orEmpty()
@@ -285,14 +298,27 @@ class MoonStreamServer(
 
     // ---------------------------------------------------------- byte routes
 
-    /** GET/HEAD /stream/file/{mediaId}/{fileId} — real bytes via the backend, HTTP Range aware. */
+    /** GET/HEAD /stream/file/{mediaId}/{fileId} — real bytes via the backend, HTTP Range aware. Supports joined .001 split files. */
     private fun serveMediaBytes(output: OutputStream, rest: String, headers: Map<String, String>, headOnly: Boolean) {
         val parts = rest.split("/")
+        val mediaId = parts.getOrNull(0)?.toLongOrNull() ?: 0L
         val fileId = parts.getOrNull(1)?.toLongOrNull()
         if (fileId == null) { sendJson(output, 400, errJson("Bad file id").toString(), headOnly); return }
-        val file = runBlocking { db.streamDao().getById(fileId) }
-        if (file == null) { sendJson(output, 404, errJson("File not found").toString(), headOnly); return }
-        val total = file.fileSize
+        val targetFile = runBlocking { db.streamDao().getById(fileId) }
+        if (targetFile == null) { sendJson(output, 404, errJson("File not found").toString(), headOnly); return }
+
+        // Determine if targetFile is part of a split sequence (.001, .002, etc.)
+        val splitRegex = Regex("""(?i)\.(?:(?:mkv|mp4|avi|webm)\.)?0*\d{1,3}$""")
+        val allMediaFiles = runBlocking { db.streamDao().listByMedia(mediaId) }
+        val baseName = splitRegex.replace(targetFile.fileName, "")
+        val sequence = allMediaFiles.filter { f ->
+            splitRegex.replace(f.fileName, "") == baseName &&
+            f.season == targetFile.season && f.episode == targetFile.episode
+        }.sortedBy { it.fileName }
+
+        val isSplit = sequence.size > 1
+        val partsList = if (isSplit) sequence else listOf(targetFile)
+        val total = partsList.sumOf { it.fileSize }
         if (total <= 0) { sendJson(output, 502, errJson("Unknown file size").toString(), headOnly); return }
 
         val range = parseRange(headers["range"], total)
@@ -304,7 +330,7 @@ class MoonStreamServer(
             return
         }
         val length = (end - start + 1).coerceAtMost(total - start)
-        val mime = mimeFor(file.fileName)
+        val mime = mimeFor(targetFile.fileName)
         val extra = mutableMapOf(
             "Accept-Ranges" to "bytes",
             "Content-Type" to mime,
@@ -320,16 +346,33 @@ class MoonStreamServer(
             return
         }
         try {
-            // Stream the range in 1 MB chunks straight from Telegram.
             val header = buildHeader(status.first, status.second, mime, length, extra)
             output.write(header.toString().toByteArray(Charsets.UTF_8))
+
+            // Helper to read bytes across split boundaries
+            fun readGlobalRange(globalOffset: Long, requestSize: Int): ByteArray {
+                var currentGlobal = 0L
+                for (p in partsList) {
+                    val partStart = currentGlobal
+                    val partEnd = currentGlobal + p.fileSize
+                    if (globalOffset >= partStart && globalOffset < partEnd) {
+                        val offsetInPart = globalOffset - partStart
+                        val availableInPart = (p.fileSize - offsetInPart).coerceAtMost(requestSize.toLong()).toInt()
+                        val bytes = runBlocking {
+                            backend.readFileRange(p.channelId, p.messageId, offsetInPart, availableInPart)
+                        }
+                        return bytes
+                    }
+                    currentGlobal += p.fileSize
+                }
+                return ByteArray(0)
+            }
+
             var offset = start
             var remaining = length
             while (remaining > 0) {
                 val chunk = minOf(CHUNK_SIZE.toLong(), remaining).toInt()
-                val bytes: ByteArray = runBlocking {
-                    backend.readFileRange(file.channelId, file.messageId, offset, chunk)
-                }
+                val bytes = readGlobalRange(offset, chunk)
                 if (bytes.isEmpty()) break
                 output.write(bytes)
                 offset += bytes.size
@@ -337,11 +380,9 @@ class MoonStreamServer(
             }
             output.flush()
         } catch (e: Exception) {
-            Log.e(TAG, "Error streaming file ${file.id}", e)
+            Log.e(TAG, "Error streaming file ${targetFile.id}", e)
         }
     }
-
-    /** GET/HEAD /sub/{subId} — full subtitle file bytes. */
     private fun serveSubtitleBytes(output: OutputStream, rest: String, headOnly: Boolean) {
         val subId = rest.split("/").firstOrNull()?.toLongOrNull()
         if (subId == null) { sendJson(output, 400, errJson("Bad subtitle id").toString(), headOnly); return }
