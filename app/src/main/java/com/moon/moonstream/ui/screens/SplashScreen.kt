@@ -11,6 +11,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
@@ -38,18 +38,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.moon.moonstream.R
+import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MsColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.sin
 
-private val SplashGold = Color(0xFFFFC46A)
-private val SplashGoldDeep = Color(0xFF8A5A18)
+/**
+ * Splash glow colors — read from the active accent (MsColors.GlowLight /
+ * GlowDeep), so the ambient animation matches the theme. Persisted accent
+ * is loaded in AppUiState.init() before setContent, so the splash already
+ * shows the right theme on cold start.
+ */
 
 /**
  * Ambient splash screen, NoxMedia-style:
@@ -180,8 +184,8 @@ fun SplashScreen(onDone: () -> Unit, splashDurationMillis: Long = 2000L) {
                 .fillMaxSize()
                 .background(
                     Brush.radialGradient(
-                        0.0f to SplashGold.copy(alpha = glowA),
-                        0.6f to SplashGoldDeep.copy(alpha = glowA * 0.5f),
+                        0.0f to MsColors.GlowLight.copy(alpha = glowA),
+                        0.6f to MsColors.GlowDeep.copy(alpha = glowA * 0.5f),
                         1.0f to Color.Transparent,
                         center = glowCenterA,
                         radius = glowRadius,
@@ -193,8 +197,8 @@ fun SplashScreen(onDone: () -> Unit, splashDurationMillis: Long = 2000L) {
                 .fillMaxSize()
                 .background(
                     Brush.radialGradient(
-                        0.0f to SplashGold.copy(alpha = glowB),
-                        0.6f to SplashGoldDeep.copy(alpha = glowB * 0.5f),
+                        0.0f to MsColors.GlowLight.copy(alpha = glowB),
+                        0.6f to MsColors.GlowDeep.copy(alpha = glowB * 0.5f),
                         1.0f to Color.Transparent,
                         center = glowCenterB,
                         radius = glowRadius,
@@ -211,7 +215,7 @@ fun SplashScreen(onDone: () -> Unit, splashDurationMillis: Long = 2000L) {
                 .background(
                     Brush.linearGradient(
                         (sheen - 0.12f).coerceIn(0f, 1f) to Color.Transparent,
-                        sheen.coerceIn(0.001f, 0.999f) to SplashGold.copy(alpha = 0.07f),
+                        sheen.coerceIn(0.001f, 0.999f) to MsColors.GlowLight.copy(alpha = 0.07f),
                         (sheen + 0.12f).coerceIn(0f, 1f) to Color.Transparent,
                         start = sheenStart,
                         end = sheenEnd,
@@ -229,7 +233,7 @@ fun SplashScreen(onDone: () -> Unit, splashDurationMillis: Long = 2000L) {
             verticalArrangement = Arrangement.Center,
         ) {
             Image(
-                painter = painterResource(id = R.drawable.app_logo_trans),
+                painter = painterResource(id = AppUiState.accent.logoRes ?: R.drawable.app_logo_trans),
                 contentDescription = "MoonStream",
                 modifier = Modifier.size(132.dp),
             )
@@ -250,7 +254,7 @@ fun SplashScreen(onDone: () -> Unit, splashDurationMillis: Long = 2000L) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            DotsSpinner(progress = spin)
+            SonarLoader(progress = spin)
             Text(
                 "CONNECTING TO TELEGRAM",
                 color = MsColors.TextSecondary,
@@ -264,32 +268,34 @@ fun SplashScreen(onDone: () -> Unit, splashDurationMillis: Long = 2000L) {
 }
 
 /**
- * Ring of 8 dots with a brightness wave chasing around — one animated
- * float drives all dots, Canvas-free.
+ * Sonar loader: two rings expanding outward with fading alpha, staggered —
+ * Canvas-free, one animated float drives both.
  */
 @Composable
-private fun DotsSpinner(progress: Float, modifier: Modifier = Modifier) {
-    val density = LocalDensity.current
-    Box(modifier = modifier.size(44.dp), contentAlignment = Alignment.Center) {
-        repeat(8) { i ->
-            val frac = (progress + i / 8f) % 1f
-            val dotAlpha = 0.15f + 0.85f * frac
-            val angleRad = Math.toRadians((i * 45 - 90).toDouble())
+private fun SonarLoader(progress: Float, modifier: Modifier = Modifier) {
+    Box(modifier = modifier.size(72.dp), contentAlignment = Alignment.Center) {
+        repeat(2) { i ->
+            val p = (progress + i * 0.5f) % 1f
+            val ringAlpha = (1f - p) * 0.55f
             Box(
                 Modifier
-                    .offset {
-                        with(density) {
-                            val r = 15.dp.toPx()
-                            IntOffset(
-                                (cos(angleRad) * r).toInt(),
-                                (sin(angleRad) * r).toInt(),
-                            )
-                        }
-                    }
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(SplashGold.copy(alpha = dotAlpha)),
+                    .size((28 + p * 44).dp)
+                    .alpha(ringAlpha)
+                    .border(
+                        1.5.dp,
+                        MsColors.GlowLight.copy(alpha = 0.35f + 0.45f * (1f - p)),
+                        CircleShape,
+                    ),
             )
         }
+        // Core dot, gently pulsing with the same progress.
+        val coreScale = 1f + 0.18f * sin(progress * 2 * Math.PI.toFloat())
+        Box(
+            Modifier
+                .size(10.dp)
+                .scale(coreScale.toFloat())
+                .clip(CircleShape)
+                .background(MsColors.GlowLight),
+        )
     }
 }

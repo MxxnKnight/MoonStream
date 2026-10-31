@@ -81,11 +81,11 @@ import java.util.Locale
  * while the server is ON.
  */
 
-// Gold palette for the server card (matches moon's reference).
-private val GoldLight = Color(0xFFFFD27D)
-private val Gold = Color(0xFFFFAA33)
-private val GoldDeep = Color(0xFF8A5A18)
-private val GoldDark = Color(0xFF5C3F12)
+/**
+ * Signature glow palette for the server card — follows the active accent
+ * (MsColors.GlowLight / GlowDeep / GlowDark), so the card's aura matches
+ * the theme. Works with AMOLED on or off.
+ */
 
 @Composable
 fun ServerScreen() {
@@ -232,11 +232,11 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
         // the gradient stays valid at the sweep edges.
         val c = sheenX
         Brush.linearGradient(
-            0.00f to GoldDark,
-            (c - 0.30f).coerceIn(0.001f, 0.999f) to GoldDeep,
-            c.coerceIn(0.001f, 0.999f) to GoldLight,
-            (c + 0.30f).coerceIn(0.001f, 0.999f) to GoldDeep,
-            1.00f to GoldDark,
+            0.00f to MsColors.GlowDark,
+            (c - 0.30f).coerceIn(0.001f, 0.999f) to MsColors.GlowDeep,
+            c.coerceIn(0.001f, 0.999f) to MsColors.GlowLight,
+            (c + 0.30f).coerceIn(0.001f, 0.999f) to MsColors.GlowDeep,
+            1.00f to MsColors.GlowDark,
         )
     } else {
         Brush.linearGradient(listOf(Color(0xFF26262C), Color(0xFF26262C)))
@@ -255,8 +255,8 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 .background(
                     if (on) {
                         Brush.radialGradient(
-                            0.0f to Color(0xFF2B2113),
-                            0.7f to Color(0xFF17150F),
+                            0.0f to MsColors.GlowDeep.copy(alpha = 0.35f),
+                            0.7f to MsColors.GlowDeep.copy(alpha = 0.12f),
                             1.0f to Color(0xFF131316),
                         )
                     } else {
@@ -277,7 +277,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                     Box(
                         Modifier
                             .size(14.dp)
-                            .background(if (on) Gold else Color(0xFFF44336), CircleShape),
+                            .background(if (on) MsColors.Accent else Color(0xFFF44336), CircleShape),
                     )
                     Spacer(Modifier.width(10.dp))
                     Text(
@@ -336,7 +336,7 @@ private fun ManifestDrawer() {
     val url = AppUiState.manifestLink
     var copied by remember { mutableStateOf(false) }
     val flash by animateColorAsState(
-        targetValue = if (copied) GoldLight.copy(alpha = 0.14f) else Color.Transparent,
+        targetValue = if (copied) MsColors.GlowLight.copy(alpha = 0.14f) else Color.Transparent,
         animationSpec = tween(250),
         label = "copyFlash",
     )

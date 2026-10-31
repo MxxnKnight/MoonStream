@@ -28,9 +28,22 @@ object MsColors {
     val Accent: Color
         get() = AppUiState.accent.color
 
-    /** Text/icons drawn ON the accent (dark, readable on all 4 accents). */
+    /** Text/icons drawn ON the accent (dark, readable on all accents). */
     val OnAccent: Color
         get() = AppUiState.accent.onColor
+
+    /**
+     * Signature glow family — follows the accent picker. Drives the server
+     * card border/inner glow and the splash ambient animation, so the app's
+     * "aura" matches the accent. Works with AMOLED on or off.
+     */
+    val GlowLight: Color
+        get() = AppUiState.accent.glowLight
+    val GlowDeep: Color
+        get() = AppUiState.accent.glowDeep
+    /** Darkest glow tone, for gradient edge stops. */
+    val GlowDark: Color
+        get() = AppUiState.accent.glowDeep.copy(alpha = 0.55f)
 
     val Bg: Color
         get() = if (AppUiState.amoled) Color(0xFF000000) else Color(0xFF0E1116)
