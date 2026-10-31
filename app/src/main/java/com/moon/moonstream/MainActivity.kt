@@ -67,7 +67,7 @@ sealed interface AppScreen {
     data object Login : AppScreen
     data object Server : AppScreen
     data object Library : AppScreen
-    data class Detail(val titleId: String) : AppScreen
+    data class Detail(val mediaId: Long) : AppScreen
     data object Channels : AppScreen
     data object Create : AppScreen
     data object Settings : AppScreen
@@ -195,7 +195,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         LibraryScreen(onOpenDetail = { id -> go(AppScreen.Detail(id)) })
                     is AppScreen.Detail ->
                         DetailScreen(
-                            titleId = screen.titleId,
+                            mediaId = screen.mediaId,
                             onBack = { backStack.removeLast() },
                         )
                     AppScreen.Channels ->

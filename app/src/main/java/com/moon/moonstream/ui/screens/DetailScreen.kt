@@ -30,25 +30,28 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -56,68 +59,183 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.moon.moonstream.index.db.MediaItemEntity
+import com.moon.moonstream.index.db.MsDatabase
+import com.moon.moonstream.index.db.StreamFileEntity
+import com.moon.moonstream.index.db.SubtitleFileEntity
+import com.moon.moonstream.index.match.MetadataMatcher
+import com.moon.moonstream.index.parse.normalizeTitle
+import com.moon.moonstream.index.scan.ScanManager
+import com.moon.moonstream.index.scan.ScanPrefs
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.FixMode
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MetadataFixSheet
+import com.moon.moonstream.ui.components.MetaPick
 import com.moon.moonstream.ui.components.MsCard
 import com.moon.moonstream.ui.components.MsOutlinePill
-import com.moon.moonstream.ui.components.MsSheetContent
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.components.QualityChip
-import com.moon.moonstream.ui.model.FakeEpisode
-import com.moon.moonstream.ui.model.FakeStream
-import com.moon.moonstream.ui.model.fakeTitles
-import com.moon.moonstream.ui.model.formatSizeMb
-import com.moon.moonstream.ui.model.parseSizeMb
+import com.moon.moonstream.ui.model.formatBytes
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MsColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
- * Title detail. Series/anime group streams by season: season selector pills,
- * episode cards (number badge, thumbnail placeholder, quality chips, size),
- * tap an episode to expand its file rows. Movies keep the flat stream list.
- * Header shows entry totals ("8 Episodes · 14.7 GB").
- * TODO(Phase 3): load title + streams from Room; wire Play/Copy/Delete,
- * Add Custom Stream, Add Subtitle, Fix Metadata to the real library.
+ * Title detail on REAL data (v0.7.0).
+ *
+ * Series/anime group streams by season: season pills → episode cards →
+ * expandable file rows (copy link + delete per row). Movies keep the flat
+ * file list. Subtitles indexed by the scanner show per episode/file with
+ * their language; unlinked ones can be attached by hand.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetailScreen(titleId: String, onBack: () -> Unit) {
+fun DetailScreen(mediaId: Long, onBack: () -> Unit) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val title = fakeTitles.find { it.id == titleId } ?: fakeTitles.first()
-    val isSeries = title.type == "series" || title.type == "anime"
+    val db = remember { MsDatabase.get(context) }
+    val scope = rememberCoroutineScope()
 
-    // Flat movie streams (mutable for delete/hide).
-    val movieStreams = remember(titleId) {
-        mutableStateListOf<FakeStream>().apply { addAll(title.streams) }
+    val media by db.mediaDao().observeById(mediaId).collectAsState(initial = null)
+    val files by db.streamDao().observeByMedia(mediaId).collectAsState(initial = emptyList())
+    val subtitles by db.subtitleDao().observeByMedia(mediaId).collectAsState(initial = emptyList())
+    val channelId = media?.channelId
+    val unlinkedSubs by (
+        channelId?.let { db.subtitleDao().observeUnlinkedByChannel(it) }
+            ?: flowOf(emptyList())
+        ).collectAsState(initial = emptyList())
+
+    var fixMode by remember { mutableStateOf<FixMode?>(null) }
+    var fixFile by remember { mutableStateOf<StreamFileEntity?>(null) }
+    var showAddStream by remember { mutableStateOf(false) }
+    var showAddSubtitle by remember { mutableStateOf(false) }
+    var attachSub by remember { mutableStateOf<SubtitleFileEntity?>(null) }
+    var seasonIdx by remember { mutableStateOf(0) }
+
+    val m = media
+    if (m == null) {
+        // Entry was deleted (e.g. channel removed) — nothing fake to show.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MsColors.Bg),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "This entry no longer exists.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MsColors.TextPrimary,
+                )
+                Spacer(Modifier.height(12.dp))
+                LimePillButton(text = "Back", onClick = onBack)
+            }
+        }
+        return
     }
-    // Per-episode visible file lists, keyed "s{season}e{number}" — hide removes
-    // the file from the visible list (fake).
-    val epFiles = remember(titleId) {
-        mutableStateMapOf<String, MutableList<FakeStream>>().apply {
-            title.seasons.forEach { s ->
-                s.episodes.forEach { ep ->
-                    put(epKey(s.season, ep.number), ep.streams.toMutableList())
-                }
+
+    val isSeries = m.type == "series" || m.type == "anime"
+    val isAnime = m.type == "anime"
+    val totalsLine = if (isSeries) {
+        "${m.episodeCount} Episodes · ${formatBytes(m.totalSize)}"
+    } else {
+        "${m.fileCount} file${if (m.fileCount == 1) "" else "s"} · ${formatBytes(m.totalSize)}"
+    }
+    // NOTE: these stream URLs follow the shape his AI's server generates
+    // (/stream/file/<mediaId>/<fileId>). The server itself still resolves
+    // fake data — links go fully live with the Phase 4 server review.
+    val streamBase = "http://${AppUiState.currentIp}:${AppUiState.port}"
+
+    fun copyLink(file: StreamFileEntity) {
+        clipboard.setText(AnnotatedString("$streamBase/stream/file/${m.id}/${file.id}"))
+        Toast.makeText(context, "Stream link copied", Toast.LENGTH_SHORT).show()
+    }
+
+    fun deleteFile(file: StreamFileEntity) {
+        scope.launch {
+            db.streamDao().deleteById(file.id)
+            db.mediaDao().refreshAggregates(m.id, System.currentTimeMillis())
+            Toast.makeText(context, "File removed", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun toggleHide() {
+        scope.launch {
+            db.mediaDao().setHidden(m.id, !m.hidden)
+            Toast.makeText(
+                context,
+                if (!m.hidden) "Hidden — find it in the Hidden tab" else "Unhidden",
+                Toast.LENGTH_SHORT,
+            ).show()
+            if (!m.hidden) onBack()
+        }
+    }
+
+    /** FIX_TITLE apply: re-run the matcher on the picked title, update the row. */
+    fun applyFixTitle(picked: MetaPick) {
+        scope.launch(Dispatchers.IO) {
+            val key = ScanPrefs.getTmdbKey(context)
+            val full = MetadataMatcher.match(picked.title, picked.year, m.type, isAnime, key)
+                ?.let { MetadataMatcher.enrichFromCinemeta(it, m.type) }
+            db.mediaDao().updateMetadata(
+                id = m.id,
+                title = full?.title ?: picked.title,
+                norm = normalizeTitle(full?.title ?: picked.title),
+                year = full?.year ?: picked.year,
+                imdbId = full?.imdbId ?: picked.imdbId,
+                tmdbId = full?.tmdbId ?: picked.tmdbId,
+                posterUrl = full?.posterUrl ?: picked.posterUrl,
+                overview = full?.overview ?: picked.overview,
+                now = System.currentTimeMillis(),
+            )
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "Metadata updated", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    var fixMode by remember { mutableStateOf<FixMode?>(null) }
-    var fixFileName by remember { mutableStateOf("") }
-    var showAddStream by remember { mutableStateOf(false) }
-    var showAddSubtitle by remember { mutableStateOf(false) }
-    var seasonIdx by remember { mutableStateOf(0) }
-
-    val totalsLine = if (isSeries) {
-        val eps = title.seasons.sumOf { it.episodes.size }
-        "$eps Episodes · ${formatSizeMb(title.totalSizeMb())}"
-    } else {
-        val n = movieStreams.size
-        "$n file${if (n == 1) "" else "s"} · ${formatSizeMb(movieStreams.sumOf { parseSizeMb(it.size) })}"
+    /** FIX_FILE apply: move one file to the picked title (find or create). */
+    fun applyFixFile(file: StreamFileEntity, picked: MetaPick) {
+        scope.launch(Dispatchers.IO) {
+            val norm = normalizeTitle(picked.title)
+            val now = System.currentTimeMillis()
+            var target = db.mediaDao().findByTitle(m.channelId, norm)
+            if (target == null) {
+                val key = ScanPrefs.getTmdbKey(context)
+                val full = MetadataMatcher.match(picked.title, picked.year, m.type, isAnime, key)
+                    ?.let { MetadataMatcher.enrichFromCinemeta(it, m.type) }
+                val newId = db.mediaDao().upsert(
+                    MediaItemEntity(
+                        channelId = m.channelId,
+                        title = full?.title ?: picked.title,
+                        normalizedTitle = norm,
+                        year = full?.year ?: picked.year,
+                        type = m.type,
+                        imdbId = full?.imdbId ?: picked.imdbId,
+                        tmdbId = full?.tmdbId ?: picked.tmdbId,
+                        posterUrl = full?.posterUrl ?: picked.posterUrl,
+                        overview = full?.overview ?: picked.overview,
+                        totalSize = 0L,
+                        episodeCount = 0,
+                        fileCount = 0,
+                        updatedAt = now,
+                    ),
+                )
+                target = db.mediaDao().findByTitle(m.channelId, norm) ?: return@launch
+            }
+            db.streamDao().moveToMedia(file.id, target.id)
+            db.mediaDao().refreshAggregates(m.id, now)
+            db.mediaDao().refreshAggregates(target.id, now)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "File moved to ${target.title}", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     Column(
@@ -126,13 +244,30 @@ fun DetailScreen(titleId: String, onBack: () -> Unit) {
             .background(MsColors.Bg)
             .verticalScroll(rememberScrollState()),
     ) {
-        // Gradient poster header
+        // Poster header (real art, or initial tile for title-only entries).
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(230.dp)
-                .background(Brush.verticalGradient(listOf(title.colorA, title.colorB))),
+                .background(MsColors.SurfaceAlt),
+            contentAlignment = Alignment.Center,
         ) {
+            if (m.posterUrl != null) {
+                AsyncImage(
+                    model = m.posterUrl,
+                    contentDescription = m.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text(
+                    text = m.title.take(1).uppercase(),
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 72.sp,
+                    color = MsColors.Accent.copy(alpha = 0.6f),
+                )
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -154,20 +289,16 @@ fun DetailScreen(titleId: String, onBack: () -> Unit) {
                     .padding(8.dp),
             )
             BareIconButton(
-                icon = Icons.Filled.VisibilityOff,
-                contentDescription = "Hide entry",
+                icon = if (m.hidden) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                contentDescription = if (m.hidden) "Unhide entry" else "Hide entry",
                 tint = Color.White,
-                onClick = {
-                    AppUiState.hiddenIds.add(titleId)
-                    Toast.makeText(context, "Hidden — find it in the Hidden tab (fake)", Toast.LENGTH_SHORT).show()
-                    onBack()
-                },
+                onClick = { toggleHide() },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(8.dp),
             )
             Text(
-                text = title.title,
+                text = m.title,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
@@ -183,30 +314,66 @@ fun DetailScreen(titleId: String, onBack: () -> Unit) {
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    "${title.year} · ${title.type.replaceFirstChar { it.uppercase() }}",
+                    "${m.year ?: "—"} · ${m.type.replaceFirstChar { it.uppercase() }}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MsColors.TextSecondary,
                 )
-                // Entry totals (item 17), NoxMedia-style.
                 Text(
                     totalsLine,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MsColors.Accent,
                 )
-                Text(
-                    title.desc,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MsColors.TextPrimary,
-                )
+                if (!m.overview.isNullOrBlank()) {
+                    Text(
+                        m.overview!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MsColors.TextPrimary,
+                    )
+                }
             }
 
-            // Action row: one lime pill + two outlined pills, equal widths.
+            // Three equal pill buttons: Play / Copy Link / Add Subtitle.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 LimePillButton(
+                    text = "Play",
+                    onClick = {
+                        Toast.makeText(
+                            context,
+                            "In-app player is coming — use Copy Link with Stremio for now",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    },
+                    modifier = Modifier.weight(1f),
+                    fontSize = 13,
+                )
+                MsOutlinePill(
+                    text = "Copy Link",
+                    onClick = {
+                        val first = files.firstOrNull()
+                        if (first != null) copyLink(first)
+                        else Toast.makeText(context, "No files to link", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.weight(1f),
+                    fontSize = 13,
+                )
+                MsOutlinePill(
+                    text = "Add Subtitle",
+                    onClick = { showAddSubtitle = true },
+                    modifier = Modifier.weight(1f),
+                    fontSize = 13,
+                )
+            }
+
+            // Secondary row: Fix Metadata + Add Custom Stream.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                MsOutlinePill(
                     text = "Fix Metadata",
                     onClick = { fixMode = FixMode.FIX_TITLE },
                     modifier = Modifier.weight(1f),
@@ -216,444 +383,214 @@ fun DetailScreen(titleId: String, onBack: () -> Unit) {
                     text = "Add Custom Stream",
                     onClick = { showAddStream = true },
                     modifier = Modifier.weight(1f),
-                    fontSize = 12,
-                )
-                MsOutlinePill(
-                    text = "Add Subtitle",
-                    onClick = { showAddSubtitle = true },
-                    modifier = Modifier.weight(1f),
-                    fontSize = 12,
+                    fontSize = 13,
                 )
             }
 
             if (isSeries) {
                 SeriesSeasons(
-                    titleId = titleId,
+                    media = m,
+                    files = files,
+                    subtitles = subtitles,
                     seasonIdx = seasonIdx,
                     onSeason = { seasonIdx = it },
-                    epFiles = epFiles,
-                    onPlay = { s ->
-                        Toast.makeText(context, "Playing (fake)…", Toast.LENGTH_SHORT).show()
-                    },
-                    onCopy = { s ->
-                        val url = "${AppUiState.manifestLink}/stream/${s.id}"
-                        clipboard.setText(AnnotatedString(url))
-                        Toast.makeText(context, "Stream link copied", Toast.LENGTH_SHORT).show()
-                    },
-                    onDelete = { key, s ->
-                        epFiles[key]?.remove(s)
-                        Toast.makeText(context, "Stream deleted (fake)", Toast.LENGTH_SHORT).show()
-                    },
-                    onHide = { key, s ->
-                        epFiles[key]?.remove(s)
-                        Toast.makeText(context, "Stream hidden (fake)", Toast.LENGTH_SHORT).show()
-                    },
-                    onFixFile = { fileName ->
-                        fixFileName = fileName
-                        fixMode = FixMode.FIX_FILE
+                    onCopy = { copyLink(it) },
+                    onDelete = { deleteFile(it) },
+                    onFixFile = { fixFile = it; fixMode = FixMode.FIX_FILE },
+                    onUnlinkSub = { sub ->
+                        scope.launch {
+                            db.subtitleDao().delete(sub.id)
+                            Toast.makeText(context, "Subtitle removed", Toast.LENGTH_SHORT).show()
+                        }
                     },
                 )
             } else {
+                // Movies: flat file list + subtitles section.
                 Text(
-                    "Streams (${movieStreams.size})",
+                    "Files (${files.size})",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MsColors.TextPrimary,
                 )
-                movieStreams.forEach { s ->
+                if (files.isEmpty()) {
+                    Text(
+                        "No files indexed for this entry yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MsColors.TextSecondary,
+                    )
+                }
+                files.forEach { f ->
                     StreamRow(
-                        stream = s,
+                        stream = f,
                         onPlay = {
-                            Toast.makeText(context, "Playing (fake)…", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                context,
+                                "In-app player is coming — use Copy Link with Stremio for now",
+                                Toast.LENGTH_LONG,
+                            ).show()
                         },
-                        onCopy = {
-                            val url = "${AppUiState.manifestLink}/stream/${s.id}"
-                            clipboard.setText(AnnotatedString(url))
-                            Toast.makeText(context, "Stream link copied", Toast.LENGTH_SHORT).show()
-                        },
+                        onCopy = { copyLink(f) },
+                        onDelete = { deleteFile(f) },
+                        onFixFile = { fixFile = f; fixMode = FixMode.FIX_FILE },
+                    )
+                }
+                SubtitleSection(
+                    title = "Subtitles",
+                    subs = subtitles.filter { it.season == null && it.episode == null },
+                    onUnlink = { sub ->
+                        scope.launch {
+                            db.subtitleDao().delete(sub.id)
+                            Toast.makeText(context, "Subtitle removed", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                )
+            }
+
+            // Unlinked subtitles for this channel — attach by hand.
+            if (unlinkedSubs.isNotEmpty()) {
+                Text(
+                    "Unlinked subtitles (${unlinkedSubs.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MsColors.TextPrimary,
+                )
+                Text(
+                    "The scanner couldn't map these to an entry. Attach them by hand.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MsColors.TextSecondary,
+                )
+                unlinkedSubs.forEach { sub ->
+                    SubtitleRow(
+                        sub = sub,
+                        actionLabel = "Attach",
+                        onAction = { attachSub = sub },
                         onDelete = {
-                            movieStreams.remove(s)
-                            Toast.makeText(context, "Stream deleted (fake)", Toast.LENGTH_SHORT).show()
-                        },
-                        onFixFile = {
-                            fixFileName = s.fileName
-                            fixMode = FixMode.FIX_FILE
+                            scope.launch {
+                                db.subtitleDao().delete(sub.id)
+                                Toast.makeText(context, "Subtitle removed", Toast.LENGTH_SHORT).show()
+                            }
                         },
                     )
                 }
             }
         }
-        // Room for the floating pill: last content scrolls fully into view.
         Spacer(Modifier.height(120.dp))
     }
 
     fixMode?.let { mode ->
         MetadataFixSheet(
             mode = mode,
-            currentTitle = if (mode == FixMode.FIX_FILE) fixFileName else title.title,
-            onDismiss = { fixMode = null },
+            currentTitle = fixFile?.fileName ?: m.title,
+            isAnime = isAnime,
+            onDismiss = { fixMode = null; fixFile = null },
             onApply = { picked ->
-                Toast.makeText(context, "Merged into $picked (fake)", Toast.LENGTH_LONG).show()
+                when (mode) {
+                    FixMode.FIX_TITLE -> applyFixTitle(picked)
+                    FixMode.FIX_FILE -> fixFile?.let { applyFixFile(it, picked) }
+                    FixMode.LINK -> Unit // not used on this screen
+                }
                 fixMode = null
+                fixFile = null
             },
         )
     }
 
     if (showAddStream) {
-        SimpleFormSheet(
-            title = "Add Custom Stream",
-            fields = listOf("Telegram file link (t.me/…)", "Quality label (e.g. 1080p)"),
+        AddStreamSheet(
             onDismiss = { showAddStream = false },
-            onSave = {
-                Toast.makeText(context, "Custom stream added (fake)", Toast.LENGTH_SHORT).show()
-                showAddStream = false
+            onSave = { link, quality, name ->
+                scope.launch(Dispatchers.IO) {
+                    val parsed = parseTgLink(link)
+                    if (parsed == null) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(
+                                context,
+                                "That link didn't look like a t.me/c/…/… message link",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                        return@launch
+                    }
+                    val (chId, msgId) = parsed
+                    db.streamDao().insert(
+                        StreamFileEntity(
+                            mediaId = m.id,
+                            channelId = chId,
+                            messageId = msgId,
+                            fileName = name.ifBlank { "Custom stream $msgId" },
+                            fileSize = 0L,
+                            season = null,
+                            episode = null,
+                            quality = quality.ifBlank { "1080p" },
+                        ),
+                    )
+                    db.mediaDao().refreshAggregates(m.id, System.currentTimeMillis())
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Custom stream added", Toast.LENGTH_SHORT).show()
+                        showAddStream = false
+                    }
+                }
             },
         )
     }
 
     if (showAddSubtitle) {
-        SimpleFormSheet(
-            title = "Add Subtitle",
-            fields = listOf("Subtitle file link", "Language"),
+        AddSubtitleSheet(
+            unlinked = unlinkedSubs,
+            onAttachExisting = { attachSub = it; showAddSubtitle = false },
             onDismiss = { showAddSubtitle = false },
-            onSave = {
-                Toast.makeText(context, "Subtitle added (fake)", Toast.LENGTH_SHORT).show()
-                showAddSubtitle = false
+            onSaveLink = { link, language ->
+                scope.launch(Dispatchers.IO) {
+                    val parsed = parseTgLink(link)
+                    if (parsed == null || channelId == null) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(
+                                context,
+                                "That link didn't look like a t.me/c/…/… message link",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                        return@launch
+                    }
+                    val (chId, msgId) = parsed
+                    val fileName = "subtitle_$msgId.srt"
+                    val p = com.moon.moonstream.index.parse.FilenameParser.parse(fileName)
+                    val mediaId = ScanManager.resolveSubtitleMedia(
+                        db, chId, normalizeTitle(p.title), p.season, p.episode,
+                    ) ?: m.id
+                    db.subtitleDao().insert(
+                        SubtitleFileEntity(
+                            channelId = chId,
+                            messageId = msgId,
+                            fileName = fileName,
+                            fileSize = 0L,
+                            mediaId = mediaId,
+                            season = p.season,
+                            episode = p.episode,
+                            language = language,
+                        ),
+                    )
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Subtitle added", Toast.LENGTH_SHORT).show()
+                        showAddSubtitle = false
+                    }
+                }
             },
         )
     }
-}
 
-private fun epKey(season: Int, number: Int) = "s${season}e$number"
-
-/** Season selector pills + episode cards for series/anime (item 16). */
-@Composable
-private fun SeriesSeasons(
-    titleId: String,
-    seasonIdx: Int,
-    onSeason: (Int) -> Unit,
-    epFiles: MutableMap<String, MutableList<FakeStream>>,
-    onPlay: (FakeStream) -> Unit,
-    onCopy: (FakeStream) -> Unit,
-    onDelete: (String, FakeStream) -> Unit,
-    onHide: (String, FakeStream) -> Unit,
-    onFixFile: (String) -> Unit,
-) {
-    val title = fakeTitles.find { it.id == titleId } ?: return
-    val seasons = title.seasons
-    if (seasons.isEmpty()) return
-    val season = seasons[seasonIdx.coerceIn(seasons.indices)]
-    val seasonSizeMb = season.episodes.sumOf { ep ->
-        (epFiles[epKey(season.season, ep.number)] ?: ep.streams).sumOf { parseSizeMb(it.size) }
-    }
-
-    // Season selector pills
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        seasons.forEachIndexed { i, s ->
-            val selected = i == seasonIdx
-            if (selected) {
-                LimePillButton(
-                    text = "Season ${s.season}",
-                    onClick = { onSeason(i) },
-                    fontSize = 13,
-                )
-            } else {
-                MsOutlinePill(
-                    text = "Season ${s.season}",
-                    onClick = { onSeason(i) },
-                    fontSize = 13,
-                )
-            }
-        }
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "Season ${season.season}",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MsColors.TextPrimary,
+    attachSub?.let { sub ->
+        AttachSubtitleDialog(
+            sub = sub,
+            isSeries = isSeries,
+            onDismiss = { attachSub = null },
+            onAttach = { season, episode ->
+                scope.launch {
+                    db.subtitleDao().attach(sub.id, m.id, season, episode)
+                    Toast.makeText(context, "Subtitle attached", Toast.LENGTH_SHORT).show()
+                    attachSub = null
+                }
+            },
         )
-        Text(
-            "${season.episodes.size} Episodes · ${formatSizeMb(seasonSizeMb)}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MsColors.TextSecondary,
-        )
-    }
-
-    season.episodes.forEach { ep ->
-        EpisodeCard(
-            episode = ep,
-            files = epFiles[epKey(season.season, ep.number)] ?: ep.streams,
-            onPlay = onPlay,
-            onCopy = onCopy,
-            onDelete = { s -> onDelete(epKey(season.season, ep.number), s) },
-            onHide = { s -> onHide(epKey(season.season, ep.number), s) },
-            onFixFile = onFixFile,
-        )
-    }
-}
-
-/** Episode card: number badge, thumbnail placeholder, quality chips, expandable files. */
-@Composable
-private fun EpisodeCard(
-    episode: FakeEpisode,
-    files: List<FakeStream>,
-    onPlay: (FakeStream) -> Unit,
-    onCopy: (FakeStream) -> Unit,
-    onDelete: (FakeStream) -> Unit,
-    onHide: (FakeStream) -> Unit,
-    onFixFile: (String) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val fileSizeMb = files.sumOf { parseSizeMb(it.size) }
-    val qualities = files.map { it.quality }.distinct()
-
-    MsCard(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Thumbnail placeholder with episode number badge
-                Box(
-                    modifier = Modifier
-                        .size(width = 96.dp, height = 64.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Brush.linearGradient(listOf(Color(0xFF3A4356), Color(0xFF1E2532)))),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(5.dp)
-                            .size(22.dp)
-                            .background(Color(0x99000000), CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "${episode.number}",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 10.sp,
-                        )
-                    }
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(
-                        "E${episode.number} · ${episode.title}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MsColors.TextPrimary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        qualities.forEach { q -> QualityChip(q) }
-                        Text(
-                            "· ${formatSizeMb(fileSizeMb)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MsColors.TextSecondary,
-                        )
-                    }
-                }
-                Icon(
-                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = if (expanded) "Collapse" else "Expand",
-                    tint = MsColors.TextSecondary,
-                )
-            }
-
-            // Expandable file rows
-            AnimatedVisibility(
-                visible = expanded,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
-            ) {
-                Column(
-                    modifier = Modifier.padding(top = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    files.forEach { s ->
-                        FileRow(
-                            stream = s,
-                            onPlay = { onPlay(s) },
-                            onCopy = { onCopy(s) },
-                            onDelete = { onDelete(s) },
-                            onHide = { onHide(s) },
-                            onFixFile = { onFixFile(s.fileName) },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** One file row inside an expanded episode. */
-@Composable
-private fun FileRow(
-    stream: FakeStream,
-    onPlay: () -> Unit,
-    onCopy: () -> Unit,
-    onDelete: () -> Unit,
-    onHide: () -> Unit,
-    onFixFile: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MsColors.Bg)
-            .padding(10.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                stream.fileName,
-                style = MaterialTheme.typography.bodySmall,
-                color = MsColors.TextPrimary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                QualityChip(stream.quality)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    stream.size,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MsColors.TextSecondary,
-                    modifier = Modifier.weight(1f),
-                )
-                BareIconButton(
-                    icon = Icons.Filled.PlayArrow,
-                    contentDescription = "Play",
-                    onClick = onPlay,
-                )
-                BareIconButton(
-                    icon = Icons.Filled.ContentCopy,
-                    contentDescription = "Copy Link",
-                    onClick = onCopy,
-                )
-                BareIconButton(
-                    icon = Icons.Filled.VisibilityOff,
-                    contentDescription = "Hide stream",
-                    onClick = onHide,
-                )
-                BareIconButton(
-                    icon = Icons.Filled.Delete,
-                    contentDescription = "Delete",
-                    onClick = onDelete,
-                )
-            }
-            LimeTextButton(
-                text = "wrong title?",
-                onClick = onFixFile,
-                fontSize = 12,
-            )
-        }
-    }
-}
-
-@Composable
-private fun StreamRow(
-    stream: FakeStream,
-    onPlay: () -> Unit,
-    onCopy: () -> Unit,
-    onDelete: () -> Unit,
-    onFixFile: () -> Unit,
-) {
-    MsCard(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                QualityChip(stream.quality)
-                Spacer(Modifier.padding(horizontal = 4.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        stream.fileName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MsColors.TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        stream.size,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MsColors.TextSecondary,
-                    )
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                BareIconButton(
-                    icon = Icons.Filled.PlayArrow,
-                    contentDescription = "Play",
-                    onClick = onPlay,
-                )
-                BareIconButton(
-                    icon = Icons.Filled.ContentCopy,
-                    contentDescription = "Copy Link",
-                    onClick = onCopy,
-                )
-                BareIconButton(
-                    icon = Icons.Filled.Delete,
-                    contentDescription = "Delete",
-                    onClick = onDelete,
-                )
-            }
-            LimeTextButton(
-                text = "wrong title?",
-                onClick = onFixFile,
-                fontSize = 13,
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SimpleFormSheet(
-    title: String,
-    fields: List<String>,
-    onDismiss: () -> Unit,
-    onSave: () -> Unit,
-) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val values = remember { fields.associateWith { mutableStateOf("") } }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
-    ) {
-        MsSheetContent(title = title) {
-            fields.forEach { f ->
-                MsTextField(
-                    value = values[f]!!.value,
-                    onValueChange = { values[f]!!.value = it },
-                    hint = f,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            LimePillButton(
-                text = "Save",
-                onClick = onSave,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
     }
 }

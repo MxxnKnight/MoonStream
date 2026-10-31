@@ -6,7 +6,6 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
-import com.moon.moonstream.ui.model.fakeTitles
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -34,11 +33,9 @@ object AppUiState {
     var accent by mutableStateOf(MsAccent.LIME)
     var amoled by mutableStateOf(false)
 
-    // Telegram login (fake for now; TODO Phase 2: real TDLib session)
+    // Telegram login state is driven by the real backend's authState;
+    // loggedIn here mirrors it for the splash router.
     var loggedIn by mutableStateOf(false)
-
-    // Library hide/unhide (fake id list acting as a set; TODO Phase 3: Room column)
-    val hiddenIds = mutableStateListOf<String>()
 
     // Cache meter (fake; TODO Phase 4: real cache stats)
     var cacheUsedMb by mutableStateOf(312)
@@ -71,9 +68,6 @@ object AppUiState {
         amoled = prefs.getBoolean("amoled", false)
         loggedIn = prefs.getBoolean("logged_in", false)
         currentIp = com.moon.moonstream.server.MoonStreamServer.getLocalIpAddress()
-        if (hiddenIds.isEmpty()) {
-            hiddenIds.addAll(fallbackHiddenSeed())
-        }
         if (logLines.isEmpty()) {
             seedFakeLogs()
         }
@@ -111,9 +105,6 @@ object AppUiState {
     fun clearLogs() {
         logLines.clear()
     }
-
-    private fun fallbackHiddenSeed(): List<String> =
-        fakeTitles.filter { it.hidden }.map { it.id }
 
     private fun seedFakeLogs() {
         val seeds = listOf(

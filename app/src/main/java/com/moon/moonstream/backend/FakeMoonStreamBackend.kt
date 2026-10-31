@@ -12,6 +12,13 @@ import kotlinx.coroutines.flow.asStateFlow
  * The pretend Telegram. Implements [MoonStreamBackend] with the app's fake
  * data so every screen works end-to-end with zero network.
  *
+ * ROLE (v0.7.0+): this class is a @Preview / development aid ONLY. No
+ * production screen reads from it — Library, Detail and Channels all read
+ * the Room database built by the real scanner. At startup
+ * [BackendProvider.init] still installs it as the placeholder backend, but
+ * the real [TdlibMoonStreamBackend] replaces it via
+ * [BackendProvider.install] the moment TDLib reports Ready.
+ *
  * The ONLY fake-specific entry point is [fakeLogin] (any credentials
  * accepted — it just flips the state). The real implementation will have
  * its own login flow and will never call this.
