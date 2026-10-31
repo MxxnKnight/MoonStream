@@ -96,6 +96,20 @@ class ScanService : Service() {
             try {
                 updateNotification("Scanning ${targets.size} channel(s)…")
                 ScanManager.scanAll(this@ScanService, BackendProvider.backend, targets, mode)
+                try {
+                    val prefs = getSharedPreferences("moonstream_prefs", Context.MODE_PRIVATE)
+                    val autoBackup = prefs.getBoolean("auto_backup_sync", true)
+                    val backupToTg = prefs.getBoolean("backup_to_telegram", true)
+                    if (autoBackup && backupToTg) {
+                        Log.i(TAG, "Triggering post-scan automatic cloud backup")
+                        val json = com.moon.moonstream.backup.BackupManager.buildBackupJson(this@ScanService)
+                        val gz = com.moon.moonstream.backup.BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
+                        val name = com.moon.moonstream.backup.BackupManager.backupFileName()
+                        BackendProvider.backend.uploadBackup(gz, name)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Post-scan auto backup failed", e)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "scan run failed: ${e.message}")
             } finally {

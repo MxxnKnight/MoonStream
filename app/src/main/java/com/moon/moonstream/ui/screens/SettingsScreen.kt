@@ -149,8 +149,86 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     var dupProtection by remember { mutableStateOf(true) }
 
     // --- Backup state ---
-    var backupToTelegram by remember { mutableStateOf(false) }
-    var autoBackupSync by remember { mutableStateOf(false) }
+    var backupToTelegram by remember {
+        mutableStateOf(
+            context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
+                .getBoolean("backup_to_telegram", true)
+        )
+    }
+    var autoBackupSync by remember {
+        mutableStateOf(
+            context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
+                .getBoolean("auto_backup_sync", true)
+        )
+    }
+
+    fun pushBackupToTelegram(onDone: () -> Unit = {}) {
+        if (backupWorking) return
+        backupWorking = true
+        scope.launch(Dispatchers.IO) {
+            try {
+                val json = BackupManager.buildBackupJson(context)
+                val gz = BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
+                val name = BackupManager.backupFileName()
+                val msgId = BackendProvider.backend.uploadBackup(gz, name)
+                withContext(Dispatchers.Main) {
+                    if (msgId != null) {
+                        markBackedUp()
+                        Toast.makeText(context, "Cloud backup pushed to Saved Messages", Toast.LENGTH_SHORT).show()
+                        onDone()
+                    } else {
+                        Toast.makeText(context, "Telegram cloud backup failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Backup error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                backupWorking = false
+            }
+        }
+    }
+
+    fun pullBackupFromTelegram() {
+        if (backupWorking) return
+        backupWorking = true
+        scope.launch(Dispatchers.IO) {
+            try {
+                val ref = BackendProvider.backend.findLatestBackup()
+                if (ref == null) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "No backup found in Saved Messages", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+                val bytes = BackendProvider.backend.downloadBackup(ref)
+                if (bytes == null) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Could not download backup file from Telegram", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+                val json = BackupManager.parseBackup(bytes)
+                val summary = BackupManager.restore(context, json)
+                com.moon.moonstream.index.scan.ScanUiState.bumpChannelListVersion()
+                withContext(Dispatchers.Main) {
+                    markBackedUp()
+                    Toast.makeText(
+                        context,
+                        "Restored from Telegram: ${summary.channels} channels, ${summary.media} titles, ${summary.files} files",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Restore error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                backupWorking = false
+            }
+        }
+    }
     var earlyBeta by remember { mutableStateOf(false) }
     var backupWorking by remember { mutableStateOf(false) }
     var lastBackupAt by remember {
@@ -820,13 +898,27 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 title = "Back up to Telegram",
                 info = "Saves a copy of your catalog to your Saved Messages whenever something changes, so you never lose your library.",
             ) {
-                MsToggle(checked = backupToTelegram, onCheckedChange = { backupToTelegram = it; fakeSaved() })
+                MsToggle(
+                    checked = backupToTelegram,
+                    onCheckedChange = {
+                        backupToTelegram = it
+                        context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
+                            .edit().putBoolean("backup_to_telegram", it).apply()
+                    }
+                )
             }
             SettingRow(
                 title = "Auto-Backup & Manifest Sync",
                 info = "Backs up automatically and keeps the manifest link in sync after every change, with no taps needed.",
             ) {
-                MsToggle(checked = autoBackupSync, onCheckedChange = { autoBackupSync = it; fakeSaved() })
+                MsToggle(
+                    checked = autoBackupSync,
+                    onCheckedChange = {
+                        autoBackupSync = it
+                        context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
+                            .edit().putBoolean("auto_backup_sync", it).apply()
+                    }
+                )
             }
             SettingRow(
                 title = "Backup destination",
@@ -860,13 +952,32 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 MsOutlinePill(
-                    text = "Back up now",
+                    text = "Push to Saved Messages",
+                    fontSize = 13,
+                    modifier = Modifier.weight(1f),
+                    onClick = { pushBackupToTelegram() },
+                )
+                MsOutlinePill(
+                    text = "Pull from Saved Messages",
+                    fontSize = 13,
+                    modifier = Modifier.weight(1f),
+                    onClick = { pullBackupFromTelegram() },
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                MsOutlinePill(
+                    text = "Share Backup",
                     fontSize = 13,
                     modifier = Modifier.weight(1f),
                     onClick = { shareBackup() },
                 )
                 MsOutlinePill(
-                    text = "Restore",
+                    text = "Restore File",
                     fontSize = 13,
                     modifier = Modifier.weight(1f),
                     onClick = {
@@ -902,7 +1013,6 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 modifier = Modifier.padding(bottom = 8.dp),
             )
         }
-
         SettingsGroup("Diagnostics") {
             SettingRow(
                 title = "View logs",

@@ -92,6 +92,12 @@ class FakeMoonStreamBackend(context: Context) : MoonStreamBackend {
         _authState.value = BackendAuthState.LOGGED_OUT
     }
 
+    override suspend fun uploadBackup(bytes: ByteArray, fileName: String): Long? = 1L
+
+    override suspend fun findLatestBackup(): BackupRef? = null
+
+    override suspend fun downloadBackup(ref: BackupRef): ByteArray? = null
+
     private fun parseSizeMb(text: String): Long {
         // "2.2 GB" / "750 MB" -> MB
         val parts = text.trim().split(" ")

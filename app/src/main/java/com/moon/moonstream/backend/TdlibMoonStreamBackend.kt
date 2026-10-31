@@ -153,4 +153,76 @@ class TdlibMoonStreamBackend(
         telegramManager.logout()
         _authState.value = BackendAuthState.LOGGED_OUT
     }
+
+    private suspend fun getSavedMessagesChatId(): Long? {
+        val me = getMe()
+        if (me.id == 0L) return null
+        val chatResult = telegramManager.send(TdApi.CreatePrivateChat(me.id, false))
+        return if (chatResult.isSuccess) chatResult.getOrThrow().id else me.id
+    }
+
+    override suspend fun uploadBackup(bytes: ByteArray, fileName: String): Long? {
+        val chatId = getSavedMessagesChatId() ?: return null
+        val tempFile = java.io.File(context.cacheDir, "upload_" + fileName)
+        return try {
+            tempFile.writeBytes(bytes)
+            val doc = TdApi.InputMessageDocument(
+                TdApi.InputFileLocal(tempFile.absolutePath),
+                null,
+                true,
+                TdApi.FormattedText("#MoonStreamBackup MoonStream library backup", emptyArray())
+            )
+            val sendMsg = TdApi.SendMessage(chatId, null, null, null, null, doc)
+            val res = telegramManager.send(sendMsg)
+            if (res.isSuccess) res.getOrThrow().id else null
+        } catch (e: Exception) {
+            Log.e("TdlibBackend", "uploadBackup failed", e)
+            null
+        } finally {
+            tempFile.delete()
+        }
+    }
+
+    override suspend fun findLatestBackup(): BackupRef? {
+        val chatId = getSavedMessagesChatId() ?: return null
+        return try {
+            val query = TdApi.SearchChatMessages(
+                chatId,
+                null,
+                "#MoonStreamBackup",
+                null,
+                0L,
+                0,
+                10,
+                null
+            )
+            val res = telegramManager.send(query)
+            if (res.isFailure) return null
+            val found = res.getOrThrow()
+            val msg = found.messages?.firstOrNull { it.content is TdApi.MessageDocument } ?: return null
+            val doc = (msg.content as TdApi.MessageDocument).document
+            val fileId = doc.document?.id ?: return null
+            BackupRef(messageId = msg.id, fileId = fileId, date = msg.date.toLong())
+        } catch (e: Exception) {
+            Log.e("TdlibBackend", "findLatestBackup failed", e)
+            null
+        }
+    }
+
+    override suspend fun downloadBackup(ref: BackupRef): ByteArray? {
+        return try {
+            val downloadQuery = TdApi.DownloadFile(ref.fileId, 1, 0L, 0L, true)
+            val res = telegramManager.send(downloadQuery)
+            if (res.isFailure) return null
+            val file = res.getOrThrow()
+            val localPath = file.local?.path
+            if (!localPath.isNullOrBlank()) {
+                val downloadedFile = java.io.File(localPath)
+                if (downloadedFile.exists()) downloadedFile.readBytes() else null
+            } else null
+        } catch (e: Exception) {
+            Log.e("TdlibBackend", "downloadBackup failed", e)
+            null
+        }
+    }
 }

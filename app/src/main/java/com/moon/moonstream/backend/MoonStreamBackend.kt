@@ -93,4 +93,20 @@ interface MoonStreamBackend {
 
     /** Ends the session and returns [authState] to LOGGED_OUT. */
     suspend fun logout()
+
+    /** Upload raw bytes as a document to Saved Messages. Returns messageId or null. */
+    suspend fun uploadBackup(bytes: ByteArray, fileName: String): Long?
+
+    /** The newest #MoonStreamBackup document in Saved Messages, or null. */
+    suspend fun findLatestBackup(): BackupRef?
+
+    /** Download a backup document's full bytes. */
+    suspend fun downloadBackup(ref: BackupRef): ByteArray?
 }
+
+/** A backup document found in Saved Messages. */
+data class BackupRef(
+    val messageId: Long,
+    val fileId: Int,
+    val date: Long,
+)
