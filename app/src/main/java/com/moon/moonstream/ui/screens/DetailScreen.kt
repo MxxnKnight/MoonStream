@@ -169,7 +169,9 @@ fun DetailScreen(
     }
 
     /** Open the system "Play with" sheet so the phone's own video players
-     *  (VLC, mpvRx, …) handle the stream. Needs the server running. */
+     *  (VLC, mpvRx, …) handle the stream. Needs the server running.
+     *  Custom-added subtitles are passed via intent extras so mpvRx/VLC
+     *  can load them (moon's question 2026-11-01). */
     fun playExternal(file: StreamFileEntity) {
         if (!AppUiState.serverOn) {
             MsToast.show("Turn the server on first, then play")
@@ -177,9 +179,23 @@ fun DetailScreen(
         }
         val uri = Uri.parse("$streamBase/stream/file/${m.id}/${file.id}")
         val mime = mimeForFile(file.fileName)
+        // Build subtitle URIs for external players (mpvRx, VLC).
+        // Only custom-added subtitles (not MKV-embedded) — those come from
+        // our /subtitles endpoint.
+        val subUris = subtitles.mapNotNull { sub ->
+            try {
+                Uri.parse("$streamBase/sub/${sub.id}")
+            } catch (e: Exception) { null }
+        }.toTypedArray()
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mime)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // mpv-android / mpvRx: "subs" extra (array of Uri).
+            if (subUris.isNotEmpty()) {
+                putExtra("subs", subUris)
+                // VLC: also try "subtitles" extra.
+                putExtra("subtitles", subUris)
+            }
         }
         try {
             context.startActivity(Intent.createChooser(intent, "Play with"))
