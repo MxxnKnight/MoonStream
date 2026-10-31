@@ -99,6 +99,12 @@ object ScanUiState {
     private val _channelListVersion = MutableStateFlow(0)
     val channelListVersion: StateFlow<Int> = _channelListVersion.asStateFlow()
 
+    /** Public bump for cases like restore-from-backup that change stats
+     *  outside a scan run. */
+    fun bumpChannelListVersion() {
+        _channelListVersion.value++
+    }
+
     /** User dismissed the results panel. */
     fun dismissPanel() {
         _panelVisible.value = false

@@ -74,3 +74,72 @@ yours. When in doubt, update this file instead of guessing.
   passwords. Ever.
 - Commits: short imperative summary; push after committing (token is in
   the git credential store).
+
+## Cloud backup (Tier 2) — instructions for moon's AI (Antigravity)
+
+Local file backup (Tier 1) is already in the app. This is the spec for the
+cloud tier: push/pull the backup through the user's Telegram Saved Messages.
+It needs new methods on the backend contract — this section IS the
+both-sides agreement the contract freeze requires (moon approved it
+2026-10-31).
+
+### What to add to `backend/MoonStreamBackend.kt`
+
+```kotlin
+/** A backup document found in Saved Messages. */
+data class BackupRef(val messageId: Long, val fileId: Int, val date: Long)
+
+/** Upload raw bytes as a document to Saved Messages. Returns the sent
+ *  message id, or null on failure. The caption MUST contain #MoonStreamBackup
+ *  so findLatestBackup() can locate it later. */
+suspend fun uploadBackup(bytes: ByteArray, fileName: String): Long?
+
+/** The newest #MoonStreamBackup document in Saved Messages, or null. */
+suspend fun findLatestBackup(): BackupRef?
+
+/** Download a backup document's full bytes. */
+suspend fun downloadBackup(ref: BackupRef): ByteArray?
+```
+
+Then implement all three in `backend/TdlibMoonStreamBackend.kt`.
+
+### How to implement it in TDLib
+
+- **Saved Messages chat id**: the chat with the user themself. Get it from
+  `getMe().id` and open/resolve the chat for that user id
+  (`TdApi.CreatePrivateChat` / `TdApi.GetChat`). Do NOT hardcode any id.
+- **uploadBackup**: write `bytes` to a temp file in the app cache dir, then
+  `TdApi.SendMessage(chatId = me, inputMessageContent =
+  TdApi.InputMessageDocument(document = TdApi.InputFileLocal(tempPath),
+  caption = TdApi.FormattedText("#MoonStreamBackup MoonStream library backup",
+  emptyList())))`. Wait for the message response; return its `id`.
+  Delete the temp file afterwards. Return null on any TDLib error.
+- **findLatestBackup**: `TdApi.SearchMessages` (or `SearchChatMessages`)
+  with `chatId = me`, `query = "#MoonStreamBackup"`, limit 1, newest first.
+  Map the result's document to `BackupRef(messageId, fileId, date)`.
+- **downloadBackup**: `TdApi.DownloadFile(ref.fileId, priority = 1, ...)`,
+  wait until the file is complete, then read all bytes from
+  `local.path`. Return null on failure.
+
+### How the whole thing works (so you know what calls your code)
+
+1. The app (assistant's side) serializes the library — 6 Room tables
+   (`channel_config`, `media_items`, `stream_files`, `subtitle_files`,
+   `unmatched_files`, `scan_cursors`) plus selected `AppUiState` settings —
+   into JSON, gzips it. Auth/session data (API ID, API hash, session
+   strings) is NEVER included; your methods only ever see opaque bytes.
+2. Backup: app calls `uploadBackup(gzippedBytes, "MoonStream_backup_<ts>.json.gz")`.
+3. Restore: app calls `findLatestBackup()` → `downloadBackup(ref)` →
+   gunzips → parses → merges into Room (upsert by natural keys,
+   `updatedAt`-wins; never wipes local data).
+4. The Settings screen will get "Push to Saved Messages" / "Pull from Saved
+   Messages" buttons once your methods exist — the assistant wires the UI.
+
+### Rules
+
+- These three methods are the ONLY contract addition for this feature.
+  Don't change existing methods' signatures.
+- Never log or persist the backup bytes' contents beyond the temp file
+  needed for upload.
+- Compile via the normal CI workflow after implementing; the assistant
+  reviews before merge.

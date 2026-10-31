@@ -11,6 +11,9 @@ interface MediaDao {
     @Query("SELECT * FROM media_items ORDER BY updatedAt DESC")
     fun observeAll(): Flow<List<MediaItemEntity>>
 
+    @Query("SELECT * FROM media_items")
+    suspend fun getAll(): List<MediaItemEntity>
+
     @Query("SELECT * FROM media_items WHERE channelId = :channelId ORDER BY title COLLATE NOCASE")
     fun observeByChannel(channelId: Long): Flow<List<MediaItemEntity>>
 
@@ -102,6 +105,9 @@ interface StreamDao {
     @Query("SELECT EXISTS(SELECT 1 FROM stream_files WHERE channelId = :channelId AND messageId = :messageId)")
     suspend fun exists(channelId: Long, messageId: Long): Boolean
 
+    @Query("SELECT * FROM stream_files")
+    suspend fun getAll(): List<StreamFileEntity>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(file: StreamFileEntity): Long
 
@@ -148,6 +154,9 @@ interface SubtitleDao {
     @Query("SELECT EXISTS(SELECT 1 FROM subtitle_files WHERE channelId = :channelId AND messageId = :messageId)")
     suspend fun exists(channelId: Long, messageId: Long): Boolean
 
+    @Query("SELECT * FROM subtitle_files")
+    suspend fun getAll(): List<SubtitleFileEntity>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(s: SubtitleFileEntity): Long
 
@@ -185,6 +194,9 @@ interface ScanCursorDao {
     @Query("SELECT * FROM scan_cursors WHERE channelId = :channelId")
     suspend fun get(channelId: Long): ScanCursorEntity?
 
+    @Query("SELECT * FROM scan_cursors")
+    suspend fun all(): List<ScanCursorEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun set(cursor: ScanCursorEntity)
 
@@ -196,6 +208,9 @@ interface ScanCursorDao {
 interface UnmatchedDao {
     @Query("SELECT * FROM unmatched_files ORDER BY id DESC")
     fun observeAll(): Flow<List<UnmatchedFileEntity>>
+
+    @Query("SELECT * FROM unmatched_files")
+    suspend fun getAll(): List<UnmatchedFileEntity>
 
     @Query("SELECT EXISTS(SELECT 1 FROM unmatched_files WHERE channelId = :channelId AND messageId = :messageId)")
     suspend fun exists(channelId: Long, messageId: Long): Boolean

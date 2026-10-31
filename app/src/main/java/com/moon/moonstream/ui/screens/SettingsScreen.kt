@@ -1,6 +1,13 @@
 package com.moon.moonstream.ui.screens
 
+import android.content.ContentValues
+import android.content.Intent
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -43,11 +50,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import com.moon.moonstream.backup.BackupManager
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import com.moon.moonstream.BuildConfig
 import com.moon.moonstream.backend.BackendProvider
@@ -131,6 +148,137 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     var backupToTelegram by remember { mutableStateOf(false) }
     var autoBackupSync by remember { mutableStateOf(false) }
     var earlyBeta by remember { mutableStateOf(false) }
+    var backupWorking by remember { mutableStateOf(false) }
+    var lastBackupAt by remember {
+        mutableStateOf(
+            context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
+                .getLong("last_backup_at", 0),
+        )
+    }
+
+    fun markBackedUp() {
+        lastBackupAt = System.currentTimeMillis()
+        context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putLong("last_backup_at", lastBackupAt).apply()
+    }
+
+    fun lastBackupText(): String {
+        if (lastBackupAt == 0L) return "Last backup: never"
+        val fmt = SimpleDateFormat("d MMM yyyy, h:mm a", Locale.US)
+        return "Last backup: ${fmt.format(Date(lastBackupAt))}"
+    }
+
+    /** Build the backup, gzip it, and hand it to the Android share sheet. */
+    fun shareBackup() {
+        if (backupWorking) return
+        backupWorking = true
+        scope.launch(Dispatchers.IO) {
+            try {
+                val json = BackupManager.buildBackupJson(context)
+                val gz = BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
+                val file = File(context.cacheDir, BackupManager.backupFileName())
+                file.writeBytes(gz)
+                val uri = FileProvider.getUriForFile(
+                    context, "${context.packageName}.fileprovider", file,
+                )
+                withContext(Dispatchers.Main) {
+                    val share = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/gzip"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(share, "Save backup"))
+                    markBackedUp()
+                    Toast.makeText(context, "Backup ready — pick where to save it", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Backup failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                backupWorking = false
+            }
+        }
+    }
+
+    /** Save the backup straight to Downloads/MoonStream. */
+    fun exportBackupToDownloads() {
+        if (backupWorking) return
+        backupWorking = true
+        scope.launch(Dispatchers.IO) {
+            try {
+                val json = BackupManager.buildBackupJson(context)
+                val gz = BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
+                val name = BackupManager.backupFileName()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val values = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, name)
+                        put(MediaStore.Downloads.MIME_TYPE, "application/gzip")
+                        put(MediaStore.Downloads.RELATIVE_PATH, "Download/MoonStream")
+                    }
+                    val uri = context.contentResolver.insert(
+                        MediaStore.Downloads.EXTERNAL_CONTENT_URI, values,
+                    ) ?: throw IllegalStateException("Could not create download entry")
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(gz) }
+                        ?: throw IllegalStateException("Could not write download")
+                } else {
+                    val dir = File(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                        "MoonStream",
+                    )
+                    dir.mkdirs()
+                    File(dir, name).writeBytes(gz)
+                }
+                withContext(Dispatchers.Main) {
+                    markBackedUp()
+                    Toast.makeText(context, "Saved to Downloads/MoonStream/$name", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                backupWorking = false
+            }
+        }
+    }
+
+    /** Read a picked file and merge it into the library. */
+    fun restoreFromUri(uri: android.net.Uri) {
+        if (backupWorking) return
+        backupWorking = true
+        scope.launch(Dispatchers.IO) {
+            try {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw IllegalStateException("Could not read file")
+                val json = BackupManager.parseBackup(bytes)
+                val summary = BackupManager.restore(context, json)
+                // Fresh counts on screen.
+                com.moon.moonstream.index.scan.ScanUiState.bumpChannelListVersion()
+                withContext(Dispatchers.Main) {
+                    markBackedUp()
+                    Toast.makeText(
+                        context,
+                        "Restored: ${summary.channels} channels, ${summary.media} titles, " +
+                            "${summary.files} files, ${summary.subtitles} subtitles",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Restore failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                backupWorking = false
+            }
+        }
+    }
+
+    val restorePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) restoreFromUri(uri)
+    }
 
     var showWhatsNew by remember { mutableStateOf(false) }
 
@@ -637,11 +785,19 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 )
             }
             Text(
-                "Last backup: never",
+                lastBackupText(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
                 modifier = Modifier.padding(vertical = 6.dp),
             )
+            if (backupWorking) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    color = MsColors.Accent,
+                )
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -652,16 +808,14 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     text = "Back up now",
                     fontSize = 13,
                     modifier = Modifier.weight(1f),
-                    onClick = {
-                        Toast.makeText(context, "Backup started (fake)", Toast.LENGTH_SHORT).show()
-                    },
+                    onClick = { shareBackup() },
                 )
                 MsOutlinePill(
                     text = "Restore",
                     fontSize = 13,
                     modifier = Modifier.weight(1f),
                     onClick = {
-                        Toast.makeText(context, "Nothing to restore yet (fake)", Toast.LENGTH_SHORT).show()
+                        restorePicker.launch(arrayOf("application/gzip", "application/json", "*/*"))
                     },
                 )
             }
@@ -675,16 +829,14 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     text = "Export file",
                     fontSize = 13,
                     modifier = Modifier.weight(1f),
-                    onClick = {
-                        Toast.makeText(context, "Export started (fake)", Toast.LENGTH_SHORT).show()
-                    },
+                    onClick = { exportBackupToDownloads() },
                 )
                 MsOutlinePill(
                     text = "Import file",
                     fontSize = 13,
                     modifier = Modifier.weight(1f),
                     onClick = {
-                        Toast.makeText(context, "Pick a backup file (fake)", Toast.LENGTH_SHORT).show()
+                        restorePicker.launch(arrayOf("application/gzip", "application/json", "*/*"))
                     },
                 )
             }
