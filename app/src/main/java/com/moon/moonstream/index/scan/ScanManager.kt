@@ -7,6 +7,7 @@ import com.moon.moonstream.index.db.MediaItemEntity
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.ScanCursorEntity
 import com.moon.moonstream.index.db.StreamFileEntity
+import com.moon.moonstream.index.db.SubtitleFileEntity
 import com.moon.moonstream.index.db.UnmatchedFileEntity
 import com.moon.moonstream.index.match.EnrichedMeta
 import com.moon.moonstream.index.match.MetadataMatcher
@@ -42,6 +43,12 @@ object ScanManager {
     private const val PAGE_SIZE = 100
     private const val PAGE_DELAY_MS = 350L
     private const val CHANNEL_DELAY_MS = 1_500L
+
+    /** Subtitle extensions the scanner indexes instead of treating as video. */
+    private val SUBTITLE_EXTS = setOf("srt", "ass", "ssa", "vtt", "sub", "smi")
+
+    fun isSubtitleFile(fileName: String): Boolean =
+        fileName.substringAfterLast('.', "").lowercase() in SUBTITLE_EXTS
 
     /**
      * Scans every target in order. Safe to call from a foreground service;
@@ -88,6 +95,7 @@ object ScanManager {
         if (mode == ScanMode.FROM_SCRATCH) {
             db.mediaDao().deleteByChannel(channelId)
             db.streamDao().deleteByChannel(channelId)
+            db.subtitleDao().deleteByChannel(channelId)
             db.unmatchedDao().deleteByChannel(channelId)
             db.scanCursorDao().clear(channelId)
         }
@@ -125,9 +133,16 @@ object ScanManager {
                 }
                 checked++
                 if (db.streamDao().exists(channelId, msg.id) ||
+                    db.subtitleDao().exists(channelId, msg.id) ||
                     db.unmatchedDao().exists(channelId, msg.id)
                 ) {
                     existing++
+                    continue
+                }
+                // Subtitle files take the subtitle path, not the video path.
+                if (isSubtitleFile(msg.fileName)) {
+                    indexSubtitle(db, target, msg.id, msg.fileName, msg.fileSize)
+                    indexed++
                     continue
                 }
                 val parsed = FilenameParser.parse(msg.fileName, target.isAnime)
@@ -158,6 +173,9 @@ object ScanManager {
         if (newestSeen > (cursor ?: 0L)) {
             db.scanCursorDao().set(ScanCursorEntity(channelId, newestSeen))
         }
+        // Subtitles can arrive before their video files (newest-first paging),
+        // so take a second pass over anything still unlinked.
+        relinkSubtitles(db, channelId)
         // Stamp the relative "Synced …" time shown under the channel.
         db.channelConfigDao().setLastSynced(channelId, System.currentTimeMillis())
         ScanUiState.addTotals(indexed, existing, unmatched, checked)
@@ -219,5 +237,78 @@ object ScanManager {
             ),
         )
         db.mediaDao().refreshAggregates(mediaId, now)
+    }
+
+    /**
+     * Indexes one subtitle file. Language comes from the filename tags the
+     * parser already extracts ("Mal", "Eng", …); "unknown" when there's no
+     * hint. Mapping prefers an exact season+episode file match, then a
+     * title match, then a similarity fallback — anything left over stays
+     * unlinked (mediaId = null) for manual Attach in Detail.
+     */
+    private suspend fun indexSubtitle(
+        db: MsDatabase,
+        target: ScanTarget,
+        messageId: Long,
+        fileName: String,
+        fileSize: Long,
+    ) {
+        val parsed = FilenameParser.parse(fileName, target.isAnime)
+        val norm = normalizeTitle(parsed.title)
+        val mediaId = if (norm.isBlank()) {
+            null
+        } else {
+            resolveSubtitleMedia(db, target.channelId, norm, parsed.season, parsed.episode)
+        }
+        db.subtitleDao().insert(
+            SubtitleFileEntity(
+                channelId = target.channelId,
+                messageId = messageId,
+                fileName = fileName,
+                fileSize = fileSize,
+                mediaId = mediaId,
+                season = parsed.season,
+                episode = parsed.episode,
+                language = parsed.languages.firstOrNull() ?: "unknown",
+            ),
+        )
+    }
+
+    /** Best-effort subtitle → media mapping. Returns the media id or null. */
+    suspend fun resolveSubtitleMedia(
+        db: MsDatabase,
+        channelId: Long,
+        normTitle: String,
+        season: Int?,
+        episode: Int?,
+    ): Long? {
+        // 1. Same title AND the episode already exists in the library.
+        if (season != null && episode != null) {
+            db.streamDao().findMediaWithEpisode(channelId, normTitle, season, episode)
+                ?.let { return it }
+        }
+        // 2. Exact title match (movies, or series whose episode isn't indexed yet).
+        db.mediaDao().findByTitle(channelId, normTitle)?.let { return it.id }
+        // 3. Similarity fallback across the channel's entries.
+        val all = db.mediaDao().getAllByChannel(channelId)
+        val best = all.maxByOrNull { MetadataMatcher.similarity(normTitle, it.normalizedTitle) }
+        if (best != null && MetadataMatcher.similarity(normTitle, best.normalizedTitle) >= 0.6) {
+            return best.id
+        }
+        return null
+    }
+
+    /** Retries mapping for every still-unlinked subtitle in the channel. */
+    private suspend fun relinkSubtitles(db: MsDatabase, channelId: Long) {
+        val pending = db.subtitleDao().unlinkedByChannel(channelId)
+        for (s in pending) {
+            val parsed = FilenameParser.parse(s.fileName)
+            val norm = normalizeTitle(parsed.title)
+            if (norm.isBlank()) continue
+            val mediaId = resolveSubtitleMedia(db, channelId, norm, parsed.season, parsed.episode)
+            if (mediaId != null) {
+                db.subtitleDao().attach(s.id, mediaId, parsed.season, parsed.episode)
+            }
+        }
     }
 }

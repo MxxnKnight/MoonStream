@@ -30,6 +30,34 @@ interface MediaDao {
     @Query("SELECT * FROM media_items WHERE channelId = :channelId AND normalizedTitle = :norm LIMIT 1")
     suspend fun findByTitle(channelId: Long, norm: String): MediaItemEntity?
 
+    @Query("SELECT * FROM media_items WHERE id = :id")
+    fun observeById(id: Long): Flow<MediaItemEntity?>
+
+    @Query("SELECT * FROM media_items WHERE channelId = :channelId")
+    suspend fun getAllByChannel(channelId: Long): List<MediaItemEntity>
+
+    @Query("UPDATE media_items SET hidden = :hidden WHERE id = :id")
+    suspend fun setHidden(id: Long, hidden: Boolean)
+
+    @Query(
+        """UPDATE media_items SET
+               title = :title, normalizedTitle = :norm, year = :year,
+               imdbId = :imdbId, tmdbId = :tmdbId, posterUrl = :posterUrl,
+               overview = :overview, updatedAt = :now
+           WHERE id = :id""",
+    )
+    suspend fun updateMetadata(
+        id: Long,
+        title: String,
+        norm: String,
+        year: String?,
+        imdbId: String?,
+        tmdbId: Int?,
+        posterUrl: String?,
+        overview: String?,
+        now: Long,
+    )
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(item: MediaItemEntity): Long
 
@@ -68,8 +96,67 @@ interface StreamDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(file: StreamFileEntity): Long
 
+    @Query("SELECT * FROM stream_files WHERE mediaId = :mediaId ORDER BY season, episode, id")
+    fun observeByMedia(mediaId: Long): Flow<List<StreamFileEntity>>
+
     @Query("DELETE FROM stream_files WHERE channelId = :channelId")
     suspend fun deleteByChannel(channelId: Long)
+
+    @Query("DELETE FROM stream_files WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("UPDATE stream_files SET mediaId = :newMediaId WHERE id = :fileId")
+    suspend fun moveToMedia(fileId: Long, newMediaId: Long)
+
+    /** Media id of the entry in this channel whose title matches AND that
+     *  already has a file for the given season/episode — the strongest
+     *  subtitle-mapping signal. */
+    @Query(
+        """SELECT m.id FROM media_items m JOIN stream_files s ON s.mediaId = m.id
+           WHERE m.channelId = :channelId AND m.normalizedTitle = :norm
+           AND s.season = :season AND s.episode = :episode LIMIT 1""",
+    )
+    suspend fun findMediaWithEpisode(
+        channelId: Long,
+        norm: String,
+        season: Int,
+        episode: Int,
+    ): Long?
+
+    /** Media ids having at least one file whose quality label contains [q]. */
+    @Query("SELECT DISTINCT mediaId FROM stream_files WHERE quality LIKE '%' || :q || '%'")
+    suspend fun mediaIdsWithQuality(q: String): List<Long>
+}
+
+@Dao
+interface SubtitleDao {
+    @Query("SELECT EXISTS(SELECT 1 FROM subtitle_files WHERE channelId = :channelId AND messageId = :messageId)")
+    suspend fun exists(channelId: Long, messageId: Long): Boolean
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(s: SubtitleFileEntity): Long
+
+    @Query("SELECT * FROM subtitle_files WHERE mediaId = :mediaId ORDER BY season, episode, id")
+    fun observeByMedia(mediaId: Long): Flow<List<SubtitleFileEntity>>
+
+    @Query("SELECT * FROM subtitle_files WHERE channelId = :channelId AND mediaId IS NULL ORDER BY id DESC")
+    fun observeUnlinkedByChannel(channelId: Long): Flow<List<SubtitleFileEntity>>
+
+    @Query("SELECT * FROM subtitle_files WHERE channelId = :channelId AND mediaId IS NULL")
+    suspend fun unlinkedByChannel(channelId: Long): List<SubtitleFileEntity>
+
+    @Query("UPDATE subtitle_files SET mediaId = :mediaId, season = :season, episode = :episode WHERE id = :id")
+    suspend fun attach(id: Long, mediaId: Long, season: Int?, episode: Int?)
+
+    @Query("DELETE FROM subtitle_files WHERE channelId = :channelId")
+    suspend fun deleteByChannel(channelId: Long)
+
+    @Query("DELETE FROM subtitle_files WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    /** Media ids having at least one linked subtitle. */
+    @Query("SELECT DISTINCT mediaId FROM subtitle_files WHERE mediaId IS NOT NULL")
+    suspend fun mediaIdsWithSubtitles(): List<Long>
 }
 
 @Dao

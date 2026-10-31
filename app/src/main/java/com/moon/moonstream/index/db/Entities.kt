@@ -32,6 +32,8 @@ data class MediaItemEntity(
     val episodeCount: Int,
     val fileCount: Int,
     val updatedAt: Long,
+    /** User-hidden via Library multi-select / Detail. Shown in the HIDDEN tab. */
+    val hidden: Boolean = false,
 )
 
 /** One Telegram file attached to a media item. */
@@ -85,6 +87,30 @@ data class ChannelConfigEntity(
     val removed: Boolean = false,
     /** Epoch millis of the last completed scan of this channel. 0 = never. */
     val lastSyncedAt: Long = 0L,
+)
+
+/** A subtitle file found during scanning. Linked to a media item when the
+ *  scanner (or the user, via Attach) can map it; otherwise mediaId is null
+ *  and it waits in the unlinked list. */
+@Entity(
+    tableName = "subtitle_files",
+    indices = [
+        Index(value = ["channelId", "messageId"], unique = true),
+        Index(value = ["mediaId"]),
+    ],
+)
+data class SubtitleFileEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val channelId: Long,
+    val messageId: Long,
+    val fileName: String,
+    val fileSize: Long,
+    /** Null until the subtitle is mapped to a library entry. */
+    val mediaId: Long?,
+    val season: Int?,
+    val episode: Int?,
+    /** e.g. "Mal", "Eng", "Hin" — "unknown" when the filename gives no hint. */
+    val language: String,
 )
 
 /** "X Movies · Y Shows · Z Episodes" breakdown for one channel. */
