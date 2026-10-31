@@ -5,6 +5,8 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 
@@ -118,6 +120,23 @@ class TelegramManager private constructor(private val context: Context) {
         client?.send(TdApi.LogOut(), null)
     }
 
+    suspend fun <T : TdApi.Object> send(query: TdApi.Function<T>): Result<T> =
+        suspendCancellableCoroutine { cont ->
+            val c = client
+            if (c == null) {
+                cont.resume(Result.failure(IllegalStateException("TDLib client is not started")))
+                return@suspendCancellableCoroutine
+            }
+            c.send(query) { result ->
+                if (result is TdApi.Error) {
+                    cont.resume(Result.failure(Exception("TDLib error ${result.code}: ${result.message}")))
+                } else {
+                    @Suppress("UNCHECKED_CAST")
+                    cont.resume(Result.success(result as T))
+                }
+            }
+        }
+
     companion object {
         @Volatile
         private var INSTANCE: TelegramManager? = null
@@ -138,4 +157,5 @@ sealed class AuthState {
     object Ready : AuthState()
     object LoggedOut : AuthState()
 }
+
 

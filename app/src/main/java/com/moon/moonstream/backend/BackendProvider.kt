@@ -1,36 +1,37 @@
 package com.moon.moonstream.backend
 
 import android.content.Context
+import com.moon.moonstream.tdlib.TelegramManager
 
 /**
  * The single swap point. The whole app reads [backend] and nothing else.
  *
- * Today it holds the [FakeMoonStreamBackend] (pretend data). When the real
- * Telegram implementation is ready, its module calls [install] once (after
- * its own login flow completes) and every screen transparently goes real —
- * no screen code changes, because screens only ever spoke to the
- * [MoonStreamBackend] contract.
+ * Starts with [TdlibMoonStreamBackend] backed by the real TelegramManager.
+ * Auth state is observed from TelegramManager — if not logged in the app
+ * shows the login screen; if logged in it shows the main screens.
+ *
+ * [FakeMoonStreamBackend] is still available for UI testing/preview.
  */
 object BackendProvider {
 
     lateinit var backend: MoonStreamBackend
         private set
 
-    private var installed = false
+    private var initialized = false
 
-    /** Call once from MainActivity.onCreate, before the first frame. */
+    /** Call once from Application.onCreate or MainActivity.onCreate, before the first frame. */
     fun init(context: Context) {
-        if (installed) return
-        backend = FakeMoonStreamBackend(context)
+        if (initialized) return
+        initialized = true
+        val telegramManager = TelegramManager.getInstance(context)
+        backend = TdlibMoonStreamBackend(context, telegramManager)
     }
 
     /**
-     * Plugs in the real Telegram implementation. Called by the real
-     * backend module after ITS login flow completes (phone -> code ->
-     * password, session restored). After this call the fake is gone.
+     * Plugs in a custom backend implementation (e.g. for testing).
+     * After this call, [backend] is replaced.
      */
-    fun install(real: MoonStreamBackend) {
-        backend = real
-        installed = true
+    fun install(custom: MoonStreamBackend) {
+        backend = custom
     }
 }
