@@ -119,6 +119,83 @@ object MetadataMatcher {
 
     // ---------- Kitsu (anime, no key) ----------
 
+    /**
+     * Search-as-you-type results for the Metadata Fix sheet. Returns up to
+     * [limit] candidates with posters; never throws.
+     */
+    fun searchTitles(
+        query: String,
+        type: String,
+        isAnime: Boolean,
+        tmdbKey: String,
+        limit: Int = 8,
+    ): List<EnrichedMeta> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            if (isAnime) searchKitsu(query, limit)
+            else if (tmdbKey.isNotBlank()) searchTmdb(query, type, tmdbKey, limit)
+            else emptyList()
+        } catch (e: Exception) {
+            Log.d(TAG, "search failed for '$query': ${e.message}")
+            emptyList()
+        }
+    }
+
+    private fun searchTmdb(
+        title: String,
+        type: String,
+        key: String,
+        limit: Int,
+    ): List<EnrichedMeta> {
+        val kind = if (type == "movie") "movie" else "tv"
+        val q = URLEncoder.encode(title, "UTF-8")
+        val root =
+            getJson("https://api.themoviedb.org/3/search/$kind?api_key=$key&query=$q&language=en-US")
+                ?: return emptyList()
+        val results = root.optJSONArray("results") ?: return emptyList()
+        return (0 until minOf(results.length(), limit)).mapNotNull { i ->
+            val obj = results.optJSONObject(i) ?: return@mapNotNull null
+            val name = obj.optString(if (kind == "movie") "title" else "name")
+            if (name.isBlank()) return@mapNotNull null
+            val date = obj.optString(if (kind == "movie") "release_date" else "first_air_date")
+            val poster = obj.optString("poster_path").takeIf { it.isNotBlank() }
+                ?.let { "$TMDB_IMG$it" }
+            EnrichedMeta(
+                title = name,
+                year = Regex("""^(\d{4})""").find(date)?.groupValues?.get(1),
+                overview = obj.optString("overview").takeIf { it.isNotBlank() },
+                posterUrl = poster,
+                imdbId = null, // resolved on Apply via match(), not per-row
+                tmdbId = obj.optInt("id", -1).takeIf { it > 0 },
+            )
+        }
+    }
+
+    private fun searchKitsu(query: String, limit: Int): List<EnrichedMeta> {
+        val q = URLEncoder.encode(query, "UTF-8")
+        val root = getJson(
+            "https://kitsu.io/api/edge/anime?filter[text]=$q&page[limit]=$limit",
+            mapOf("Accept" to "application/vnd.api+json"),
+        ) ?: return emptyList()
+        val data = root.optJSONArray("data") ?: return emptyList()
+        return (0 until minOf(data.length(), limit)).mapNotNull { i ->
+            val attr = data.optJSONObject(i)?.optJSONObject("attributes")
+                ?: return@mapNotNull null
+            val name = attr.optString("canonicalTitle").ifBlank { return@mapNotNull null }
+            val poster = attr.optJSONObject("posterImage")?.optString("large")
+                ?.takeIf { it.isNotBlank() }
+            EnrichedMeta(
+                title = name,
+                year = Regex("""^(\d{4})""").find(attr.optString("startDate"))
+                    ?.groupValues?.get(1),
+                overview = attr.optString("synopsis").takeIf { it.isNotBlank() },
+                posterUrl = poster,
+                imdbId = null,
+                tmdbId = null,
+            )
+        }
+    }
+
     private fun tryKitsu(title: String): EnrichedMeta? {
         val q = URLEncoder.encode(title, "UTF-8")
         val url = "https://kitsu.io/api/edge/anime?filter[text]=$q&page[limit]=5"

@@ -459,10 +459,11 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
         MetadataFixSheet(
             mode = FixMode.LINK,
             currentTitle = f.fileName,
+            isAnime = false,
             onDismiss = { linkFile = null },
             onApply = { picked ->
                 scope.launch {
-                    val norm = normalizeTitle(picked)
+                    val norm = normalizeTitle(picked.title)
                     val media = db.mediaDao().findByTitle(f.channelId, norm)
                     if (media != null) {
                         val parsed = FilenameParser.parse(f.fileName)
