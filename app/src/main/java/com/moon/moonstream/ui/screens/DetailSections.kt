@@ -82,6 +82,7 @@ fun SeriesSeasons(
     subtitles: List<SubtitleFileEntity>,
     seasonIdx: Int,
     onSeason: (Int) -> Unit,
+    onPlay: (StreamFileEntity) -> Unit,
     onCopy: (StreamFileEntity) -> Unit,
     onDelete: (StreamFileEntity) -> Unit,
     onFixFile: (StreamFileEntity) -> Unit,
@@ -146,6 +147,7 @@ fun SeriesSeasons(
             episode = ep,
             files = epFiles,
             subtitles = epSubs,
+            onPlay = onPlay,
             onCopy = onCopy,
             onDelete = onDelete,
             onFixFile = onFixFile,
@@ -161,6 +163,7 @@ private fun EpisodeCard(
     episode: Int?,
     files: List<StreamFileEntity>,
     subtitles: List<SubtitleFileEntity>,
+    onPlay: (StreamFileEntity) -> Unit,
     onCopy: (StreamFileEntity) -> Unit,
     onDelete: (StreamFileEntity) -> Unit,
     onFixFile: (StreamFileEntity) -> Unit,
@@ -256,6 +259,7 @@ private fun EpisodeCard(
                     files.forEach { f ->
                         FileRow(
                             stream = f,
+                            onPlay = { onPlay(f) },
                             onCopy = { onCopy(f) },
                             onDelete = { onDelete(f) },
                             onFixFile = { onFixFile(f) },
@@ -278,6 +282,7 @@ private fun EpisodeCard(
 @Composable
 fun FileRow(
     stream: StreamFileEntity,
+    onPlay: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit,
     onFixFile: () -> Unit,
@@ -310,13 +315,7 @@ fun FileRow(
                 BareIconButton(
                     icon = Icons.Filled.PlayArrow,
                     contentDescription = "Play",
-                    onClick = {
-                        Toast.makeText(
-                            context,
-                            "In-app player is coming — use Copy Link with Stremio for now",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                    },
+                    onClick = onPlay,
                 )
                 BareIconButton(
                     icon = Icons.Filled.ContentCopy,

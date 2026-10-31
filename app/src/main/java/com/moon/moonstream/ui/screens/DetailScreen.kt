@@ -1,5 +1,8 @@
 package com.moon.moonstream.ui.screens
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -147,14 +150,33 @@ fun DetailScreen(mediaId: Long, onBack: () -> Unit) {
     } else {
         "${m.fileCount} file${if (m.fileCount == 1) "" else "s"} · ${formatBytes(m.totalSize)}"
     }
-    // NOTE: these stream URLs follow the shape his AI's server generates
-    // (/stream/file/<mediaId>/<fileId>). The server itself still resolves
-    // fake data — links go fully live with the Phase 4 server review.
+    // Stream URLs served by the in-phone server: /stream/file/<mediaId>/<fileId>
+    // (same shape the server advertises in its /stream responses).
     val streamBase = "http://${AppUiState.currentIp}:${AppUiState.port}"
 
     fun copyLink(file: StreamFileEntity) {
         clipboard.setText(AnnotatedString("$streamBase/stream/file/${m.id}/${file.id}"))
         Toast.makeText(context, "Stream link copied", Toast.LENGTH_SHORT).show()
+    }
+
+    /** Open the system "Play with" sheet so the phone's own video players
+     *  (VLC, mpvRx, …) handle the stream. Needs the server running. */
+    fun playExternal(file: StreamFileEntity) {
+        if (!AppUiState.serverOn) {
+            Toast.makeText(context, "Turn the server on first, then play", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val uri = Uri.parse("$streamBase/stream/file/${m.id}/${file.id}")
+        val mime = mimeForFile(file.fileName)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            context.startActivity(Intent.createChooser(intent, "Play with"))
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(context, "No video player found on this phone", Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun deleteFile(file: StreamFileEntity) {
@@ -394,6 +416,7 @@ fun DetailScreen(mediaId: Long, onBack: () -> Unit) {
                     subtitles = subtitles,
                     seasonIdx = seasonIdx,
                     onSeason = { seasonIdx = it },
+                    onPlay = { playExternal(it) },
                     onCopy = { copyLink(it) },
                     onDelete = { deleteFile(it) },
                     onFixFile = { fixFile = it; fixMode = FixMode.FIX_FILE },
@@ -422,13 +445,7 @@ fun DetailScreen(mediaId: Long, onBack: () -> Unit) {
                 files.forEach { f ->
                     StreamRow(
                         stream = f,
-                        onPlay = {
-                            Toast.makeText(
-                                context,
-                                "In-app player is coming — use Copy Link with Stremio for now",
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        },
+                        onPlay = { playExternal(f) },
                         onCopy = { copyLink(f) },
                         onDelete = { deleteFile(f) },
                         onFixFile = { fixFile = f; fixMode = FixMode.FIX_FILE },
@@ -592,5 +609,20 @@ fun DetailScreen(mediaId: Long, onBack: () -> Unit) {
                 }
             },
         )
+    }
+}
+
+/** Mime type for the ACTION_VIEW intent, guessed from the file extension. */
+private fun mimeForFile(fileName: String): String {
+    return when (fileName.substringAfterLast('.', "").lowercase()) {
+        "mp4", "m4v", "mov" -> "video/mp4"
+        "mkv" -> "video/x-matroska"
+        "avi" -> "video/x-msvideo"
+        "webm" -> "video/webm"
+        "3gp", "3g2" -> "video/3gpp"
+        "ts", "m2ts" -> "video/mp2t"
+        "flv" -> "video/x-flv"
+        "wmv" -> "video/x-ms-wmv"
+        else -> "video/*"
     }
 }
