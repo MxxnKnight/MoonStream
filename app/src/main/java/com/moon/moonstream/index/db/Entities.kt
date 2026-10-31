@@ -39,6 +39,8 @@ data class MediaItemEntity(
     val updatedAt: Long,
     /** User-hidden via Library multi-select / Detail. Shown in the HIDDEN tab. */
     val hidden: Boolean = false,
+    /** User-created via the Create screen (never auto-matched / re-matched). */
+    val isCustom: Boolean = false,
 )
 
 /** One Telegram file attached to a media item. */

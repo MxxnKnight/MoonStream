@@ -84,6 +84,10 @@ fun MetadataFixSheet(
     isAnime: Boolean,
     onDismiss: () -> Unit,
     onApply: (MetaPick) -> Unit,
+    /** FIX_FILE mode: "this isn't a real show — make it a custom entry". */
+    onCustomContent: () -> Unit = {},
+    /** "movie" | "series" | "anime" — drives the metadata search type. */
+    mediaType: String = "series",
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -118,7 +122,9 @@ fun MetadataFixSheet(
             noKeyHint = !isAnime && key.isBlank()
             results = MetadataMatcher.searchTitles(
                 query = query,
-                type = "series",
+                // Anime goes through Kitsu; otherwise match the entry's real
+                // type — movies were wrongly searching TV shows.
+                type = if (isAnime) "series" else mediaType,
                 isAnime = isAnime,
                 tmdbKey = key,
             )
@@ -255,6 +261,19 @@ fun MetadataFixSheet(
                 enabled = selected != null,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (mode == FixMode.FIX_FILE) {
+                MsOutlinePill(
+                    text = "Add to custom content",
+                    onClick = onCustomContent,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Not a real show? Turn this file into a custom entry " +
+                        "(class videos, personal rips…).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MsColors.TextSecondary,
+                )
+            }
         }
     }
 }

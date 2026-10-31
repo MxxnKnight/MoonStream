@@ -54,6 +54,8 @@ import com.moon.moonstream.ui.screens.LogsScreen
 import com.moon.moonstream.ui.screens.ServerScreen
 import com.moon.moonstream.ui.screens.SettingsScreen
 import com.moon.moonstream.ui.screens.SplashScreen
+import com.moon.moonstream.ui.model.CreatePrefill
+import com.moon.moonstream.ui.model.PrefillFile
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MoonStreamTheme
 import com.moon.moonstream.ui.theme.MsColors
@@ -69,7 +71,7 @@ sealed interface AppScreen {
     data object Library : AppScreen
     data class Detail(val mediaId: Long) : AppScreen
     data object Channels : AppScreen
-    data object Create : AppScreen
+    data class Create(val prefill: CreatePrefill? = null) : AppScreen
     data object Settings : AppScreen
     data object Logs : AppScreen
 }
@@ -130,7 +132,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     // Detail belongs to the Library tab; Create belongs to Channels; Logs to Settings.
     val selectedTab = when (current) {
         is AppScreen.Detail -> AppScreen.Library
-        AppScreen.Create -> AppScreen.Channels
+        is AppScreen.Create -> AppScreen.Channels
         AppScreen.Logs -> AppScreen.Settings
         else -> current
     }
@@ -197,10 +199,37 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         DetailScreen(
                             mediaId = screen.mediaId,
                             onBack = { backStack.removeLast() },
+                            onOpenCreate = { prefill -> go(AppScreen.Create(prefill)) },
                         )
                     AppScreen.Channels ->
-                        ChannelsScreen(onCreateEntry = { go(AppScreen.Create) })
-                    AppScreen.Create -> CreateScreen()
+                        ChannelsScreen(
+                            onCreateEntry = { file ->
+                                go(
+                                    AppScreen.Create(
+                                        if (file == null) null
+                                        else CreatePrefill(
+                                            files = listOf(
+                                                PrefillFile(
+                                                    channelId = file.channelId,
+                                                    messageId = file.messageId,
+                                                    fileName = file.fileName,
+                                                    fileSize = file.fileSize,
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                )
+                            },
+                        )
+                    is AppScreen.Create -> CreateScreen(
+                        prefill = screen.prefill ?: CreatePrefill(),
+                        onDone = { id ->
+                            // Swap Create for the new entry's Detail screen.
+                            backStack.removeLast()
+                            go(AppScreen.Detail(id))
+                        },
+                        onCancel = { backStack.removeLast() },
+                    )
                     AppScreen.Settings -> SettingsScreen(
                         onOpenLogs = { go(AppScreen.Logs) },
                         onLoggedOut = {

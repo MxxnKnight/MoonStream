@@ -70,7 +70,7 @@ interface MediaDao {
         """UPDATE media_items SET
                title = :title, normalizedTitle = :norm, year = :year,
                imdbId = :imdbId, tmdbId = :tmdbId, posterUrl = :posterUrl,
-               overview = :overview, updatedAt = :now
+               overview = :overview, stremioId = :stremioId, updatedAt = :now
            WHERE id = :id""",
     )
     suspend fun updateMetadata(
@@ -82,6 +82,7 @@ interface MediaDao {
         tmdbId: Int?,
         posterUrl: String?,
         overview: String?,
+        stremioId: String?,
         now: Long,
     )
 
@@ -149,6 +150,9 @@ interface StreamDao {
 
     @Query("UPDATE stream_files SET mediaId = :newMediaId WHERE id = :fileId")
     suspend fun moveToMedia(fileId: Long, newMediaId: Long)
+
+    @Query("UPDATE stream_files SET season = :season, episode = :episode WHERE id = :fileId")
+    suspend fun updateSeasonEpisode(fileId: Long, season: Int?, episode: Int?)
 
     /** Media id of the entry in this channel whose title matches AND that
      *  already has a file for the given season/episode — the strongest
@@ -241,6 +245,9 @@ interface UnmatchedDao {
 
     @Query("DELETE FROM unmatched_files WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("DELETE FROM unmatched_files WHERE channelId = :channelId AND messageId = :messageId")
+    suspend fun deleteByMessage(channelId: Long, messageId: Long)
 
     @Query("DELETE FROM unmatched_files WHERE channelId = :channelId")
     suspend fun deleteByChannel(channelId: Long)

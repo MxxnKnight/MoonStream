@@ -75,9 +75,11 @@ import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.backend.MsChannel
 import com.moon.moonstream.index.db.ChannelConfigEntity
 import com.moon.moonstream.index.db.ChannelBreakdown
+import com.moon.moonstream.index.db.MediaItemEntity
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.index.db.UnmatchedFileEntity
+import com.moon.moonstream.index.StremioIds
 import com.moon.moonstream.index.parse.FilenameParser
 import com.moon.moonstream.index.parse.normalizeTitle
 import com.moon.moonstream.index.scan.ScanMode
@@ -150,7 +152,7 @@ private object ChannelRowCache {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
+fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
@@ -420,7 +422,7 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
             item(key = "addCustomContent") {
                 LimePillButton(
                     text = "＋ Add Custom Content",
-                    onClick = onCreateEntry,
+                    onClick = { onCreateEntry(null) },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -492,30 +494,78 @@ fun ChannelsScreen(onCreateEntry: () -> Unit = {}) {
             onApply = { picked ->
                 scope.launch {
                     val norm = normalizeTitle(picked.title)
-                    val media = db.mediaDao().findByTitle(f.channelId, norm)
-                    if (media != null) {
-                        val parsed = FilenameParser.parse(f.fileName)
-                        db.streamDao().insert(
-                            StreamFileEntity(
-                                mediaId = media.id,
-                                channelId = f.channelId,
-                                messageId = f.messageId,
-                                fileName = f.fileName,
-                                fileSize = f.fileSize,
-                                season = parsed.season,
-                                episode = parsed.episode,
-                                quality = parsed.qualityBadge,
-                            ),
-                        )
-                        db.mediaDao().refreshAggregates(media.id, System.currentTimeMillis())
-                        db.unmatchedDao().delete(f.id)
-                        Toast.makeText(context, "Linked to ${media.title}", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(
-                            context,
-                            "No library entry matches — use Create entry",
-                            Toast.LENGTH_LONG,
-                        ).show()
+                    val now = System.currentTimeMillis()
+                    val parsed = FilenameParser.parse(f.fileName)
+                    when (picked.action) {
+                        "new-entry", "new-episode" -> {
+                            // Create the title from the picked metadata, then
+                            // attach this file to it.
+                            val mediaId = db.mediaDao().upsert(
+                                MediaItemEntity(
+                                    channelId = f.channelId,
+                                    title = picked.title,
+                                    normalizedTitle = norm,
+                                    year = picked.year,
+                                    type = "series",
+                                    imdbId = picked.imdbId,
+                                    tmdbId = picked.tmdbId,
+                                    stremioId = StremioIds.forNewItem(
+                                        f.channelId, norm, picked.imdbId,
+                                    ),
+                                    posterUrl = picked.posterUrl,
+                                    overview = picked.overview,
+                                    totalSize = 0L,
+                                    episodeCount = 0,
+                                    fileCount = 0,
+                                    updatedAt = now,
+                                ),
+                            )
+                            db.streamDao().insert(
+                                StreamFileEntity(
+                                    mediaId = mediaId,
+                                    channelId = f.channelId,
+                                    messageId = f.messageId,
+                                    fileName = f.fileName,
+                                    fileSize = f.fileSize,
+                                    season = parsed.season,
+                                    episode = parsed.episode,
+                                    quality = parsed.qualityBadge,
+                                ),
+                            )
+                            db.mediaDao().refreshAggregates(mediaId, now)
+                            db.unmatchedDao().delete(f.id)
+                            Toast.makeText(
+                                context,
+                                "Created “${picked.title}”",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                        else -> {
+                            val media = db.mediaDao().findByTitle(f.channelId, norm)
+                            if (media != null) {
+                                db.streamDao().insert(
+                                    StreamFileEntity(
+                                        mediaId = media.id,
+                                        channelId = f.channelId,
+                                        messageId = f.messageId,
+                                        fileName = f.fileName,
+                                        fileSize = f.fileSize,
+                                        season = parsed.season,
+                                        episode = parsed.episode,
+                                        quality = parsed.qualityBadge,
+                                    ),
+                                )
+                                db.mediaDao().refreshAggregates(media.id, now)
+                                db.unmatchedDao().delete(f.id)
+                                Toast.makeText(context, "Linked to ${media.title}", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "No library entry matches — use Create entry",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
                     }
                     linkFile = null
                 }
@@ -901,7 +951,7 @@ private fun DoneCheck(modifier: Modifier = Modifier) {
 @Composable
 private fun UnmatchedFileRow(
     file: UnmatchedFileEntity,
-    onCreateEntry: () -> Unit,
+    onCreateEntry: (UnmatchedFileEntity?) -> Unit,
     onCopyLink: () -> Unit,
     onLinkToTitle: () -> Unit,
 ) {
@@ -925,7 +975,7 @@ private fun UnmatchedFileRow(
                     .padding(top = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                LimeTextButton(text = "Create entry", onClick = onCreateEntry)
+                LimeTextButton(text = "Create entry", onClick = { onCreateEntry(file) })
                 LimeTextButton(text = "Copy Link", onClick = onCopyLink)
                 LimeTextButton(text = "Link to Title", onClick = onLinkToTitle)
             }

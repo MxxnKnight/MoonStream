@@ -82,6 +82,9 @@ import com.moon.moonstream.ui.components.MsOutlinePill
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.components.QualityChip
 import com.moon.moonstream.ui.model.formatBytes
+import com.moon.moonstream.ui.model.CreatePrefill
+import com.moon.moonstream.ui.model.PrefillFile
+import com.moon.moonstream.index.StremioIds
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MsColors
 import kotlinx.coroutines.Dispatchers
@@ -99,7 +102,11 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetailScreen(mediaId: Long, onBack: () -> Unit) {
+fun DetailScreen(
+    mediaId: Long,
+    onBack: () -> Unit,
+    onOpenCreate: (CreatePrefill) -> Unit = {},
+) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val db = remember { MsDatabase.get(context) }
@@ -214,6 +221,13 @@ fun DetailScreen(mediaId: Long, onBack: () -> Unit) {
                 tmdbId = full?.tmdbId ?: picked.tmdbId,
                 posterUrl = full?.posterUrl ?: picked.posterUrl,
                 overview = full?.overview ?: picked.overview,
+                // A fixed title may now have a real tt ID — the Stremio ID
+                // follows it; otherwise keep the stable synthetic one.
+                stremioId = StremioIds.forNewItem(
+                    m.channelId,
+                    normalizeTitle(full?.title ?: picked.title),
+                    full?.imdbId ?: picked.imdbId,
+                ),
                 now = System.currentTimeMillis(),
             )
             withContext(Dispatchers.Main) {
@@ -241,6 +255,9 @@ fun DetailScreen(mediaId: Long, onBack: () -> Unit) {
                         type = m.type,
                         imdbId = full?.imdbId ?: picked.imdbId,
                         tmdbId = full?.tmdbId ?: picked.tmdbId,
+                        stremioId = StremioIds.forNewItem(
+                            m.channelId, norm, full?.imdbId ?: picked.imdbId,
+                        ),
                         posterUrl = full?.posterUrl ?: picked.posterUrl,
                         overview = full?.overview ?: picked.overview,
                         totalSize = 0L,
@@ -500,11 +517,35 @@ fun DetailScreen(mediaId: Long, onBack: () -> Unit) {
             currentTitle = fixFile?.fileName ?: m.title,
             isAnime = isAnime,
             onDismiss = { fixMode = null; fixFile = null },
+            mediaType = m.type,
             onApply = { picked ->
                 when (mode) {
                     FixMode.FIX_TITLE -> applyFixTitle(picked)
                     FixMode.FIX_FILE -> fixFile?.let { applyFixFile(it, picked) }
                     FixMode.LINK -> Unit // not used on this screen
+                }
+                fixMode = null
+                fixFile = null
+            },
+            onCustomContent = {
+                // This file isn't a real show — open Create with it
+                // pre-filled; Create moves the row on save.
+                fixFile?.let { f ->
+                    onOpenCreate(
+                        CreatePrefill(
+                            files = listOf(
+                                PrefillFile(
+                                    channelId = f.channelId,
+                                    messageId = f.messageId,
+                                    fileName = f.fileName,
+                                    fileSize = f.fileSize,
+                                    season = f.season,
+                                    episode = f.episode,
+                                    existingStreamId = f.id,
+                                ),
+                            ),
+                        ),
+                    )
                 }
                 fixMode = null
                 fixFile = null

@@ -20,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         UnmatchedFileEntity::class,
         ChannelConfigEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class MsDatabase : RoomDatabase() {
@@ -46,6 +46,16 @@ abstract class MsDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v3 -> v4: adds media_items.isCustom (user-created entries).
+         * Non-destructive — defaults to 0 (false) for existing rows.
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE media_items ADD COLUMN isCustom INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): MsDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -53,7 +63,7 @@ abstract class MsDatabase : RoomDatabase() {
                     MsDatabase::class.java,
                     "moonstream.db",
                 )
-                    .addMigrations(MIGRATION_2_3)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                     // Pre-release app: unknown schema jumps still wipe and
                     // rescan. Never ship a destructive migration past v1.0
                     // without a real one.
