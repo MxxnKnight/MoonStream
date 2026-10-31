@@ -22,6 +22,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import com.moon.moonstream.ui.theme.MsColors
 
 /**
@@ -78,15 +84,55 @@ fun SettingRow(
 
 @Composable
 fun SettingsGroup(title: String, content: @Composable () -> Unit) {
+    val context = LocalContext.current
+    // Collapsible: collapsed groups don't compose their content at all,
+    // which is also what fixes the settings scroll lag. State persists
+    // across app restarts.
+    var expanded by remember {
+        mutableStateOf(
+            com.moon.moonstream.ui.state.SettingsPrefs.getBool(
+                context, "grp_$title", true
+            )
+        )
+    }
     Column(modifier = Modifier.fillMaxWidth()) {
-        MsGroupHeader(title)
-        MsCard(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-            ) {
-                content()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable {
+                    expanded = !expanded
+                    com.moon.moonstream.ui.state.SettingsPrefs.setBool(
+                        context, "grp_$title", expanded
+                    )
+                }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MsGroupHeader(title, modifier = Modifier.weight(1f))
+            androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (expanded) 180f else 0f,
+                label = "grpChevron"
+            ).value.let { rot ->
+                Icon(
+                    imageVector = Icons.Filled.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    tint = MsColors.TextSecondary,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .graphicsLayer { rotationZ = rot },
+                )
+            }
+        }
+        if (expanded) {
+            MsCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                ) {
+                    content()
+                }
             }
         }
         Spacer(Modifier.height(10.dp))

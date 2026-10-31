@@ -23,6 +23,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -65,8 +67,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.ui.components.MsCard
-import com.moon.moonstream.ui.components.PowerSwitch
 import com.moon.moonstream.ui.state.AppUiState
+import com.moon.moonstream.ui.theme.Doto
 import com.moon.moonstream.ui.theme.MsColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -158,7 +160,7 @@ fun ServerScreen(onOpenLibrary: () -> Unit = {}) {
 
         ServerCard(on = on, uptimeSecs = uptimeSecs, onToggle = onToggle)
 
-        // Everything below only exists while the server is ON.
+        // Server stats only exist while the server is ON.
         AnimatedVisibility(
             visible = on,
             enter = fadeIn(tween(300)) + expandVertically(tween(350)),
@@ -166,20 +168,24 @@ fun ServerScreen(onOpenLibrary: () -> Unit = {}) {
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 ServerStatsCard(uptimeSecs = uptimeSecs)
-
-                MsSectionEyebrow("LIBRARY")
-                LibraryDashboardCard(onOpenLibrary = onOpenLibrary)
-
-                Text(
-                    "Paste the manifest URL into Stremio or Nuvio to browse your library.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MsColors.TextSecondary,
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                )
-                // Room for the floating pill: last content scrolls fully into view.
-                Spacer(Modifier.height(106.dp))
             }
         }
+
+        // Library + Recently Added: always visible, like NoxMedia —
+        // they don't need the server running.
+        MsSectionEyebrow("LIBRARY")
+        LibraryDashboardCard(onOpenLibrary = onOpenLibrary)
+
+        RecentlyAddedRow(onOpenLibrary = onOpenLibrary)
+
+        Text(
+            "Paste the manifest URL into Stremio or Nuvio to browse your library.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MsColors.TextSecondary,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        // Room for the floating pill: last content scrolls fully into view.
+        Spacer(Modifier.height(106.dp))
     }
 }
 
@@ -240,7 +246,9 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
             .background(borderBrush)
-            .padding(1.5.dp),
+            .padding(1.5.dp)
+            .clip(RoundedCornerShape(26.5.dp))
+            .clickable(onClick = onToggle),
     ) {
         // Premium ambient background: dark base, soft glow washing down from
         // the top (not a centered ball), plus a thin top-edge highlight.
@@ -281,65 +289,121 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 )
             }
         }
-        Column(
-            modifier = Modifier
-                .clip(RoundedCornerShape(26.5.dp)),
-        ) {
-            // --- Server section ---
+        if (!on) {
+            // NoxMedia-style sleep state: the whole card is the button.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 64.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "In Sleep mode",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontFamily = Doto),
+                    color = MsColors.TextSecondary,
+                )
+            }
+        } else {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(22.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .size(14.dp)
-                            .background(if (on) MsColors.Accent else Color(0xFFF44336), CircleShape),
-                    )
-                    Spacer(Modifier.width(10.dp))
+                // Top row: title left, "sleep" (stop) right.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
-                        if (on) "Server ON" else "Server OFF",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
+                        "Server Awaked",
+                        style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
                         color = Color.White,
                     )
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    if (on) "Running · ${formatUptime(uptimeSecs)}" else "Tap the switch to start",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MsColors.TextSecondary,
-                )
-                Spacer(Modifier.height(22.dp))
-
-                PowerSwitch(on = on, onToggle = onToggle)
-
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "Port ${AppUiState.port}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MsColors.TextSecondary,
-                )
-            }
-
-            // --- Manifest drawer: slides down inside the same card ---
-            AnimatedVisibility(
-                visible = on,
-                enter = expandVertically(tween(320)) + fadeIn(tween(250)),
-                exit = shrinkVertically(tween(280)) + fadeOut(tween(200)),
-            ) {
-                Column {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(Color.White.copy(alpha = 0.08f)),
+                    Text(
+                        "sleep",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MsColors.TextSecondary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(onClick = onToggle)
+                            .padding(8.dp),
                     )
-                    ManifestDrawer()
+                }
+                Spacer(Modifier.height(16.dp))
+                // Uptime + speed, NoxMedia-style big Doto numbers.
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            formatUptime(uptimeSecs),
+                            style = MaterialTheme.typography.displaySmall.copy(fontFamily = Doto),
+                            color = Color.White,
+                        )
+                        Text(
+                            "uptime",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MsColors.TextSecondary,
+                        )
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            formatBytes(ServerTelemetry.speedBps()) + "/s",
+                            style = MaterialTheme.typography.displaySmall.copy(fontFamily = Doto),
+                            color = Color.White,
+                        )
+                        Text(
+                            "speed",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MsColors.TextSecondary,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                // Session / all-time in a darker inner box.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .padding(vertical = 12.dp, horizontal = 16.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "session ${formatBytes(ServerTelemetry.sessionBytes)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextSecondary,
+                        )
+                        Text(
+                            "·",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextSecondary,
+                        )
+                        Text(
+                            "all-time ${formatBytes(ServerTelemetry.totalBytes)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextSecondary,
+                        )
+                    }
                 }
             }
+            // URL section: darker, pushed below a separator.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color.White.copy(alpha = 0.08f)),
+            )
+            ManifestDrawer()
         }
     }
 }
@@ -369,6 +433,7 @@ private fun ManifestDrawer() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.25f))
             .background(flash)
             .clickable {
                 clipboard.setText(AnnotatedString(url))
@@ -378,36 +443,14 @@ private fun ManifestDrawer() {
             .padding(18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                "MANIFEST URL",
-                style = MaterialTheme.typography.labelSmall,
-                color = MsColors.TextSecondary,
-                letterSpacing = 1.sp,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                url,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF1E1E24))
-                .padding(8.dp),
-        ) {
-            Icon(
-                Icons.Filled.ContentCopy,
-                contentDescription = "Copy manifest URL",
-                tint = if (copied) Color(0xFF22C55E) else Color.White.copy(alpha = 0.7f),
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        Text(
+            "URL: $url",
+            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Doto),
+            color = MsColors.TextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -684,3 +727,98 @@ private fun needsNotifPermission(context: android.content.Context): Boolean =
             context,
             Manifest.permission.POST_NOTIFICATIONS,
         ) != PackageManager.PERMISSION_GRANTED
+
+/**
+ * Recently Added row: horizontal poster strip, always visible (like NoxMedia).
+ */
+@Composable
+private fun RecentlyAddedRow(onOpenLibrary: () -> Unit) {
+    val context = LocalContext.current
+    var items by remember { mutableStateOf<List<com.moon.moonstream.index.db.MediaItemEntity>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            val db = com.moon.moonstream.index.db.MsDatabase.get(context)
+            val recent = db.mediaDao().listVisible().take(10)
+            withContext(Dispatchers.Main) { items = recent }
+        }
+    }
+    if (items.isEmpty()) return
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Recently Added",
+                style = MaterialTheme.typography.titleMedium.copy(fontFamily = Doto),
+                color = MsColors.TextPrimary,
+            )
+            Text(
+                "view all →",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MsColors.Accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onOpenLibrary)
+                    .padding(8.dp),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items.forEach { m ->
+                Column(modifier = Modifier.width(110.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .width(110.dp)
+                            .height(160.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MsColors.SurfaceAlt)
+                            .clickable(onClick = onOpenLibrary),
+                    ) {
+                        if (!m.posterUrl.isNullOrBlank()) {
+                            coil.compose.AsyncImage(
+                                model = m.posterUrl,
+                                contentDescription = m.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    m.title.take(1).uppercase(),
+                                    style = MaterialTheme.typography.headlineLarge.copy(fontFamily = Doto),
+                                    color = MsColors.TextSecondary,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        m.title,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MsColors.TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "${m.year ?: ""} · ${formatBytes(m.totalSize)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.Accent.copy(alpha = 0.8f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}

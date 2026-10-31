@@ -570,13 +570,13 @@ fun MsSectionLabel(text: String) {
 
 /** Lime group header for Settings. */
 @Composable
-fun MsGroupHeader(text: String) {
+fun MsGroupHeader(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold,
         color = MsColors.Accent,
-        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+        modifier = modifier.padding(top = 12.dp, bottom = 4.dp),
     )
 }
 

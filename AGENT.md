@@ -3,6 +3,12 @@
 Read this file before making any change to this repo. It tells you what the
 app is, who owns which part, and what is already done. Follow it.
 
+## Bug checklist — READ THIS FIRST
+
+**`docs/BUG_CHECKLIST.md`** is the live bug tracker. moon reports bugs there;
+check items off only when the fix is pushed. Read it before starting work so
+you don't re-fix what's done or miss what's open.
+
 ## What MoonStream is
 
 A personal Telegram media library for Android (Kotlin + Jetpack Compose).

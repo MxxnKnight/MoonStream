@@ -1,8 +1,11 @@
 name: Build Android APK
 
 # Manual only — run it from the Actions tab with "Run workflow".
-# - version: the release version, e.g. 0.9.0 (must match versionName in
-#   app/build.gradle — bump it in the same push before running).
+# - version: the release version, e.g. 0.9.0. The workflow writes this into
+#   app/build.gradle as versionName (and bumps versionCode) before building,
+#   so the APK's internal version always matches the release tag. This is
+#   what the in-app updater compares — a mismatch caused the 0.8.2 "update
+#   loop" bug (release said 0.8.2, APK inside still said 0.8.0).
 # - publish_release: when true, creates a GitHub Release tagged v<version>
 #   with the per-ABI APKs attached, which is what the app's in-app
 #   updater (Settings → Check for updates) reads.
@@ -41,6 +44,20 @@ jobs:
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
+
+      # Sync versionName from the workflow input and bump versionCode, so
+      # the APK's internal version always matches the release tag. Without
+      # this, a manually-typed version (e.g. 0.8.2) produces an APK that
+      # still reports the old versionName (e.g. 0.8.0) — and the in-app
+      # updater offers the "update" forever.
+      - name: Sync version from input
+        run: |
+          VC=$(grep -oP 'versionCode \K\d+' app/build.gradle)
+          NEW_VC=$((VC + 1))
+          sed -i -E "s/versionCode [0-9]+/versionCode $NEW_VC/" app/build.gradle
+          sed -i -E "s/versionName '[^']+'/versionName '${{ inputs.version }}'/" app/build.gradle
+          echo "versionName=${{ inputs.version }} versionCode=$NEW_VC"
+          grep -E 'versionCode|versionName' app/build.gradle | head -2
 
       - name: Build Debug APK
         run: ./gradlew :app:assembleDebug --stacktrace
