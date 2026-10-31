@@ -28,6 +28,8 @@ data class LogLine(val time: String, val tag: String, val message: String)
 object AppUiState {
     var serverOn by mutableStateOf(false)
     var port by mutableStateOf(8080)
+    /** Separate port for raw file/subtitle bytes (PLAN.md Phase 4). */
+    var streamPort by mutableStateOf(8081)
 
     // Appearance (persisted)
     var accent by mutableStateOf(MsAccent.LIME)
@@ -53,7 +55,7 @@ object AppUiState {
         if (!serverOn) {
             val ip = com.moon.moonstream.server.MoonStreamServer.getLocalIpAddress()
             currentIp = ip
-            com.moon.moonstream.server.MoonStreamServerService.start(context, port)
+            com.moon.moonstream.server.MoonStreamServerService.start(context, port, streamPort)
         } else {
             com.moon.moonstream.server.MoonStreamServerService.stop(context)
         }

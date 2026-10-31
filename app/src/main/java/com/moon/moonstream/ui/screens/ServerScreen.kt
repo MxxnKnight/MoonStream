@@ -1,6 +1,11 @@
 package com.moon.moonstream.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
@@ -12,6 +17,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -88,13 +94,41 @@ fun ServerScreen() {
         }
     }
 
-    val onToggle = {
+    // Android 13+ needs the notification permission at runtime; without it the
+    // foreground service runs but its notification (with the Stop button) is
+    // silently hidden. Ask the moment the user turns the server on.
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
         AppUiState.toggleServer(context)
-        Toast.makeText(
-            context,
-            if (AppUiState.serverOn) "Server running at ${AppUiState.manifestLink}" else "Server stopped",
-            Toast.LENGTH_SHORT,
-        ).show()
+        if (!granted) {
+            Toast.makeText(
+                context,
+                "Server starting — allow notifications to see its status and Stop button.",
+                Toast.LENGTH_LONG,
+            ).show()
+        } else {
+            Toast.makeText(context, "Starting server…", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val onToggle = {
+        // serverOn is written only by the foreground service, so the toggle
+        // always reflects the real state — but it flips asynchronously, so
+        // base the toast on the intended action, not the stale value.
+        val turningOn = !AppUiState.serverOn
+        if (turningOn && needsNotifPermission(context)) {
+            // Android 13+: without this grant the service's notification is
+            // silently suppressed — the exact "no notification" bug.
+            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            AppUiState.toggleServer(context)
+            Toast.makeText(
+                context,
+                if (turningOn) "Starting server…" else "Stopping server…",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
     }
 
     Column(
@@ -570,3 +604,15 @@ private fun formatUptime(secs: Int): String {
 
 
 
+
+/**
+ * True when the notification permission must be requested at runtime
+ * (Android 13+) and hasn't been granted yet. Without it, the foreground
+ * service runs but its notification is silently hidden.
+ */
+private fun needsNotifPermission(context: android.content.Context): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) != PackageManager.PERMISSION_GRANTED

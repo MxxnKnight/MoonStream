@@ -33,6 +33,15 @@ interface MediaDao {
     @Query("SELECT * FROM media_items WHERE id = :id")
     fun observeById(id: Long): Flow<MediaItemEntity?>
 
+    @Query("SELECT * FROM media_items WHERE id = :id")
+    suspend fun getById(id: Long): MediaItemEntity?
+
+    @Query("SELECT * FROM media_items WHERE hidden = 0 ORDER BY updatedAt DESC")
+    suspend fun listVisible(): List<MediaItemEntity>
+
+    @Query("SELECT * FROM media_items WHERE imdbId = :imdbId LIMIT 1")
+    suspend fun findByImdb(imdbId: String): MediaItemEntity?
+
     @Query("SELECT * FROM media_items WHERE channelId = :channelId")
     suspend fun getAllByChannel(channelId: Long): List<MediaItemEntity>
 
@@ -99,6 +108,12 @@ interface StreamDao {
     @Query("SELECT * FROM stream_files WHERE mediaId = :mediaId ORDER BY season, episode, id")
     fun observeByMedia(mediaId: Long): Flow<List<StreamFileEntity>>
 
+    @Query("SELECT * FROM stream_files WHERE mediaId = :mediaId ORDER BY season, episode, id")
+    suspend fun listByMedia(mediaId: Long): List<StreamFileEntity>
+
+    @Query("SELECT * FROM stream_files WHERE id = :id")
+    suspend fun getById(id: Long): StreamFileEntity?
+
     @Query("DELETE FROM stream_files WHERE channelId = :channelId")
     suspend fun deleteByChannel(channelId: Long)
 
@@ -138,6 +153,12 @@ interface SubtitleDao {
 
     @Query("SELECT * FROM subtitle_files WHERE mediaId = :mediaId ORDER BY season, episode, id")
     fun observeByMedia(mediaId: Long): Flow<List<SubtitleFileEntity>>
+
+    @Query("SELECT * FROM subtitle_files WHERE mediaId = :mediaId ORDER BY season, episode, id")
+    suspend fun listByMedia(mediaId: Long): List<SubtitleFileEntity>
+
+    @Query("SELECT * FROM subtitle_files WHERE id = :id")
+    suspend fun getById(id: Long): SubtitleFileEntity?
 
     @Query("SELECT * FROM subtitle_files WHERE channelId = :channelId AND mediaId IS NULL ORDER BY id DESC")
     fun observeUnlinkedByChannel(channelId: Long): Flow<List<SubtitleFileEntity>>
