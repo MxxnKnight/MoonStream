@@ -91,7 +91,7 @@ fun SettingsGroup(title: String, content: @Composable () -> Unit) {
     var expanded by remember {
         mutableStateOf(
             com.moon.moonstream.ui.state.SettingsPrefs.getBool(
-                context, "grp_$title", true
+                context, "grp_$title", false
             )
         )
     }

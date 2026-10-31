@@ -27,6 +27,8 @@ data class EnrichedMeta(
     val posterUrl: String?,
     val imdbId: String?,
     val tmdbId: Int?,
+    /** 0.0–1.0 match confidence. Below 0.75 the file goes to unmatched. */
+    val confidence: Double = 1.0,
 )
 
 object MetadataMatcher {
@@ -45,12 +47,13 @@ object MetadataMatcher {
         type: String,
         isAnime: Boolean,
         tmdbKey: String,
+        hasEpisode: Boolean = false,
     ): EnrichedMeta? {
         if (title.isBlank()) return null
         return try {
             // Anime first: Kitsu needs no key and knows anime best.
             if (isAnime || type == "anime") {
-                tryKitsu(title)?.let {
+                tryKitsu(title, preferSeries = hasEpisode)?.let {
                     com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → Kitsu: ${it.title}")
                     return it
                 }
@@ -126,6 +129,7 @@ object MetadataMatcher {
             posterUrl = poster,
             imdbId = imdbId,
             tmdbId = tmdbId,
+            confidence = bestScore.coerceIn(0.0, 1.0),
         )
     }
 
@@ -179,6 +183,9 @@ object MetadataMatcher {
                 posterUrl = obj.optString("poster").takeIf { it.isNotBlank() },
                 imdbId = obj.optString("id").takeIf { it.startsWith("tt") },
                 tmdbId = null,
+                // Cinemeta catalog is already ranked by relevance; use title
+                // similarity as the confidence.
+                confidence = similarity(query, name).coerceIn(0.0, 1.0),
             )
         }
     }
@@ -243,7 +250,7 @@ object MetadataMatcher {
         return searchCinemeta(title, type, 1).firstOrNull()
     }
 
-    private fun tryKitsu(title: String): EnrichedMeta? {
+    private fun tryKitsu(title: String, preferSeries: Boolean = false): EnrichedMeta? {
         val q = URLEncoder.encode(title, "UTF-8")
         val url = "https://kitsu.io/api/edge/anime?filter[text]=$q&page[limit]=5"
         val root = getJson(url, mapOf("Accept" to "application/vnd.api+json")) ?: return null
@@ -260,8 +267,13 @@ object MetadataMatcher {
                 attr.optJSONObject("titles")?.optString("en_us"),
                 attr.optJSONObject("titles")?.optString("en_jp"),
             ).filter { it.isNotBlank() }
+            // When the file has episode info, it's a series episode — never a
+            // movie. Boost TV-type results so "Psycho-Pass" (TV) beats
+            // "Psycho-Pass: The Movie".
+            val showType = attr.optString("showType", "")
+            val typeBoost = if (preferSeries && showType.equals("TV", ignoreCase = true)) 0.15 else 0.0
             for (c in candidates) {
-                val s = similarity(title, c)
+                val s = similarity(title, c) + typeBoost
                 if (s > bestScore) {
                     bestScore = s
                     best = attr
@@ -281,6 +293,7 @@ object MetadataMatcher {
             posterUrl = poster,
             imdbId = null,
             tmdbId = null,
+            confidence = bestScore.coerceIn(0.0, 1.0),
         )
     }
 

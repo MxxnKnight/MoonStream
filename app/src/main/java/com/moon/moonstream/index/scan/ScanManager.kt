@@ -117,6 +117,12 @@ object ScanManager {
         var existing = 0
         var unmatched = 0
         var checked = 0
+        // Last values already pushed to the UI — we report deltas per page
+        // so the scan popup shows live counts instead of zeros until done.
+        var repIndexed = 0
+        var repExisting = 0
+        var repUnmatched = 0
+        var repChecked = 0
 
         while (true) {
             val page = try {
@@ -162,8 +168,12 @@ object ScanManager {
                     unmatched++
                     continue
                 }
-                indexFile(db, target, msg.id, msg.fileName, msg.fileSize, parsed, tmdbKey, metaCache)
-                indexed++
+                val matched = indexFile(db, target, msg.id, msg.fileName, msg.fileSize, parsed, tmdbKey, metaCache)
+                if (matched) {
+                    indexed++
+                } else {
+                    unmatched++
+                }
             }
 
             if (hitCursor) break
@@ -171,6 +181,17 @@ object ScanManager {
             // Rough progress: we can't know the total up front, so we pulse
             // forward a little per page and finish at markDone().
             ScanUiState.updateProgress(channelId, (pages * 0.08f).coerceAtMost(0.95f))
+            // Live counters: push this page's deltas so the popup isn't stuck at 0.
+            ScanUiState.addTotals(
+                indexed - repIndexed,
+                existing - repExisting,
+                unmatched - repUnmatched,
+                checked - repChecked,
+            )
+            repIndexed = indexed
+            repExisting = existing
+            repUnmatched = unmatched
+            repChecked = checked
             delay(PAGE_DELAY_MS)
         }
 
@@ -182,10 +203,20 @@ object ScanManager {
         relinkSubtitles(db, channelId)
         // Stamp the relative "Synced …" time shown under the channel.
         db.channelConfigDao().setLastSynced(channelId, System.currentTimeMillis())
-        ScanUiState.addTotals(indexed, existing, unmatched, checked)
+        // Report any remainder not yet pushed per-page (avoids double-counting).
+        ScanUiState.addTotals(
+            indexed - repIndexed,
+            existing - repExisting,
+            unmatched - repUnmatched,
+            checked - repChecked,
+        )
         Log.i(TAG, "ch=$channelId done: indexed=$indexed existing=$existing unmatched=$unmatched checked=$checked")
     }
 
+    /**
+     * Returns true if the file was confidently matched and indexed;
+     * false if it was routed to unmatched (low-confidence match).
+     */
     private suspend fun indexFile(
         db: MsDatabase,
         target: ScanTarget,
@@ -195,13 +226,35 @@ object ScanManager {
         parsed: ParsedMedia,
         tmdbKey: String,
         metaCache: MutableMap<String, EnrichedMeta?>,
-    ) {
+    ): Boolean {
         val type = if (target.isAnime) "anime" else parsed.type
         val norm = normalizeTitle(parsed.title)
         val cacheKey = "$norm|$type|${parsed.year ?: ""}"
         val meta = metaCache.getOrPut(cacheKey) {
-            val m = MetadataMatcher.match(parsed.title, parsed.year, type, target.isAnime, tmdbKey)
+            val m = MetadataMatcher.match(
+                parsed.title, parsed.year, type, target.isAnime, tmdbKey,
+                hasEpisode = parsed.episode != null,
+            )
             if (m?.imdbId != null) MetadataMatcher.enrichFromCinemeta(m, type) else m
+        }
+
+        // Low-confidence match: don't create a wrong entry — send to
+        // unmatched so the user can manually link it. (moon: "low confidence
+        // files can go to the unmatched content area!")
+        if (meta != null && meta.confidence < 0.75) {
+            com.moon.moonstream.util.AppLog.w(
+                "MATCH",
+                "'${parsed.title}' low confidence (${"%.2f".format(meta.confidence)}) → unmatched",
+            )
+            db.unmatchedDao().insert(
+                UnmatchedFileEntity(
+                    channelId = target.channelId,
+                    messageId = messageId,
+                    fileName = fileName,
+                    fileSize = fileSize,
+                ),
+            )
+            return false
         }
 
         val now = System.currentTimeMillis()
@@ -244,6 +297,7 @@ object ScanManager {
             ),
         )
         db.mediaDao().refreshAggregates(mediaId, now)
+        return true
     }
 
     /**
