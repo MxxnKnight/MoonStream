@@ -1,6 +1,8 @@
 package com.moon.moonstream.ui.screens
 
 import com.moon.moonstream.ui.components.MsToast
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -541,11 +543,38 @@ fun AttachSubtitleDialog(
 fun AddStreamSheet(
     onDismiss: () -> Unit,
     onSave: (link: String, quality: String, name: String) -> Unit,
+    onFetchFileName: suspend (link: String) -> String?,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
     var link by remember { mutableStateOf("") }
     var quality by remember { mutableStateOf("1080p") }
     var name by remember { mutableStateOf("") }
+    var fetching by remember { mutableStateOf(false) }
+    var lastFetchedLink by remember { mutableStateOf<String?>(null) }
+
+    // Auto-fetch the filename as soon as a valid t.me link is pasted.
+    LaunchedEffect(link) {
+        val trimmed = link.trim()
+        if (trimmed != lastFetchedLink && parseTgLink(trimmed) != null) {
+            lastFetchedLink = trimmed
+            fetching = true
+            try {
+                val fetched = withContext(Dispatchers.IO) { onFetchFileName(trimmed) }
+                if (!fetched.isNullOrBlank()) {
+                    name = fetched
+                    // Auto-detect quality from the filename if it has one.
+                    val q = com.moon.moonstream.index.parse.FilenameParser.parse(fetched).qualityBadge
+                    if (!q.isNullOrBlank()) quality = q
+                }
+            } catch (e: Exception) {
+                // Leave the name field for manual entry.
+            } finally {
+                fetching = false
+            }
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -563,6 +592,21 @@ fun AddStreamSheet(
                 hint = "Telegram message link (t.me/c/…/…)",
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (fetching) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        color = MsColors.Accent,
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Reading filename from Telegram…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextSecondary,
+                    )
+                }
+            }
             MsTextField(
                 value = name, onValueChange = { name = it },
                 hint = "File name (optional)",

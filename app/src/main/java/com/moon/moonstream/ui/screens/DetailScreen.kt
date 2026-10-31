@@ -554,6 +554,12 @@ fun DetailScreen(
     if (showAddStream) {
         AddStreamSheet(
             onDismiss = { showAddStream = false },
+            onFetchFileName = { link ->
+                val parsed = parseTgLink(link) ?: return@AddStreamSheet null
+                val (chId, msgId) = parsed
+                BackendProvider.backend.fetchMessages(chId, msgId, 1)
+                    .firstOrNull { it.id == msgId }?.fileName
+            },
             onSave = { link, quality, name ->
                 scope.launch(Dispatchers.IO) {
                     val parsed = parseTgLink(link)

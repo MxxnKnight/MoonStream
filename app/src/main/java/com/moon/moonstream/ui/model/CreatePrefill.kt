@@ -20,6 +20,11 @@ data class PrefillFile(
      * instead of inserting a duplicate.
      */
     val existingStreamId: Long? = null,
+    /**
+     * User-picked quality label (e.g. "1080p"). Null = auto-detect from
+     * the filename at save time.
+     */
+    val quality: String? = null,
 )
 
 /**

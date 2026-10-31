@@ -1,5 +1,7 @@
 package com.moon.moonstream.ui.screens
 
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
 import androidx.compose.foundation.background
@@ -126,8 +128,27 @@ fun CreateScreen(
     val unmatched = remember { mutableStateListOf<UnmatchedFileEntity>() }
     var saving by remember { mutableStateOf(false) }
 
-    // Split-file state: toggle + one link box per part.
     var isSplit by remember { mutableStateOf(false) }
+
+    // Global season/episode defaults (shown when Series is selected).
+    var globalSeason by remember { mutableStateOf("1") }
+    var globalEpisode by remember { mutableStateOf("") }
+
+    // Add-by-link state for files.
+    var showFileLink by remember { mutableStateOf(false) }
+    var fileLink by remember { mutableStateOf("") }
+    var fileLinkSeason by remember { mutableStateOf("") }
+    var fileLinkEpisode by remember { mutableStateOf("") }
+    var fileLinkQuality by remember { mutableStateOf("Auto") }
+    var fileLinkFetching by remember { mutableStateOf(false) }
+    var fileLinkName by remember { mutableStateOf<String?>(null) }
+
+    // Add-by-link state for subtitles.
+    var showSubLink by remember { mutableStateOf(false) }
+    var subLink by remember { mutableStateOf("") }
+    var subLinkLang by remember { mutableStateOf(subtitleLanguages.first()) }
+    var subLinkFetching by remember { mutableStateOf(false) }
+    var subLinkName by remember { mutableStateOf<String?>(null) }
     val splitLinks = remember { mutableStateListOf<String>() }
     val splitFetching = remember { mutableStateListOf<Int>() }
 
@@ -226,7 +247,7 @@ fun CreateScreen(
                             db.mediaDao().refreshAggregates(oldMediaId, System.currentTimeMillis())
                         }
                     } else {
-                        val quality = try {
+                        val quality = f.quality ?: try {
                             FilenameParser.parse(f.fileName).qualityBadge
                         } catch (_: Exception) {
                             ""
@@ -302,12 +323,23 @@ fun CreateScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            "Create Custom Content",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MsColors.TextPrimary,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Create Custom Content",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MsColors.TextPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            BareIconButton(
+                icon = Icons.Filled.Close,
+                contentDescription = "Close",
+                onClick = onCancel,
+            )
+        }
         Text(
             "For videos that aren't real shows — class recordings, personal " +
                 "rips, anything the scanner can't identify. Pick the files, " +
@@ -387,6 +419,35 @@ fun CreateScreen(
             )
         }
 
+        // Global season/episode: visible as soon as Series is selected,
+        // even with zero files. Used as defaults for added files.
+        if (isSeries) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                MsTextField(
+                    value = globalSeason,
+                    onValueChange = { globalSeason = it.filter { c -> c.isDigit() }.take(2) },
+                    hint = "Season",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                )
+                MsTextField(
+                    value = globalEpisode,
+                    onValueChange = { globalEpisode = it.filter { c -> c.isDigit() }.take(4) },
+                    hint = "Episode (next)",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Text(
+                "New files use this season; episode auto-increments.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MsColors.TextSecondary,
+            )
+        }
+
         MsSectionLabel("Files (${files.size})")
         files.forEachIndexed { i, f ->
             PickedFileRow(
@@ -394,6 +455,7 @@ fun CreateScreen(
                 isSeries = isSeries,
                 onSeasonChange = { v -> files[i] = f.copy(season = v.toIntOrNull()) },
                 onEpisodeChange = { v -> files[i] = f.copy(episode = v.toIntOrNull()) },
+                onQualityChange = { q -> files[i] = f.copy(quality = q) },
                 onRemove = { files.removeAt(i) },
             )
         }
@@ -401,6 +463,136 @@ fun CreateScreen(
             text = "+ Add files",
             onClick = { pickerMode = PickerMode.FILES },
         )
+        LimeTextButton(
+            text = "+ Add by link",
+            onClick = { showFileLink = !showFileLink },
+        )
+        if (showFileLink) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                MsTextField(
+                    value = fileLink,
+                    onValueChange = {
+                        fileLink = it
+                        // Auto-fetch filename when a valid link is pasted.
+                        val trimmed = it.trim()
+                        if (trimmed.isNotBlank() && fileLinkName == null && !fileLinkFetching) {
+                            val parsed = try {
+                                com.moon.moonstream.ui.screens.parseTgLink(trimmed)
+                            } catch (e: Exception) { null }
+                            if (parsed != null) {
+                                fileLinkFetching = true
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        val (chId, msgId) = parsed
+                                        val fetched = com.moon.moonstream.backend.BackendProvider.backend
+                                            .fetchMessages(chId, msgId, 1)
+                                            .firstOrNull { m -> m.id == msgId }?.fileName
+                                        withContext(Dispatchers.Main) {
+                                            if (!fetched.isNullOrBlank()) {
+                                                fileLinkName = fetched
+                                                // Auto-parse S/E and quality.
+                                                val p = com.moon.moonstream.index.parse.FilenameParser.parse(fetched)
+                                                if (p.season != null) fileLinkSeason = p.season.toString()
+                                                if (p.episode != null) fileLinkEpisode = p.episode.toString()
+                                                val q = p.qualityBadge
+                                                if (!q.isNullOrBlank()) fileLinkQuality = q
+                                            }
+                                            fileLinkFetching = false
+                                        }
+                                    } catch (e: Exception) {
+                                        withContext(Dispatchers.Main) { fileLinkFetching = false }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    hint = "Paste t.me/c/…/… link",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (fileLinkFetching) {
+                    Text(
+                        "Reading filename…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextSecondary,
+                    )
+                }
+                if (fileLinkName != null) {
+                    Text(
+                        "File: $fileLinkName",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextPrimary,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (isSeries) {
+                        MsTextField(
+                            value = fileLinkSeason,
+                            onValueChange = { fileLinkSeason = it.filter { c -> c.isDigit() }.take(2) },
+                            hint = "Season",
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                        )
+                        MsTextField(
+                            value = fileLinkEpisode,
+                            onValueChange = { fileLinkEpisode = it.filter { c -> c.isDigit() }.take(4) },
+                            hint = "Episode",
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    MsDropdown(
+                        selected = fileLinkQuality,
+                        options = listOf("Auto", "4K", "1080p", "720p", "480p", "360p"),
+                        onSelect = { fileLinkQuality = it },
+                        label = "Quality",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                LimePillButton(
+                    text = "Add file",
+                    onClick = {
+                        val trimmed = fileLink.trim()
+                        val parsed = try {
+                            com.moon.moonstream.ui.screens.parseTgLink(trimmed)
+                        } catch (e: Exception) { null }
+                        if (parsed == null) {
+                            MsToast.show("That link didn't look like a t.me/c/…/… message link")
+                            return@LimePillButton
+                        }
+                        val (chId, msgId) = parsed
+                        val name = fileLinkName ?: "file_$msgId"
+                        val quality = if (fileLinkQuality == "Auto") null else fileLinkQuality
+                        files.add(
+                            com.moon.moonstream.ui.model.PrefillFile(
+                                channelId = chId,
+                                messageId = msgId,
+                                fileName = name,
+                                fileSize = 0L,
+                                season = if (isSeries) fileLinkSeason.toIntOrNull() ?: globalSeason.toIntOrNull() else null,
+                                episode = if (isSeries) fileLinkEpisode.toIntOrNull() ?: globalEpisode.toIntOrNull() else null,
+                                isSubtitle = false,
+                                quality = quality,
+                            )
+                        )
+                        // Reset for next.
+                        fileLink = ""
+                        fileLinkName = null
+                        fileLinkSeason = ""
+                        fileLinkEpisode = ""
+                        fileLinkQuality = "Auto"
+                        showFileLink = false
+                        MsToast.show("File added")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
 
         // Split-file toggle: when ON, link boxes appear for pasting each
         // part's t.me link (part 1, part 2, ...). The server joins them
@@ -463,6 +655,7 @@ fun CreateScreen(
                     isSeries = false,
                     onSeasonChange = {},
                     onEpisodeChange = {},
+                    onQualityChange = {},
                     onRemove = {
                         subtitles.removeAt(i)
                         subtitleLangs.removeAt(i)
@@ -481,6 +674,103 @@ fun CreateScreen(
             text = "+ Add subtitles",
             onClick = { pickerMode = PickerMode.SUBTITLES },
         )
+        LimeTextButton(
+            text = "+ Add by link",
+            onClick = { showSubLink = !showSubLink },
+        )
+        if (showSubLink) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                MsTextField(
+                    value = subLink,
+                    onValueChange = {
+                        subLink = it
+                        // Auto-fetch filename when a valid link is pasted.
+                        val trimmed = it.trim()
+                        if (trimmed.isNotBlank() && subLinkName == null && !subLinkFetching) {
+                            val parsed = try {
+                                com.moon.moonstream.ui.screens.parseTgLink(trimmed)
+                            } catch (e: Exception) { null }
+                            if (parsed != null) {
+                                subLinkFetching = true
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        val (chId, msgId) = parsed
+                                        val fetched = com.moon.moonstream.backend.BackendProvider.backend
+                                            .fetchMessages(chId, msgId, 1)
+                                            .firstOrNull { m -> m.id == msgId }?.fileName
+                                        withContext(Dispatchers.Main) {
+                                            if (!fetched.isNullOrBlank()) subLinkName = fetched
+                                            subLinkFetching = false
+                                        }
+                                    } catch (e: Exception) {
+                                        withContext(Dispatchers.Main) { subLinkFetching = false }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    hint = "Paste t.me/c/…/… subtitle link",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (subLinkFetching) {
+                    Text(
+                        "Reading filename…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextSecondary,
+                    )
+                }
+                if (subLinkName != null) {
+                    Text(
+                        "File: $subLinkName",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextPrimary,
+                    )
+                }
+                MsDropdown(
+                    selected = subLinkLang,
+                    options = subtitleLanguages,
+                    onSelect = { subLinkLang = it },
+                    label = "Language",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                LimePillButton(
+                    text = "Add subtitle",
+                    onClick = {
+                        val trimmed = subLink.trim()
+                        val parsed = try {
+                            com.moon.moonstream.ui.screens.parseTgLink(trimmed)
+                        } catch (e: Exception) { null }
+                        if (parsed == null) {
+                            MsToast.show("That link didn't look like a t.me/c/…/… message link")
+                            return@LimePillButton
+                        }
+                        val (chId, msgId) = parsed
+                        val name = subLinkName ?: "subtitle_$msgId.srt"
+                        subtitles.add(
+                            com.moon.moonstream.ui.model.PrefillFile(
+                                channelId = chId,
+                                messageId = msgId,
+                                fileName = name,
+                                fileSize = 0L,
+                                season = null,
+                                episode = null,
+                                isSubtitle = true,
+                            )
+                        )
+                        subtitleLangs.add(subLinkLang)
+                        subLink = ""
+                        subLinkName = null
+                        subLinkLang = subtitleLanguages.first()
+                        showSubLink = false
+                        MsToast.show("Subtitle added")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
 
         if (!titleOk || !filesOk) {
             Text(
@@ -572,6 +862,7 @@ private fun PickedFileRow(
     isSeries: Boolean,
     onSeasonChange: (String) -> Unit,
     onEpisodeChange: (String) -> Unit,
+    onQualityChange: (String?) -> Unit,
     onRemove: () -> Unit,
 ) {
     Column(
@@ -603,8 +894,8 @@ private fun PickedFileRow(
                 onClick = onRemove,
             )
         }
-        if (isSeries) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (isSeries) {
                 MsTextField(
                     value = file.season?.toString() ?: "",
                     onValueChange = onSeasonChange,
@@ -618,6 +909,13 @@ private fun PickedFileRow(
                     modifier = Modifier.weight(1f),
                 )
             }
+            MsDropdown(
+                selected = file.quality ?: "Auto",
+                options = listOf("Auto", "4K", "1080p", "720p", "480p", "360p"),
+                onSelect = { onQualityChange(if (it == "Auto") null else it) },
+                label = "Quality",
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
