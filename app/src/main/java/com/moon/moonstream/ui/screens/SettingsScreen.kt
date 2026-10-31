@@ -91,6 +91,9 @@ import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.moon.moonstream.update.ApkInstaller
+import com.moon.moonstream.update.UpdateChecker
+import com.moon.moonstream.update.UpdateInfo
 
 /**
  * Phase 1: settings with fake data. Every setting has an info tooltip.
@@ -281,6 +284,58 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     }
 
     var showWhatsNew by remember { mutableStateOf(false) }
+
+    // --- OTA update state ---
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var updateError by remember { mutableStateOf<String?>(null) }
+    var downloadProgress by remember { mutableStateOf<Int?>(null) }
+
+    fun checkForUpdates() {
+        if (checkingUpdate) return
+        checkingUpdate = true
+        updateError = null
+        updateInfo = null
+        scope.launch(Dispatchers.IO) {
+            try {
+                val info = UpdateChecker.checkForUpdate()
+                withContext(Dispatchers.Main) {
+                    checkingUpdate = false
+                    if (info != null) updateInfo = info
+                    else Toast.makeText(
+                        context, "You're on the latest version", Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    checkingUpdate = false
+                    updateError = e.message ?: "Couldn't reach GitHub"
+                }
+            }
+        }
+    }
+
+    fun downloadAndInstall(info: UpdateInfo) {
+        if (downloadProgress != null) return
+        downloadProgress = 0
+        scope.launch(Dispatchers.IO) {
+            try {
+                val apk = ApkInstaller.download(context, info) { p ->
+                    scope.launch(Dispatchers.Main) { downloadProgress = p }
+                }
+                withContext(Dispatchers.Main) {
+                    downloadProgress = null
+                    updateInfo = null
+                    ApkInstaller.install(context, apk)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    downloadProgress = null
+                    updateError = "Download failed: ${e.message ?: "unknown error"}"
+                }
+            }
+        }
+    }
 
     fun fakeSaved() = Toast.makeText(context, "Saved (fake)", Toast.LENGTH_SHORT).show()
     fun fakeVerify() = Toast.makeText(context, "API key looks valid (fake)", Toast.LENGTH_SHORT).show()
@@ -875,14 +930,21 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             }
             SettingRow(
                 title = "Check for updates",
-                info = "Looks for a newer MoonStream release on GitHub and offers to install it. Needs the releases to be reachable.",
+                info = "Looks for a newer MoonStream release on GitHub and offers to install it.",
             ) {
                 MsOutlinePill(
-                    text = "Check",
+                    text = if (checkingUpdate) "Checking…" else "Check",
                     fontSize = 13,
-                    onClick = {
-                        Toast.makeText(context, "You're on the latest version (fake)", Toast.LENGTH_SHORT).show()
-                    },
+                    enabled = !checkingUpdate,
+                    onClick = ::checkForUpdates,
+                )
+            }
+            if (updateError != null) {
+                Text(
+                    updateError!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MsColors.TextSecondary,
+                    modifier = Modifier.padding(horizontal = 4.dp),
                 )
             }
             SettingRow(
@@ -958,6 +1020,71 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             },
             confirmButton = {
                 LimePillButton(text = "Nice", fontSize = 14, onClick = { showWhatsNew = false })
+            },
+            containerColor = MsColors.Surface,
+            titleContentColor = MsColors.TextPrimary,
+            textContentColor = MsColors.TextSecondary,
+        )
+    }
+
+    // --- OTA update dialog ---
+    updateInfo?.let { info ->
+        AlertDialog(
+            onDismissRequest = { if (downloadProgress == null) updateInfo = null },
+            title = {
+                Text(
+                    "Update available: ${info.version}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MsColors.TextPrimary,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (info.notes.isNotBlank()) {
+                        Text(
+                            info.notes.take(800),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextSecondary,
+                        )
+                    }
+                    if (downloadProgress != null) {
+                        Text(
+                            "Downloading… ${downloadProgress}%",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                        )
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = (downloadProgress ?: 0) / 100f,
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MsColors.Accent,
+                        )
+                    } else {
+                        Text(
+                            "You'll be asked to allow the install, then the " +
+                                "update installs over your current app — " +
+                                "your login and library stay as they are.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MsColors.TextSecondary,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                LimePillButton(
+                    text = "Download & install",
+                    fontSize = 14,
+                    enabled = downloadProgress == null,
+                    onClick = { downloadAndInstall(info) },
+                )
+            },
+            dismissButton = {
+                MsOutlinePill(
+                    text = "Later",
+                    fontSize = 14,
+                    enabled = downloadProgress == null,
+                    onClick = { updateInfo = null },
+                )
             },
             containerColor = MsColors.Surface,
             titleContentColor = MsColors.TextPrimary,
