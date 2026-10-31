@@ -38,7 +38,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -47,80 +46,118 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.moon.moonstream.index.db.MediaItemEntity
+import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MsOutlinePill
 import com.moon.moonstream.ui.components.MsSheetContent
 import com.moon.moonstream.ui.components.MsTextField
-import com.moon.moonstream.ui.model.FakeTitle
-import com.moon.moonstream.ui.model.fakeTitles
-import com.moon.moonstream.ui.model.formatSizeMb
-import com.moon.moonstream.ui.state.AppUiState
+import com.moon.moonstream.ui.model.formatBytes
 import com.moon.moonstream.ui.theme.MsColors
-import com.moon.moonstream.ui.theme.MsRadii
+import kotlinx.coroutines.launch
 
 /**
- * Library, NoxMedia-style (v0.4.0):
- * big header + indexed subtitle, search, pill segmented control
- * (ALL/MOVIES/SERIES/ANIME/HIDDEN), "N titles" + Select + Filters row,
- * 3-column poster grid with EPS badges + meta lines.
- * Multi-select activates ONLY via the Select button (never long-press);
- * bottom action bar offers Hide/Unhide for the selection.
- * TODO(Phase 3): back with Room observeMedia() Flow; filters map to real queries.
+ * Library on REAL data (v0.7.0): observes the Room library built by the
+ * scanner. Segments ALL/MOVIES/SERIES/ANIME/HIDDEN, search, real filters,
+ * long-press/Select multi-select with Hide/Unhide persisted to the database.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun LibraryScreen(onOpenDetail: (String) -> Unit) {
+fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     val context = LocalContext.current
+    val db = remember { MsDatabase.get(context) }
+    val scope = rememberCoroutineScope()
+
+    val allItems by db.mediaDao().observeAll().collectAsState(initial = emptyList())
+
     var query by remember { mutableStateOf("") }
     var segment by remember { mutableStateOf(0) }
     var showFilters by remember { mutableStateOf(false) }
     var quality by remember { mutableStateOf("Any") }
-    var language by remember { mutableStateOf("Any") }
-    var source by remember { mutableStateOf("Any") }
+    var subFilter by remember { mutableStateOf("Any") }
     var sort by remember { mutableStateOf("Recently added") }
 
-    // Multi-select state — strictly gated behind the Select button (item 24).
+    // Multi-select state — Select button or long-press; bottom action bar.
     var selectMode by remember { mutableStateOf(false) }
-    val selectedIds = remember { mutableStateListOf<String>() }
+    val selectedIds = remember { mutableStateListOf<Long>() }
 
-    val hiddenIds = AppUiState.hiddenIds
-    val filtered = fakeTitles.filter { t ->
-        val isHidden = hiddenIds.contains(t.id)
+    // Real filter id-sets, loaded when the filter changes.
+    var qualityIds by remember { mutableStateOf<Set<Long>?>(null) }
+    var subIds by remember { mutableStateOf<Set<Long>?>(null) }
+    LaunchedEffect(quality) {
+        qualityIds = if (quality == "Any") null
+        else db.streamDao().mediaIdsWithQuality(quality).toSet()
+    }
+    LaunchedEffect(subFilter) {
+        subIds = if (subFilter == "Any") null
+        else db.subtitleDao().mediaIdsWithSubtitles().toSet()
+    }
+
+    val filtered = allItems.filter { t ->
         val matchesSegment = when (segment) {
-            0 -> !isHidden
-            1 -> t.type == "movie" && !isHidden
-            2 -> t.type == "series" && !isHidden
-            3 -> t.type == "anime" && !isHidden
-            4 -> isHidden
+            0 -> !t.hidden
+            1 -> t.type == "movie" && !t.hidden
+            2 -> t.type == "series" && !t.hidden
+            3 -> t.type == "anime" && !t.hidden
+            4 -> t.hidden
             else -> true
         }
         val matchesQuery = query.isBlank() || t.title.contains(query, ignoreCase = true)
-        matchesSegment && matchesQuery
+        val matchesQuality = qualityIds?.contains(t.id) ?: true
+        val matchesSubs = when (subFilter) {
+            "Has subtitles" -> subIds?.contains(t.id) == true
+            "No subtitles" -> subIds?.contains(t.id) != true
+            else -> true
+        }
+        matchesSegment && matchesQuery && matchesQuality && matchesSubs
+    }.let { list ->
+        when (sort) {
+            "Title A–Z" -> list.sortedBy { it.title.lowercase() }
+            "Year" -> list.sortedByDescending { it.year ?: "" }
+            "Size" -> list.sortedByDescending { it.totalSize }
+            else -> list // "Recently added": observeAll is updatedAt DESC
+        }
     }
     val inHiddenTab = segment == 4
-    val totalStreams = fakeTitles.sumOf { it.allStreams().size }
+    val totalStreams = allItems.sumOf { it.fileCount }
 
     fun exitSelectMode() {
         selectMode = false
         selectedIds.clear()
+    }
+
+    fun setHidden(ids: List<Long>, hidden: Boolean) {
+        scope.launch {
+            ids.forEach { db.mediaDao().setHidden(it, hidden) }
+            Toast.makeText(
+                context,
+                if (hidden) "${ids.size} hidden" else "${ids.size} unhidden",
+                Toast.LENGTH_SHORT,
+            ).show()
+            exitSelectMode()
+        }
     }
 
     Box(
@@ -129,7 +166,6 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
             .background(MsColors.Bg),
     ) {
         Column(Modifier.fillMaxSize()) {
-            // ---- NoxMedia-style header ----
             Text(
                 "Library",
                 style = MaterialTheme.typography.headlineLarge,
@@ -138,7 +174,7 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
                 modifier = Modifier.padding(start = 20.dp, top = 18.dp, end = 20.dp),
             )
             Text(
-                "${fakeTitles.size} titles · $totalStreams streams indexed",
+                "${allItems.size} titles · $totalStreams streams indexed",
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
                 modifier = Modifier.padding(start = 20.dp, top = 2.dp, end = 20.dp, bottom = 12.dp),
@@ -154,7 +190,6 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
             )
             Spacer(Modifier.height(12.dp))
 
-            // ---- Pill segmented control (item 20 + 25) ----
             MsSegmentedControl(
                 segments = listOf("ALL", "MOVIES", "SERIES", "ANIME", "HIDDEN"),
                 selected = segment,
@@ -166,7 +201,6 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
             )
             Spacer(Modifier.height(12.dp))
 
-            // ---- "N titles" + Select + Filters row ----
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -195,49 +229,70 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
             }
             Spacer(Modifier.height(8.dp))
 
-            // ---- Poster grid ----
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 120.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                items(filtered, key = { it.id }) { title ->
-                    val isSelected = selectedIds.contains(title.id)
-                    PosterCell(
-                        title = title,
-                        selectMode = selectMode,
-                        isSelected = isSelected,
-                        inHiddenTab = inHiddenTab,
-                        onClick = {
-                            if (selectMode) {
-                                if (isSelected) selectedIds.remove(title.id)
-                                else selectedIds.add(title.id)
-                            } else {
-                                onOpenDetail(title.id)
-                            }
+            if (filtered.isEmpty()) {
+                // Plain-words empty states — never a fake grid.
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = when {
+                            allItems.isEmpty() -> "No titles yet — scan a channel to build your library."
+                            segment == 4 -> "Nothing hidden."
+                            segment == 1 -> "No movies yet."
+                            segment == 2 -> "No series yet."
+                            segment == 3 -> "No anime yet."
+                            else -> "Nothing matches your search or filters."
                         },
-                        onLongPress = {
-                            // Long-press enters selection mode with this poster
-                            // pre-selected (item 24 refined).
-                            if (!selectMode) {
-                                selectMode = true
-                                selectedIds.add(title.id)
-                            } else if (!isSelected) {
-                                selectedIds.add(title.id)
-                            }
-                        },
-                        onToggleHide = {
-                            if (hiddenIds.contains(title.id)) hiddenIds.remove(title.id)
-                            else hiddenIds.add(title.id)
-                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MsColors.TextSecondary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 48.dp),
                     )
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 120.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    items(filtered, key = { it.id }) { item ->
+                        val isSelected = selectedIds.contains(item.id)
+                        PosterCell(
+                            item = item,
+                            selectMode = selectMode,
+                            isSelected = isSelected,
+                            inHiddenTab = inHiddenTab,
+                            onClick = {
+                                if (selectMode) {
+                                    if (isSelected) selectedIds.remove(item.id)
+                                    else selectedIds.add(item.id)
+                                } else {
+                                    onOpenDetail(item.id)
+                                }
+                            },
+                            onLongPress = {
+                                if (!selectMode) {
+                                    selectMode = true
+                                    selectedIds.add(item.id)
+                                } else if (!isSelected) {
+                                    selectedIds.add(item.id)
+                                }
+                            },
+                            onToggleHide = {
+                                scope.launch {
+                                    db.mediaDao().setHidden(item.id, !item.hidden)
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }
 
-        // ---- Bottom multi-select action bar (NoxMedia-style) ----
+        // ---- Bottom multi-select action bar ----
         AnimatedVisibility(
             visible = selectMode,
             modifier = Modifier
@@ -284,15 +339,7 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
                         .clip(RoundedCornerShape(999.dp))
                         .background(if (selectedIds.isNotEmpty()) hideColor else MsColors.TrackOff)
                         .clickable(enabled = selectedIds.isNotEmpty()) {
-                            if (inHiddenTab) hiddenIds.removeAll(selectedIds)
-                            else hiddenIds.addAll(selectedIds.filter { !hiddenIds.contains(it) })
-                            val n = selectedIds.size
-                            Toast.makeText(
-                                context,
-                                if (inHiddenTab) "$n unhidden (fake)" else "$n hidden (fake)",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                            exitSelectMode()
+                            setHidden(selectedIds.toList(), !inHiddenTab)
                         }
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     contentAlignment = Alignment.Center,
@@ -320,15 +367,14 @@ fun LibraryScreen(onOpenDetail: (String) -> Unit) {
     if (showFilters) {
         FilterSheet(
             quality = quality, onQuality = { quality = it },
-            language = language, onLanguage = { language = it },
-            source = source, onSource = { source = it },
+            subFilter = subFilter, onSubFilter = { subFilter = it },
             sort = sort, onSort = { sort = it },
             onDismiss = { showFilters = false },
         )
     }
 }
 
-/** Pill segmented control with a sliding accent thumb (NoxMedia pattern, fresh code). */
+/** Pill segmented control with a sliding accent thumb. */
 @Composable
 private fun MsSegmentedControl(
     segments: List<String>,
@@ -353,7 +399,6 @@ private fun MsSegmentedControl(
             ),
             label = "segmentThumb",
         )
-        // Sliding thumb
         Box(
             modifier = Modifier
                 .offset(x = thumbOffset)
@@ -361,7 +406,6 @@ private fun MsSegmentedControl(
                 .clip(CircleShape)
                 .background(MsColors.Accent),
         )
-        // Labels
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             segments.forEachIndexed { i, label ->
                 val isSel = i == selected
@@ -390,7 +434,7 @@ private fun MsSegmentedControl(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PosterCell(
-    title: FakeTitle,
+    item: MediaItemEntity,
     selectMode: Boolean,
     isSelected: Boolean,
     inHiddenTab: Boolean,
@@ -398,11 +442,7 @@ private fun PosterCell(
     onLongPress: () -> Unit,
     onToggleHide: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val epCount = title.episodeCount()
     Column(
-        // Long-press enters multi-select with this poster pre-selected
-        // (item 24 refined). It never shows a popup menu — no gesture conflict.
         modifier = Modifier.combinedClickable(
             onClick = onClick,
             onLongClick = onLongPress,
@@ -419,34 +459,29 @@ private fun PosterCell(
                         color = if (isSelected) MsColors.Accent else Color.Transparent,
                         shape = RoundedCornerShape(14.dp),
                     )
-                    .background(Brush.verticalGradient(listOf(title.colorA, title.colorB))),
-                contentAlignment = Alignment.BottomStart,
+                    .background(MsColors.SurfaceAlt),
+                contentAlignment = Alignment.Center,
             ) {
-                // Bottom scrim so the title stays readable on bright posters
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(72.dp)
-                        .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, Color(0xB3000000)),
-                            ),
-                        ),
-                )
-                Text(
-                    text = title.title,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(10.dp),
-                )
+                if (item.posterUrl != null) {
+                    AsyncImage(
+                        model = item.posterUrl,
+                        contentDescription = item.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    // Title-only entries: clean initial-letter tile.
+                    Text(
+                        text = item.title.take(1).uppercase(),
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 44.sp,
+                        color = MsColors.Accent.copy(alpha = 0.75f),
+                    )
+                }
             }
 
-            // "N EPS" badge for series/anime (NoxMedia pattern).
-            if ((title.type == "series" || title.type == "anime") && epCount > 0) {
+            if ((item.type == "series" || item.type == "anime") && item.episodeCount > 0) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
@@ -456,7 +491,7 @@ private fun PosterCell(
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                 ) {
                     Text(
-                        "$epCount EPS",
+                        "${item.episodeCount} EPS",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -465,7 +500,6 @@ private fun PosterCell(
                 }
             }
 
-            // Selection checkmark circle (select mode only, NoxMedia pattern).
             if (selectMode) {
                 Box(
                     modifier = Modifier
@@ -497,7 +531,7 @@ private fun PosterCell(
 
         Spacer(Modifier.height(6.dp))
         Text(
-            text = title.title,
+            text = item.title,
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.SemiBold,
             color = MsColors.TextPrimary,
@@ -505,22 +539,22 @@ private fun PosterCell(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = "${title.year} · ${title.type.uppercase()} · ${formatSizeMb(title.totalSizeMb())}",
+            text = listOfNotNull(
+                item.year,
+                item.type.uppercase(),
+                formatBytes(item.totalSize).takeIf { item.totalSize > 0 },
+            ).joinToString(" · "),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Medium,
             color = MsColors.Accent,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        // Hidden tab: explicit per-item Unhide action.
         if (inHiddenTab) {
             LimeTextButton(
                 text = "Unhide",
                 fontSize = 13,
-                onClick = {
-                    onToggleHide()
-                    Toast.makeText(context, "Unhidden (fake)", Toast.LENGTH_SHORT).show()
-                },
+                onClick = onToggleHide,
             )
         }
     }
@@ -530,8 +564,7 @@ private fun PosterCell(
 @Composable
 private fun FilterSheet(
     quality: String, onQuality: (String) -> Unit,
-    language: String, onLanguage: (String) -> Unit,
-    source: String, onSource: (String) -> Unit,
+    subFilter: String, onSubFilter: (String) -> Unit,
     sort: String, onSort: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -544,8 +577,7 @@ private fun FilterSheet(
     ) {
         MsSheetContent(title = "Filters") {
             FilterRow("Quality", listOf("Any", "4K", "1080p", "720p", "480p"), quality, onQuality)
-            FilterRow("Language", listOf("Any", "English", "Malayalam", "Hindi", "Dual"), language, onLanguage)
-            FilterRow("Source", listOf("Any", "BluRay", "WEB-DL", "HDTV", "CAM"), source, onSource)
+            FilterRow("Subtitles", listOf("Any", "Has subtitles", "No subtitles"), subFilter, onSubFilter)
             FilterRow("Sort", listOf("Recently added", "Title A–Z", "Year", "Size"), sort, onSort)
             LimePillButton(
                 text = "Apply filters",
@@ -556,10 +588,7 @@ private fun FilterSheet(
     }
 }
 
-/**
- * Filter tag row — tags WRAP below (FlowRow) so nothing ever clips
- * (item 19: the old horizontal Row cut tags off).
- */
+/** Filter tag row — tags wrap below (FlowRow) so nothing ever clips. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FilterRow(
