@@ -89,7 +89,10 @@ import java.util.Locale
  */
 
 @Composable
-fun ServerScreen(onOpenLibrary: () -> Unit = {}) {
+fun ServerScreen(
+    onOpenLibrary: () -> Unit = {},
+    onOpenDetail: (Long) -> Unit = {},
+) {
     val context = LocalContext.current
     val on = AppUiState.serverOn
     // Uptime comes from ServerTelemetry's start timestamp — surviving navigation,
@@ -161,7 +164,7 @@ fun ServerScreen(onOpenLibrary: () -> Unit = {}) {
         MsSectionEyebrow("LIBRARY")
         LibraryDashboardCard(onOpenLibrary = onOpenLibrary)
 
-        RecentlyAddedRow(onOpenLibrary = onOpenLibrary)
+        RecentlyAddedRow(onOpenLibrary = onOpenLibrary, onOpenDetail = onOpenDetail)
 
         Text(
             "Paste the manifest URL into Stremio or Nuvio to browse your library.",
@@ -643,7 +646,10 @@ private fun needsNotifPermission(context: android.content.Context): Boolean =
  * Recently Added row: horizontal poster strip, always visible (like NoxMedia).
  */
 @Composable
-private fun RecentlyAddedRow(onOpenLibrary: () -> Unit) {
+private fun RecentlyAddedRow(
+    onOpenLibrary: () -> Unit,
+    onOpenDetail: (Long) -> Unit,
+) {
     val context = LocalContext.current
     var items by remember { mutableStateOf<List<com.moon.moonstream.index.db.MediaItemEntity>>(emptyList()) }
     LaunchedEffect(Unit) {
@@ -690,7 +696,7 @@ private fun RecentlyAddedRow(onOpenLibrary: () -> Unit) {
                             .height(160.dp)
                             .clip(RoundedCornerShape(14.dp))
                             .background(MsColors.SurfaceAlt)
-                            .clickable(onClick = onOpenLibrary),
+                            .clickable(onClick = { onOpenDetail(m.id) }),
                     ) {
                         if (!m.posterUrl.isNullOrBlank()) {
                             coil.compose.AsyncImage(

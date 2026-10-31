@@ -154,7 +154,7 @@ fun MetadataFixSheet(
             MsTextField(
                 value = query,
                 onValueChange = { query = it },
-                hint = "Search title",
+                hint = "Search title or IMDb ID (e.g. tt0320661)",
                 modifier = Modifier.fillMaxWidth(),
             )
             // Movie / Series search toggle (anime always searches Kitsu).

@@ -156,6 +156,12 @@ object MetadataMatcher {
         limit: Int = 8,
     ): List<EnrichedMeta> {
         if (query.isBlank()) return emptyList()
+        // Direct IMDb ID lookup (like NoxMedia): "tt0320661" → fetch directly.
+        val imdbMatch = Regex("^tt\\d+$").find(query.trim())
+        if (imdbMatch != null) {
+            val direct = try { lookupByImdb(imdbMatch.value, type) } catch (e: Exception) { null }
+            if (direct != null) return listOf(direct)
+        }
         return try {
             if (isAnime) {
                 searchKitsu(query, limit)
@@ -190,6 +196,26 @@ object MetadataMatcher {
             Log.d(TAG, "search failed for '$query': ${e.message}")
             emptyList()
         }
+    }
+
+    /**
+     * Direct lookup by IMDb ID via Cinemeta (no key needed).
+     * Used when the user pastes "tt1234567" like in NoxMedia.
+     */
+    private fun lookupByImdb(imdbId: String, type: String): EnrichedMeta? {
+        val kind = if (type == "movie") "movie" else "series"
+        val root = getJson("https://v3-cinemeta.strem.io/meta/$kind/$imdbId.json")
+            ?.optJSONObject("meta") ?: return null
+        val name = root.optString("name").takeIf { it.isNotBlank() } ?: return null
+        return EnrichedMeta(
+            title = name,
+            year = Regex("""^(\\d{4})""").find(root.optString("releaseInfo"))?.groupValues?.get(1),
+            overview = root.optString("description").takeIf { it.isNotBlank() },
+            posterUrl = root.optString("poster").takeIf { it.isNotBlank() },
+            imdbId = imdbId,
+            tmdbId = null,
+            confidence = 1.0, // direct ID lookup = highest confidence
+        )
     }
 
     /**

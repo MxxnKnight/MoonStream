@@ -1,5 +1,7 @@
 package com.moon.moonstream.util
 
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.mutableStateListOf
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -21,26 +23,37 @@ data class LogLine(
  *
  * Not persisted — cleared when the app closes (fresh on every launch).
  * The Logs screen's Clear button empties it.
+ *
+ * THREAD SAFETY: Compose's mutableStateListOf crashes if modified from a
+ * background thread while the UI reads it (moon hit this opening Logs
+ * during a deep audit). ALL mutations are posted to the main thread.
  */
 object AppLog {
-    private const val MAX = 500
+    private const val MAX = 200 // reduced from 500: fewer items = less memory, faster render
     val lines = mutableStateListOf<LogLine>()
 
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.US)
 
     private fun add(level: String, tag: String, msg: String) {
         val line = LogLine(timeFmt.format(Date()), tag, level, msg)
-        // Keep UI thread safe: post to main if needed (callers are often on IO).
-        synchronized(lines) {
-            lines.add(line)
-            while (lines.size > MAX) lines.removeAt(0)
-        }
-        // Also to logcat for debugging.
+        // Also to logcat for debugging (safe from any thread).
         when (level) {
             "E" -> android.util.Log.e("MoonStream", "[$tag] $msg")
             "W" -> android.util.Log.w("MoonStream", "[$tag] $msg")
             else -> android.util.Log.d("MoonStream", "[$tag] $msg")
         }
+        // Mutate Compose state ONLY on the main thread.
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            addOnMain(line)
+        } else {
+            mainHandler.post { addOnMain(line) }
+        }
+    }
+
+    private fun addOnMain(line: LogLine) {
+        lines.add(line)
+        while (lines.size > MAX) lines.removeAt(0)
     }
 
     fun i(tag: String, msg: String) = add("I", tag, msg)
@@ -48,6 +61,10 @@ object AppLog {
     fun e(tag: String, msg: String) = add("E", tag, msg)
 
     fun clear() {
-        synchronized(lines) { lines.clear() }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            lines.clear()
+        } else {
+            mainHandler.post { lines.clear() }
+        }
     }
 }

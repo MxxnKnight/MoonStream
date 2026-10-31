@@ -242,7 +242,10 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     },
 )
                     AppScreen.Login -> LoginScreen(onLoggedIn = { goTab(AppScreen.Server) })
-                    AppScreen.Server -> ServerScreen(onOpenLibrary = { goTab(AppScreen.Library) })
+                    AppScreen.Server -> ServerScreen(
+                        onOpenLibrary = { go(AppScreen.Library) },
+                        onOpenDetail = { id -> go(AppScreen.Detail(id)) },
+                    )
                     AppScreen.Library ->
                         LibraryScreen(onOpenDetail = { id -> go(AppScreen.Detail(id)) })
                     is AppScreen.Detail ->

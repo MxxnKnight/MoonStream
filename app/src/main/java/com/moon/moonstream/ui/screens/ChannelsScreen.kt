@@ -20,6 +20,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -167,6 +168,11 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
     val listVersion by ScanUiState.channelListVersion.collectAsState()
     val unmatched by db.unmatchedDao().observeAll()
         .collectAsState(initial = emptyList())
+    var unmatchedQuery by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    val filteredUnmatched = androidx.compose.runtime.remember(unmatched, unmatchedQuery) {
+        if (unmatchedQuery.isBlank()) unmatched
+        else unmatched.filter { it.fileName.contains(unmatchedQuery, ignoreCase = true) }
+    }
 
     val scanMap by ScanUiState.channels.collectAsState()
     val totals by ScanUiState.totals.collectAsState()
@@ -400,9 +406,18 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 )
             }
 
+            item(key = "unmatchedSearch") {
+                com.moon.moonstream.ui.components.MsTextField(
+                    value = unmatchedQuery,
+                    onValueChange = { unmatchedQuery = it },
+                    hint = "Search unmatched files…",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
             item(key = "unmatchedHeader") {
                 Text(
-                    "Unmatched content (${unmatched.size})",
+                    "Unmatched content (${filteredUnmatched.size})",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MsColors.TextPrimary,
@@ -418,7 +433,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 )
             }
 
-            items(unmatched, key = { it.id }) { f ->
+            items(filteredUnmatched, key = { it.id }) { f ->
                 // Direct stream URL for files not in the library.
                 val directUrl = "http://${AppUiState.currentIp}:${AppUiState.streamPort}/stream/direct/${f.channelId}/${f.messageId}"
                 UnmatchedFileRow(
@@ -943,6 +958,7 @@ private fun DoneCheck(modifier: Modifier = Modifier) {
 
 /** One unmatched file row — kept light for 400+ item lists. */
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 private fun UnmatchedFileRow(
     file: UnmatchedFileEntity,
     onCreateEntry: (UnmatchedFileEntity?) -> Unit,
@@ -964,11 +980,14 @@ private fun UnmatchedFileRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
             )
-            Row(
+            // FlowRow: buttons wrap to the next line instead of squeezing
+            // "Link to Title" into 3 lines (moon's layout bug).
+            FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 LimeTextButton(text = "Play", onClick = onPlay)
                 LimeTextButton(text = "Create entry", onClick = { onCreateEntry(file) })

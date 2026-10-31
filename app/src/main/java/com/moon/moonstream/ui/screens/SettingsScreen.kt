@@ -420,6 +420,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     fun fakeVerify() = MsToast.show("API key looks valid (fake)")
 
     var verifyingTmdb by remember { mutableStateOf(false) }
+    var tmdbVerified by remember { mutableStateOf(false) }
 
     /** Real TMDB key check: /configuration answers 200 only for a valid key. */
     fun verifyTmdb() {
@@ -446,7 +447,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 false
             }
             verifyingTmdb = false
-            MsToast.show(if (ok) "TMDB key valid" else "TMDB key invalid")
+            tmdbVerified = ok
+            MsToast.show(if (ok) "TMDB key valid ✓" else "TMDB key invalid — check the key")
         }
     }
 
@@ -608,7 +610,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MsTextField(
                         value = tmdbKey,
-                        onValueChange = { tmdbKey = it; ScanPrefs.setTmdbKey(context, it) },
+                        onValueChange = { tmdbKey = it; tmdbVerified = false; ScanPrefs.setTmdbKey(context, it) },
                         hint = "Paste key",
                         modifier = Modifier.weight(1f),
                     )
@@ -618,6 +620,15 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         fontSize = 13,
                         onClick = { verifyTmdb() },
                     )
+                    if (tmdbVerified) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "✓",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color(0xFF4CAF50),
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
             }
             SettingBlock(

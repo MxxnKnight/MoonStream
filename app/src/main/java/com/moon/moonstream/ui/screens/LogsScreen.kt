@@ -46,12 +46,17 @@ fun LogsScreen(onBack: () -> Unit) {
     val lines = com.moon.moonstream.util.AppLog.lines
     val listState = rememberLazyListState()
 
-    // Auto-scroll to the newest line whenever the log grows. Long-press text
-    // selection (SelectionContainer below) coexists with this: selection uses
-    // its own touch handling and the effect only fires when lines are added.
+    // Auto-scroll to the newest line whenever the log grows — but only if
+    // the user is already near the bottom. Uses instant scrollToItem (not
+    // animated) so rapid log bursts during audits don't stack animations
+    // and kill the app (moon's crash).
     LaunchedEffect(lines.size) {
         if (lines.isNotEmpty()) {
-            listState.animateScrollToItem(lines.size - 1)
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            // If user is within 5 items of the bottom, follow the tail.
+            if (lastVisible >= lines.size - 6) {
+                listState.scrollToItem(lines.size - 1)
+            }
         }
     }
 
