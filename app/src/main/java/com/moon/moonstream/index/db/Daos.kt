@@ -63,6 +63,9 @@ interface MediaDao {
     @Query("UPDATE media_items SET stremioId = :stremioId WHERE id = :id")
     suspend fun setStremioId(id: Long, stremioId: String)
 
+    @Query("DELETE FROM media_items WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("SELECT * FROM media_items WHERE channelId = :channelId")
     suspend fun getAllByChannel(channelId: Long): List<MediaItemEntity>
 

@@ -920,6 +920,41 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     },
                 )
             }
+            SettingRow(
+                title = "Bad mappings",
+                info = "Finds files mapped to the wrong title (e.g. episode files stuck on a movie) and moves them to unmatched for bulk fixing.",
+            ) {
+                ScanActionButton(
+                    idleText = "Audit now",
+                    scanningText = "Auditing",
+                    doneToast = "Audit complete",
+                    onScan = {
+                        // Fast structural check first (no network).
+                        val report = com.moon.moonstream.index.audit.MetadataAudit.run(
+                            context, structuralOnly = true,
+                        )
+                        if (report.moved == 0) "No bad mappings found"
+                        else "${report.moved} file(s) moved to unmatched — see logs"
+                    },
+                )
+            }
+            SettingRow(
+                title = "Deep audit (slower)",
+                info = "Re-checks every mapping against the metadata providers. Catches wrong titles the fast check misses. Takes a while on big libraries.",
+            ) {
+                ScanActionButton(
+                    idleText = "Deep audit",
+                    scanningText = "Auditing",
+                    doneToast = "Audit complete",
+                    onScan = {
+                        val report = com.moon.moonstream.index.audit.MetadataAudit.run(
+                            context, structuralOnly = false,
+                        )
+                        if (report.moved == 0) "No bad mappings found"
+                        else "${report.moved} file(s) moved to unmatched — see logs"
+                    },
+                )
+            }
         }
 
         SettingsGroup("Backup") {
