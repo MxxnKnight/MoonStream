@@ -162,6 +162,28 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         )
     }
 
+    // Backup state — declared before the push/pull functions that use it
+    // (Kotlin local declarations must come before their first use).
+    var backupWorking by remember { mutableStateOf(false) }
+    var lastBackupAt by remember {
+        mutableStateOf(
+            context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
+                .getLong("last_backup_at", 0),
+        )
+    }
+
+    fun markBackedUp() {
+        lastBackupAt = System.currentTimeMillis()
+        context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putLong("last_backup_at", lastBackupAt).apply()
+    }
+
+    fun lastBackupText(): String {
+        if (lastBackupAt == 0L) return "Last backup: never"
+        val fmt = SimpleDateFormat("d MMM yyyy, h:mm a", Locale.US)
+        return "Last backup: ${fmt.format(Date(lastBackupAt))}"
+    }
+
     fun pushBackupToTelegram(onDone: () -> Unit = {}) {
         if (backupWorking) return
         backupWorking = true
@@ -230,25 +252,6 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         }
     }
     var earlyBeta by remember { mutableStateOf(false) }
-    var backupWorking by remember { mutableStateOf(false) }
-    var lastBackupAt by remember {
-        mutableStateOf(
-            context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
-                .getLong("last_backup_at", 0),
-        )
-    }
-
-    fun markBackedUp() {
-        lastBackupAt = System.currentTimeMillis()
-        context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
-            .edit().putLong("last_backup_at", lastBackupAt).apply()
-    }
-
-    fun lastBackupText(): String {
-        if (lastBackupAt == 0L) return "Last backup: never"
-        val fmt = SimpleDateFormat("d MMM yyyy, h:mm a", Locale.US)
-        return "Last backup: ${fmt.format(Date(lastBackupAt))}"
-    }
 
     /** Build the backup, gzip it, and hand it to the Android share sheet. */
     fun shareBackup() {
