@@ -75,7 +75,8 @@ fun MsToastHost(
                 color = Color.White,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
-                    .padding(horizontal = 32.dp, vertical = 24.dp)
+                    // Clear the floating nav pill (sits ~90dp tall at the bottom).
+                    .padding(start = 32.dp, end = 32.dp, top = 24.dp, bottom = 110.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(Color(0xFF232329).copy(alpha = 0.96f))
                     .padding(horizontal = 20.dp, vertical = 13.dp),
