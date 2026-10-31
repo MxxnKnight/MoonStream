@@ -64,6 +64,10 @@ class MoonStreamServerService : Service() {
     }
 
     private fun startServer(port: Int, streamPort: Int) {
+        // Android requires startForeground() within ~5s of onStartCommand.
+        // Call it FIRST so a slow/failed server bind can't trigger an ANR
+        // ("did not call startForeground").
+        startForeground(NOTIFICATION_ID, buildNotification())
         // Tear down any previous instance first (e.g. port changed).
         try { server?.stop() } catch (_: Exception) {}
         val s = MoonStreamServer(this, BackendProvider.backend, port, streamPort)
@@ -74,6 +78,7 @@ class MoonStreamServerService : Service() {
             val ip = MoonStreamServer.getLocalIpAddress()
             AppUiState.currentIp = ip
             com.moon.moonstream.util.AppLog.i("SERVER", "Addon server running: ${s.addonManifestUrl()}")
+            // Refresh the notification now that we have the real URL.
             startForeground(NOTIFICATION_ID, buildNotification())
         } else {
             server = null

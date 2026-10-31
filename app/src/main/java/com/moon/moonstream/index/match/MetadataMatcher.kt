@@ -100,9 +100,18 @@ object MetadataMatcher {
             val name = obj.optString(if (kind == "movie") "title" else "name")
             val score = similarity(title, name)
             // Prefer exact-year matches when we know the year.
+            // NoxMedia-style year signal: strong boost for exact year,
+            // penalty for a clearly different year.
             val adjusted = if (!year.isNullOrBlank()) {
                 val d = obj.optString(if (kind == "movie") "release_date" else "first_air_date")
-                if (d.startsWith(year)) score + 0.15 else score
+                val candYear = d.take(4).toIntOrNull()
+                val wantYear = year.take(4).toIntOrNull()
+                when {
+                    candYear == null || wantYear == null -> score
+                    candYear == wantYear -> score + 0.35
+                    kotlin.math.abs(candYear - wantYear) > 1 -> score - 0.35
+                    else -> score
+                }
             } else score
             if (adjusted > bestScore) {
                 bestScore = adjusted

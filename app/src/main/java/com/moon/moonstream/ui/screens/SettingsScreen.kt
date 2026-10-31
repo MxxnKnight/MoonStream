@@ -155,13 +155,13 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     var backupToTelegram by remember {
         mutableStateOf(
             context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
-                .getBoolean("backup_to_telegram", true)
+                .getBoolean("backup_to_telegram", false)
         )
     }
     var autoBackupSync by remember {
         mutableStateOf(
             context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
-                .getBoolean("auto_backup_sync", true)
+                .getBoolean("auto_backup_sync", false)
         )
     }
 
@@ -1389,6 +1389,15 @@ private fun AccountCard(onLoggedOut: () -> Unit) {
                                 // state must still reset so the app can't get
                                 // stuck half-logged-in.
                             }
+                            // Stop the server and wipe the old account's
+                            // library so a different login can't see it.
+                            try {
+                                if (AppUiState.serverOn) AppUiState.toggleServer(context)
+                            } catch (_: Exception) {}
+                            try {
+                                val db = MsDatabase.get(context)
+                                db.clearAllTables()
+                            } catch (_: Exception) {}
                             AppUiState.setLoggedOut(context)
                             showLogout = false
                             MsToast.show("Logged out")

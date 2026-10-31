@@ -399,6 +399,13 @@ class MoonStreamServer(
         if (channelId == null || messageId == null) {
             sendJson(output, 400, errJson("Bad channel/message id").toString(), headOnly); return
         }
+        // Security: only serve files known to our library (indexed or
+        // unmatched). Never fetch arbitrary Telegram messages.
+        val known = runBlocking {
+            db.streamDao().exists(channelId, messageId) ||
+                db.unmatchedDao().exists(channelId, messageId)
+        }
+        if (!known) { sendJson(output, 404, errJson("File not in library").toString(), headOnly); return }
         val msg = runBlocking {
             backend.fetchMessages(channelId, messageId, 1).firstOrNull { it.id == messageId }
         }
@@ -407,8 +414,12 @@ class MoonStreamServer(
         if (total <= 0) { sendJson(output, 502, errJson("Unknown file size").toString(), headOnly); return }
 
         val range = parseRange(headers["range"], total)
-        val (start, end) = range ?: run {
-            sendJson(output, 416, errJson("Bad range").toString(), headOnly); return
+        val start = range?.first ?: 0L
+        val end = range?.second ?: (total - 1)
+        if (start >= total || end < start) {
+            sendResponse(output, 416, "Range Not Satisfiable", "text/plain", ByteArray(0),
+                extraHeaders = mapOf("Content-Range" to "bytes */$total"))
+            return
         }
         val length = (end - start + 1).coerceAtMost(total - start)
         val mime = mimeFor(msg.fileName)
