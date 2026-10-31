@@ -157,11 +157,34 @@ object MetadataMatcher {
     ): List<EnrichedMeta> {
         if (query.isBlank()) return emptyList()
         return try {
-            if (isAnime) searchKitsu(query, limit)
-            else {
-                // TMDB first (when a key is set), Cinemeta as the no-key fallback.
-                val tmdb = if (tmdbKey.isNotBlank()) searchTmdb(query, type, tmdbKey, limit) else emptyList()
-                if (tmdb.isNotEmpty()) tmdb else searchCinemeta(query, type, limit)
+            if (isAnime) {
+                searchKitsu(query, limit)
+            } else {
+                // Try TMDB first (when key set), ALWAYS fall back to Cinemeta.
+                // Both are tried; results merged with TMDB first.
+                val tmdb = if (tmdbKey.isNotBlank()) {
+                    try { searchTmdb(query, type, tmdbKey, limit) }
+                    catch (e: Exception) {
+                        Log.d(TAG, "TMDB search failed: ${e.message}")
+                        emptyList()
+                    }
+                } else emptyList()
+                val cinemeta = try { searchCinemeta(query, type, limit) }
+                    catch (e: Exception) {
+                        Log.d(TAG, "Cinemeta search failed: ${e.message}")
+                        emptyList()
+                    }
+                // Merge: TMDB first, then Cinemeta results not already present.
+                val seen = tmdb.map { it.title.lowercase() }.toMutableSet()
+                val merged = tmdb.toMutableList()
+                for (c in cinemeta) {
+                    if (c.title.lowercase() !in seen) {
+                        merged.add(c)
+                        seen.add(c.title.lowercase())
+                    }
+                    if (merged.size >= limit) break
+                }
+                merged
             }
         } catch (e: Exception) {
             Log.d(TAG, "search failed for '$query': ${e.message}")

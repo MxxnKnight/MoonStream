@@ -1,0 +1,4 @@
+# TDLib's auto-generated Java bindings — not hand-written code.
+# Mark as vendored so GitHub's language stats show the real Kotlin code.
+app/src/main/java/org/drinkless/tdlib/** linguist-vendored
+*.so binary

@@ -7,19 +7,15 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.moon.moonstream.ui.components.MsToast
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -160,17 +156,6 @@ fun ServerScreen(onOpenLibrary: () -> Unit = {}) {
 
         ServerCard(on = on, uptimeSecs = uptimeSecs, onToggle = onToggle)
 
-        // Server stats only exist while the server is ON.
-        AnimatedVisibility(
-            visible = on,
-            enter = fadeIn(tween(300)) + expandVertically(tween(350)),
-            exit = fadeOut(tween(250)) + shrinkVertically(tween(300)),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                ServerStatsCard(uptimeSecs = uptimeSecs)
-            }
-        }
-
         // Library + Recently Added: always visible, like NoxMedia —
         // they don't need the server running.
         MsSectionEyebrow("LIBRARY")
@@ -221,9 +206,20 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(4200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
+            repeatMode = RepeatMode.Reverse, // smooth back-and-forth, no jump
         ),
         label = "sheenX",
+    )
+    // Slow drifting background glow.
+    val drift = rememberInfiniteTransition(label = "bgDrift")
+    val driftY by drift.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(6000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "driftY",
     )
 
     val borderBrush: Brush = if (on) {
@@ -268,8 +264,8 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                         .background(
                             Brush.verticalGradient(
                                 0.00f to MsColors.GlowDeep.copy(alpha = 0.30f),
-                                0.35f to MsColors.GlowDeep.copy(alpha = 0.12f),
-                                0.70f to MsColors.GlowDeep.copy(alpha = 0.03f),
+                                (0.30f + driftY * 0.15f) to MsColors.GlowDeep.copy(alpha = 0.12f),
+                                (0.65f + driftY * 0.15f) to MsColors.GlowDeep.copy(alpha = 0.03f),
                                 1.00f to Color.Transparent,
                             ),
                         ),
@@ -304,6 +300,8 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 )
             }
         } else {
+            // Parent Column so URL sits BELOW content (was Box sibling → overlap).
+            Column(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -404,6 +402,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                     .background(Color.White.copy(alpha = 0.08f)),
             )
             ManifestDrawer()
+            } // parent Column
         }
     }
 }
@@ -454,94 +453,6 @@ private fun ManifestDrawer() {
     }
 }
 
-/**
- * Server telemetry card (ON only), NoxMedia-style information architecture:
- * two large metrics (uptime, speed), a session/all-time shelf.
- * All values are real, fed by [ServerTelemetry].
- */
-@Composable
-private fun ServerStatsCard(uptimeSecs: Int) {
-    // Re-read on every recomposition (the parent ticks each second while on).
-    val session = ServerTelemetry.sessionBytes
-    val total = ServerTelemetry.totalBytes
-    MsCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 18.dp, bottom = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LargeMetric(value = formatUptime(uptimeSecs), label = "uptime", modifier = Modifier.weight(1f))
-                LargeMetric(value = "${formatBytes(ServerTelemetry.speedBps())}/s", label = "speed", modifier = Modifier.weight(1f))
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MsColors.Bg)
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SmallMetric(label = "session", value = formatBytes(session))
-                Box(
-                    Modifier
-                        .size(3.dp)
-                        .background(MsColors.Divider, CircleShape),
-                )
-                SmallMetric(label = "all-time", value = formatBytes(total))
-            }
-        }
-    }
-}
-
-@Composable
-private fun LargeMetric(value: String, label: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MsColors.TextPrimary,
-            maxLines = 1,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MsColors.TextSecondary,
-        )
-    }
-}
-
-@Composable
-private fun SmallMetric(label: String, value: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MsColors.TextSecondary,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MsColors.TextPrimary,
-        )
-    }
-}
 
 private data class LibraryStats(
     val titles: Int = 0,

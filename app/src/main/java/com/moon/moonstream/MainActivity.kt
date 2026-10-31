@@ -49,6 +49,13 @@ import com.moon.moonstream.ui.screens.ChannelsScreen
 import com.moon.moonstream.ui.screens.CreateScreen
 import com.moon.moonstream.ui.screens.DetailScreen
 import com.moon.moonstream.ui.screens.LibraryScreen
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import com.moon.moonstream.ui.screens.LoginScreen
 import com.moon.moonstream.ui.screens.LogsScreen
 import com.moon.moonstream.ui.screens.ServerScreen
@@ -168,10 +175,52 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
             // edge fades below make the scroll-under-pill effect readable.
             // Screens keep their own bottom insets inside their scrollables
             // so the last item can still scroll fully into view.
-            Box(
-                Modifier.fillMaxSize(),
-            ) {
-                when (val screen = current) {
+            // AnimatedContent gives fast, fluid tab switches (180ms slide).
+            AnimatedContent(
+                targetState = current,
+                transitionSpec = {
+                    // Slide in the direction of travel for tabs; fade for
+                    // pushed screens (Detail/Create). Keep it snappy.
+                    val tabs = listOf(
+                        AppScreen.Server, AppScreen.Library,
+                        AppScreen.Channels, AppScreen.Settings,
+                    )
+                    val fromIdx = tabs.indexOf((initialState as? AppScreen)?.let {
+                        when (it) {
+                            AppScreen.Server -> AppScreen.Server
+                            AppScreen.Library -> AppScreen.Library
+                            AppScreen.Channels -> AppScreen.Channels
+                            AppScreen.Settings -> AppScreen.Settings
+                            else -> null
+                        }
+                    })
+                    val toIdx = tabs.indexOf((targetState as? AppScreen)?.let {
+                        when (it) {
+                            AppScreen.Server -> AppScreen.Server
+                            AppScreen.Library -> AppScreen.Library
+                            AppScreen.Channels -> AppScreen.Channels
+                            AppScreen.Settings -> AppScreen.Settings
+                            else -> null
+                        }
+                    })
+                    if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx) {
+                        val dir = if (toIdx > fromIdx) 1 else -1
+                        slideInHorizontally(
+                            animationSpec = tween(180),
+                            initialOffsetX = { it / 4 * dir },
+                        ) + fadeIn(tween(180)) togetherWith
+                            slideOutHorizontally(
+                                animationSpec = tween(180),
+                                targetOffsetX = { -it / 4 * dir },
+                            ) + fadeOut(tween(180))
+                    } else {
+                        fadeIn(tween(150)) togetherWith fadeOut(tween(150))
+                    }
+                },
+                label = "screenSwitch",
+                modifier = Modifier.fillMaxSize(),
+            ) { screen ->
+                when (screen) {
                     AppScreen.Splash -> SplashScreen(
     onDone = {
         // Give TDLib a moment to restore the session
