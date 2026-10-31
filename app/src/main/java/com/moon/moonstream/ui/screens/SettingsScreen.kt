@@ -94,6 +94,7 @@ import kotlinx.coroutines.withContext
 import com.moon.moonstream.update.ApkInstaller
 import com.moon.moonstream.update.UpdateChecker
 import com.moon.moonstream.update.UpdateInfo
+import com.moon.moonstream.cache.CacheManager
 
 /**
  * Phase 1: settings with fake data. Every setting has an info tooltip.
@@ -633,21 +634,20 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         SettingsGroup("Streaming & Storage") {
             SettingRow(
                 title = "Cache MB",
-                info = "How much phone storage the app may use to keep recently watched video chunks, so replays and seeks are instant. Oldest chunks are deleted first when full.",
+                info = "How much phone storage the app may use for its cache (update downloads, thumbnails). The video server streams straight from Telegram and doesn't store video.",
             ) {
                 MsTextField(
                     value = cacheMb,
                     onValueChange = {
                         cacheMb = it
                         it.toIntOrNull()?.let { mb ->
-                            if (mb >= 0) AppUiState.cacheMaxMb = mb
+                            if (mb >= 0) AppUiState.setCacheMaxMb(mb, context)
                         }
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.width(120.dp),
                 )
             }
-            // Mockup-style cache meter: "312 MB of 2048 MB" + bar + Clear.
             CacheStorageBlock()
             SettingRow(
                 title = "Buffer MB",
@@ -1316,6 +1316,11 @@ private fun CacheStorageBlock() {
     val max = AppUiState.cacheMaxMb.coerceAtLeast(1)
     val bar = remember { Animatable(used.toFloat() / max) }
 
+    // Measure the real cache dir size when this block appears.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        AppUiState.refreshCacheUsed(context)
+    }
+
     // Keep the bar in sync when the numbers change (e.g. after Clear).
     androidx.compose.runtime.LaunchedEffect(used, max) {
         bar.animateTo(used.toFloat() / max, tween(600))
@@ -1337,7 +1342,7 @@ private fun CacheStorageBlock() {
             InfoDot(onClick = {
                 Toast.makeText(
                     context,
-                    "Video chunks and thumbnails stored on your phone. Clearing never touches your library or channels.",
+                    "Temporary files the app keeps on your phone (update downloads). Clearing never touches your library or channels. Video streams straight from Telegram and isn't stored.",
                     Toast.LENGTH_LONG,
                 ).show()
             })
@@ -1357,12 +1362,17 @@ private fun CacheStorageBlock() {
                 text = "Clear Cache",
                 fontSize = 13,
                 onClick = {
-                    scope.launch {
-                        val from = AppUiState.cacheUsedMb
-                        val anim = Animatable(from.toFloat())
-                        anim.animateTo(0f, tween(700)) { AppUiState.cacheUsedMb = value.toInt() }
+                    scope.launch(Dispatchers.IO) {
+                        val freed = CacheManager.clear(context)
+                        AppUiState.refreshCacheUsed(context)
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(
+                                context,
+                                if (freed > 0) "Cache cleared" else "Cache is already empty",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
                     }
-                    Toast.makeText(context, "Cache cleared (fake)", Toast.LENGTH_SHORT).show()
                 },
             )
         }

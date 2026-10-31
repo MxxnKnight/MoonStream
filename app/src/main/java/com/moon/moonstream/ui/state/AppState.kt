@@ -9,12 +9,14 @@ import androidx.compose.ui.graphics.Color
 import com.moon.moonstream.R
 import com.moon.moonstream.index.StremioIds
 import com.moon.moonstream.index.db.MsDatabase
+import com.moon.moonstream.cache.CacheManager
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Phase 1: in-memory UI state shared across screens (fake data, no backend).
@@ -89,8 +91,10 @@ object AppUiState {
     // loggedIn here mirrors it for the splash router.
     var loggedIn by mutableStateOf(false)
 
-    // Cache meter (fake; TODO Phase 4: real cache stats)
-    var cacheUsedMb by mutableStateOf(312)
+    // Cache: the limit is a real persisted setting; the used amount is
+    // measured from the app cache dir (OTA downloads live there today —
+    // the server streams video straight from Telegram, it doesn't cache it).
+    var cacheUsedMb by mutableStateOf(0)
     var cacheMaxMb by mutableStateOf(2048)
 
     // Logs (fake lines; TODO Phase 4: real ring buffer from the server)
@@ -119,6 +123,7 @@ object AppUiState {
             ?: MsAccent.LIME
         amoled = prefs.getBoolean("amoled", false)
         loggedIn = prefs.getBoolean("logged_in", false)
+        cacheMaxMb = prefs.getInt("cache_max_mb", 2048).coerceAtLeast(0)
         currentIp = com.moon.moonstream.server.MoonStreamServer.getLocalIpAddress()
         if (logLines.isEmpty()) {
             seedFakeLogs()
@@ -165,6 +170,20 @@ object AppUiState {
         loggedIn = false
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putBoolean("logged_in", false).apply()
+    }
+
+    fun setCacheMaxMb(mb: Int, context: Context) {
+        cacheMaxMb = mb.coerceAtLeast(0)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putInt("cache_max_mb", cacheMaxMb).apply()
+    }
+
+    /** Refresh the used-cache meter from the real cache dir size. */
+    fun refreshCacheUsed(context: Context) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val mb = (CacheManager.usedBytes(context) / (1024 * 1024)).toInt()
+            withContext(Dispatchers.Main) { cacheUsedMb = mb }
+        }
     }
 
     fun addLog(tag: String, message: String) {
