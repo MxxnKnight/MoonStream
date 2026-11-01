@@ -235,7 +235,7 @@ fun PlayerScreen(
                 val label = f.label?.takeIf { it.isNotBlank() }
                     ?: f.language?.takeIf { it.isNotBlank() }
                     ?: "Track ${i + 1}"
-                opts.add(TrackOpt(g.trackGroup, i, label))
+                opts.add(TrackOpt(g.mediaTrackGroup, i, label))
             }
         }
         val off = mode == PlayerSheet.SUBS &&
@@ -246,13 +246,13 @@ fun PlayerScreen(
         selectedOpt = if (selGroup == null || off) {
             null
         } else {
-            val override = player.trackSelectionParameters.overrides[selGroup.trackGroup]
+            val override = player.trackSelectionParameters.overrides[selGroup.mediaTrackGroup]
             val idx = try {
                 override?.trackIndices?.get(0) ?: 0
             } catch (e: Exception) {
                 0
             }
-            opts.find { it.group === selGroup.trackGroup && it.index == idx }
+            opts.find { it.group === selGroup.mediaTrackGroup && it.index == idx }
         }
         trackOptions = opts
         sheet = mode
