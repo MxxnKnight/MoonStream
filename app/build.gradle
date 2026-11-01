@@ -103,6 +103,13 @@ android {
     }
 }
 
+// guava-32.1.2-android.jar (bundled in libs/) already contains
+// ListenableFuture — drop the standalone module CI resolves transitively,
+// otherwise checkPerfDuplicateClasses fails the release build.
+configurations.all {
+    exclude group: "com.google.guava", module: "listenablefuture"
+}
+
 dependencies {
     // No BOM: the offline mirror mixes compose 1.5.x/1.6.x. We pin compose
     // artifacts to 1.6.1 (present in the mirror) and keep material3 1.1.1 /
