@@ -1,11 +1,14 @@
 package com.moon.moonstream.util
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.runtime.mutableStateListOf
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Executors
 
 /** One log line. */
 data class LogLine(
@@ -26,17 +29,77 @@ data class LogLine(
  * Not persisted — cleared when the app closes (fresh on every launch).
  * The Logs screen's Clear button empties it.
  *
+ * UPDATE 2026-11-02 (moon's bug: "log also clears after kill!"): every line
+ * is now ALSO appended to filesDir/logs/app.log, and init() seeds the
+ * in-memory buffer with the file's tail — so after a crash/kill the Logs
+ * screen still shows what happened before the death.
+ *
  * THREAD SAFETY: Compose's mutableStateListOf crashes if modified from a
  * background thread while the UI reads it (moon hit this opening Logs
  * during a deep audit). ALL mutations are posted to the main thread.
  */
 object AppLog {
     private const val MAX = 200 // reduced from 500: fewer items = less memory, faster render
+    private const val MAX_FILE_BYTES = 512 * 1024L
     val lines = mutableStateListOf<LogLine>()
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val nextId = java.util.concurrent.atomic.AtomicLong(0)
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.US)
+    private val io = Executors.newSingleThreadExecutor()
+    @Volatile private var logFile: File? = null
+
+    /**
+     * Call once from MainActivity.onCreate. Points the file mirror at
+     * filesDir/logs/app.log and seeds [lines] with the previous run's tail
+     * (so a crash/kill doesn't wipe the evidence).
+     */
+    fun init(context: Context) {
+        if (logFile != null) return
+        val dir = File(context.filesDir, "logs").apply { mkdirs() }
+        val file = File(dir, "app.log")
+        logFile = file
+        io.execute {
+            try {
+                if (!file.exists()) return@execute
+                val tail = file.readLines().takeLast(MAX)
+                val seeded = tail.mapNotNull { parseLine(it) }
+                if (seeded.isNotEmpty()) {
+                    mainHandler.post {
+                        // Oldest first; make room, then append.
+                        while (lines.size + seeded.size > MAX) lines.removeAt(0)
+                        lines.addAll(seeded)
+                    }
+                }
+            } catch (e: Exception) { /* logging must never crash the app */ }
+        }
+    }
+
+    private fun formatLine(line: LogLine): String =
+        "${line.id}|${line.time}|${line.level}|${line.tag}|${line.message}"
+
+    private fun parseLine(raw: String): LogLine? {
+        val parts = raw.split("|", limit = 5)
+        if (parts.size < 5) return null
+        val id = parts[0].toLongOrNull() ?: return null
+        // Keep ids unique across restarts.
+        nextId.updateAndGet { cur -> maxOf(cur, id) }
+        return LogLine(id, parts[1], parts[3], parts[2], parts[4])
+    }
+
+    private fun appendToFile(line: LogLine) {
+        val file = logFile ?: return
+        io.execute {
+            try {
+                if (file.length() > MAX_FILE_BYTES) {
+                    // Rotate: keep the last ~300 lines.
+                    val kept = file.readLines().takeLast(300)
+                    file.writeText(kept.joinToString("\n") + "\n")
+                }
+                file.appendText(formatLine(line) + "\n")
+            } catch (e: Exception) { /* never break the app for logging */ }
+        }
+    }
 
     private fun add(level: String, tag: String, msg: String) {
         // SimpleDateFormat is NOT thread-safe and add() is called from many
@@ -60,6 +123,7 @@ object AppLog {
     private fun addOnMain(line: LogLine) {
         lines.add(line)
         while (lines.size > MAX) lines.removeAt(0)
+        appendToFile(line)
     }
 
     fun d(tag: String, msg: String) = add("D", tag, msg)

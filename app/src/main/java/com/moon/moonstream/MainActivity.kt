@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
+    com.moon.moonstream.util.AppLog.init(this)
     AppUiState.init(this)
     BackendProvider.init(this)
     com.moon.moonstream.server.ServerTelemetry.load(this)
@@ -172,8 +173,10 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     }
 
     // Floating pill nav (v0.4.0, NoxMedia-style): detached from the edges,
-    // not the old edge-to-edge bar. Hidden on Splash and Login.
-    val showNav = current !is AppScreen.Splash && current !is AppScreen.Login
+    // not the old edge-to-edge bar. Hidden on Splash, Login and Player
+    // (a video player is immersive — no nav pill over it).
+    val showNav = current !is AppScreen.Splash && current !is AppScreen.Login &&
+        current !is AppScreen.Player
 
     Scaffold(
         containerColor = MsColors.Bg,

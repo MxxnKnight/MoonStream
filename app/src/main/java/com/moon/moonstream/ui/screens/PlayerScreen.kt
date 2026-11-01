@@ -25,12 +25,14 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.ui.theme.MsColors
+import com.moon.moonstream.util.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -164,6 +166,15 @@ fun PlayerScreen(
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
+    // Playback state UI (moon's bug 2026-11-02: black screen, no feedback).
+    var isBuffering by remember { mutableStateOf(true) }
+    var playerError by remember { mutableStateOf<String?>(null) }
+
+    // Log what we're about to play (host:port + path, no query).
+    LaunchedEffect(videoUri) {
+        val portPart = if (videoUri.port != -1) ":${videoUri.port}" else ""
+        AppLog.i("PLAYER", "Opening \"$title\" — ${videoUri.host}$portPart${videoUri.path}")
+    }
 
     // Poll position/duration.
     LaunchedEffect(player) {
@@ -174,7 +185,17 @@ fun PlayerScreen(
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) {
                     duration = player.duration.coerceAtLeast(0L)
+                    isBuffering = false
+                    playerError = null
+                } else if (state == Player.STATE_BUFFERING) {
+                    isBuffering = true
                 }
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                val msg = "${error.errorCodeName}: ${error.message}"
+                AppLog.e("PLAYER", "Playback failed — $msg")
+                playerError = msg
+                isBuffering = false
             }
         }
         player.addListener(listener)
@@ -376,6 +397,70 @@ fun PlayerScreen(
                             ),
                         ) {
                             Text("Resume")
+                        }
+                    }
+                }
+            }
+        }
+
+        // Loading spinner while the stream buffers (moon's bug 2026-11-02:
+        // black screen with zero feedback).
+        if (isBuffering && playerError == null && !awaitingResumeChoice) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(color = MsColors.Accent)
+            }
+        }
+
+        // Playback error: show what failed + retry (never a silent black).
+        if (playerError != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.85f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    modifier = Modifier.padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        "Couldn't play this file",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MsColors.TextPrimary,
+                    )
+                    Text(
+                        playerError ?: "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextSecondary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = onClose,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MsColors.Bg,
+                                contentColor = MsColors.TextPrimary,
+                            ),
+                        ) {
+                            Text("Close")
+                        }
+                        Button(
+                            onClick = {
+                                playerError = null
+                                isBuffering = true
+                                player.prepare()
+                                player.play()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MsColors.Accent,
+                                contentColor = Color.Black,
+                            ),
+                        ) {
+                            Text("Retry")
                         }
                     }
                 }
