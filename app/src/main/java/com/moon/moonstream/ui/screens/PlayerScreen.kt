@@ -2,8 +2,10 @@ package com.moon.moonstream.ui.screens
 
 import android.app.Activity
 import android.content.ContentValues
+import android.content.Context
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -11,15 +13,18 @@ import android.provider.MediaStore
 import android.view.PixelCopy
 import android.view.SurfaceView
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -28,6 +33,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -49,10 +56,12 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.text.CaptionStyleCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.ui.components.MsToast
@@ -71,6 +80,12 @@ private enum class PlayerSheet { SUBS, AUDIO, PLAYLIST, EPISODES }
 
 /** One selectable track row. */
 private data class TrackOpt(val group: TrackGroup, val index: Int, val label: String)
+
+/** Brightness/volume gesture HUD state. */
+private sealed class GestureHud(val fraction: Float) {
+    class Brightness(f: Float) : GestureHud(f)
+    class Volume(f: Float) : GestureHud(f)
+}
 
 /** One episode = all its stream files (moon's playlist model 2026-11-02). */
 private data class EpisodeGroup(
@@ -128,6 +143,13 @@ fun PlayerScreen(
         onDispose {
             activity?.requestedOrientation = prevOrientation
             insets?.show(WindowInsetsCompat.Type.systemBars())
+            // Restore system brightness (gestures override it while playing).
+            try {
+                activity?.window?.attributes?.let { lp ->
+                    lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                    activity?.window?.attributes = lp
+                }
+            } catch (e: Exception) { /* never break close */ }
         }
     }
 
@@ -144,6 +166,81 @@ fun PlayerScreen(
     // Subtitle delay (moon's pick 2026-11-02): per-entry ms, server shifts
     // SRT/VTT cue timestamps via ?delayMs=.
     var delayMs by remember { mutableLongStateOf(SubDelayPrefs.get(context, mediaId)) }
+
+    // Subtitle appearance (moon's pick 2026-11-02): all in the player.
+    var subTextSize by remember {
+        mutableFloatStateOf(SubDelayPrefs.getTextSize(context, mediaId))
+    }
+    var subStrokeOn by remember {
+        mutableStateOf(SubDelayPrefs.getStrokeOn(context, mediaId))
+    }
+    var subTextColor by remember {
+        mutableIntStateOf(SubDelayPrefs.getTextColor(context, mediaId))
+    }
+    var subStrokeColor by remember {
+        mutableIntStateOf(SubDelayPrefs.getStrokeColor(context, mediaId))
+    }
+
+    /** Push the appearance prefs into the player's SubtitleView. */
+    fun applySubtitleStyle() {
+        val sv: SubtitleView = try {
+            playerViewRef?.subtitleView ?: return
+        } catch (e: Exception) {
+            return
+        }
+        val edge = if (subStrokeOn) CaptionStyleCompat.EDGE_TYPE_OUTLINE
+        else CaptionStyleCompat.EDGE_TYPE_NONE
+        sv.setStyle(
+            CaptionStyleCompat(
+                subTextColor, android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT, edge, subStrokeColor, null,
+            )
+        )
+        sv.setFractionalTextSize(subTextSize)
+    }
+
+    // Re-apply when the view arrives or any appearance pref changes.
+    LaunchedEffect(
+        playerViewRef, subTextSize, subStrokeOn, subTextColor, subStrokeColor
+    ) {
+        applySubtitleStyle()
+    }
+
+    // Brightness/volume gestures (video-player style): left half = brightness,
+    // right half = volume. A small HUD shows while adjusting.
+    val audioManager = remember {
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+    val maxVolume = remember {
+        audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    }
+    var brightness by remember {
+        val cur = try {
+            activity?.window?.attributes?.screenBrightness ?: -1f
+        } catch (e: Exception) {
+            -1f
+        }
+        mutableFloatStateOf(if (cur >= 0f) cur else 0.5f)
+    }
+    var gestureHud by remember { mutableStateOf<GestureHud?>(null) }
+
+    fun setBrightness(v: Float) {
+        brightness = v.coerceIn(0.05f, 1f)
+        try {
+            activity?.window?.attributes?.let { lp ->
+                lp.screenBrightness = brightness
+                activity?.window?.attributes = lp
+            }
+        } catch (e: Exception) { /* never break playback */ }
+    }
+
+    // Hide the gesture HUD shortly after the last adjustment.
+    LaunchedEffect(gestureHud) {
+        if (gestureHud != null) {
+            delay(1200)
+            gestureHud = null
+        }
+    }
 
     // Playlist data for series (episodes sheet + next-up card).
     // moon's model 2026-11-02: Episodes = episode list; Playlist = all streams
@@ -495,6 +592,36 @@ fun PlayerScreen(
                     },
                 )
             }
+            .pointerInput(sheet) {
+                // Vertical swipes: left half = brightness, right half = volume
+                // (video-player style). Skipped while a sheet is open.
+                detectVerticalDragGestures(
+                    onDragEnd = { /* HUD hides on its own timer */ },
+                    onDragCancel = { },
+                ) { change, dragAmount ->
+                    if (sheet == null) {
+                        change.consume()
+                        // Up = increase; a full-height swipe ≈ the full range.
+                        val delta = -dragAmount / 800f
+                        if (change.position.x < size.width / 2f) {
+                            setBrightness(brightness + delta)
+                            gestureHud = GestureHud.Brightness(brightness)
+                        } else {
+                            val cur =
+                                audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                            val newVol = (cur + (delta * maxVolume).toInt())
+                                .coerceIn(0, maxVolume)
+                            if (newVol != cur) {
+                                audioManager.setStreamVolume(
+                                    AudioManager.STREAM_MUSIC, newVol, 0
+                                )
+                            }
+                            gestureHud =
+                                GestureHud.Volume(newVol / maxVolume.toFloat())
+                        }
+                    }
+                }
+            }
     ) {
         // Video surface.
         AndroidView(
@@ -517,7 +644,11 @@ fun PlayerScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.5f))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = 0.65f), Color.Transparent)
+                        )
+                    )
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -546,14 +677,14 @@ fun PlayerScreen(
                 }) {
                     Icon(
                         Icons.Filled.Replay10, "Back 10s",
-                        tint = Color.White, modifier = Modifier.size(44.dp),
+                        tint = Color.White, modifier = Modifier.size(48.dp),
                     )
                 }
                 IconButton(onClick = { if (isPlaying) player.pause() else player.play() }) {
                     Icon(
                         if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                         if (isPlaying) "Pause" else "Play",
-                        tint = Color.White, modifier = Modifier.size(64.dp),
+                        tint = Color.White, modifier = Modifier.size(72.dp),
                     )
                 }
                 IconButton(onClick = {
@@ -564,7 +695,7 @@ fun PlayerScreen(
                 }) {
                     Icon(
                         Icons.Filled.Forward10, "Forward 10s",
-                        tint = Color.White, modifier = Modifier.size(44.dp),
+                        tint = Color.White, modifier = Modifier.size(48.dp),
                     )
                 }
             }
@@ -576,7 +707,11 @@ fun PlayerScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.5f))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                        )
+                    )
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 if (duration > 0L) {
@@ -645,6 +780,46 @@ fun PlayerScreen(
                             onClick = { sheet = PlayerSheet.EPISODES },
                         )
                     }
+                }
+            }
+        }
+
+        // Brightness/volume gesture HUD.
+        gestureHud?.let { hud ->
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .background(
+                            Color.Black.copy(alpha = 0.65f),
+                            RoundedCornerShape(14.dp),
+                        )
+                        .padding(horizontal = 28.dp, vertical = 18.dp),
+                ) {
+                    Icon(
+                        when (hud) {
+                            is GestureHud.Brightness -> Icons.Filled.BrightnessMedium
+                            is GestureHud.Volume -> Icons.Filled.VolumeUp
+                        },
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp),
+                    )
+                    LinearProgressIndicator(
+                        progress = hud.fraction,
+                        modifier = Modifier.width(120.dp),
+                        color = MsColors.Accent,
+                        trackColor = Color.White.copy(alpha = 0.25f),
+                    )
+                    Text(
+                        "${(hud.fraction * 100).toInt()}%",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 }
             }
         }
@@ -824,6 +999,113 @@ fun PlayerScreen(
                                             contentDescription = "Delay +250ms",
                                             tint = MsColors.TextPrimary,
                                         )
+                                    }
+                                }
+                                // Appearance (moon's pick 2026-11-02).
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "Appearance",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MsColors.TextSecondary,
+                                    modifier = Modifier.padding(vertical = 4.dp),
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        "Size",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MsColors.TextPrimary,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    SheetOptionBtn("S", subTextSize == 0.045f) {
+                                        subTextSize = 0.045f
+                                        SubDelayPrefs.setTextSize(context, mediaId, 0.045f)
+                                        applySubtitleStyle()
+                                    }
+                                    SheetOptionBtn("M", subTextSize == 0.06f) {
+                                        subTextSize = 0.06f
+                                        SubDelayPrefs.setTextSize(context, mediaId, 0.06f)
+                                        applySubtitleStyle()
+                                    }
+                                    SheetOptionBtn("L", subTextSize == 0.08f) {
+                                        subTextSize = 0.08f
+                                        SubDelayPrefs.setTextSize(context, mediaId, 0.08f)
+                                        applySubtitleStyle()
+                                    }
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        "Stroke",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MsColors.TextPrimary,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    SheetOptionBtn("On", subStrokeOn) {
+                                        subStrokeOn = true
+                                        SubDelayPrefs.setStrokeOn(context, mediaId, true)
+                                        applySubtitleStyle()
+                                    }
+                                    SheetOptionBtn("Off", !subStrokeOn) {
+                                        subStrokeOn = false
+                                        SubDelayPrefs.setStrokeOn(context, mediaId, false)
+                                        applySubtitleStyle()
+                                    }
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        "Text color",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MsColors.TextPrimary,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    ColorDot(Color.White, subTextColor == Color.White.toArgb()) {
+                                        subTextColor = Color.White.toArgb()
+                                        SubDelayPrefs.setTextColor(context, mediaId, subTextColor)
+                                        applySubtitleStyle()
+                                    }
+                                    ColorDot(Color.Yellow, subTextColor == Color.Yellow.toArgb()) {
+                                        subTextColor = Color.Yellow.toArgb()
+                                        SubDelayPrefs.setTextColor(context, mediaId, subTextColor)
+                                        applySubtitleStyle()
+                                    }
+                                    ColorDot(Color(0xFF00E5FF), subTextColor == 0xFF00E5FF.toInt()) {
+                                        subTextColor = 0xFF00E5FF.toInt()
+                                        SubDelayPrefs.setTextColor(context, mediaId, subTextColor)
+                                        applySubtitleStyle()
+                                    }
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        "Stroke color",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MsColors.TextPrimary,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    ColorDot(Color.Black, subStrokeColor == Color.Black.toArgb()) {
+                                        subStrokeColor = Color.Black.toArgb()
+                                        SubDelayPrefs.setStrokeColor(context, mediaId, subStrokeColor)
+                                        applySubtitleStyle()
+                                    }
+                                    ColorDot(Color.White, subStrokeColor == Color.White.toArgb()) {
+                                        subStrokeColor = Color.White.toArgb()
+                                        SubDelayPrefs.setStrokeColor(context, mediaId, subStrokeColor)
+                                        applySubtitleStyle()
+                                    }
+                                    ColorDot(Color.Yellow, subStrokeColor == Color.Yellow.toArgb()) {
+                                        subStrokeColor = Color.Yellow.toArgb()
+                                        SubDelayPrefs.setStrokeColor(context, mediaId, subStrokeColor)
+                                        applySubtitleStyle()
                                     }
                                 }
                             }
@@ -1060,16 +1342,60 @@ private fun PlayerActionButton(icon: ImageVector, label: String, onClick: () -> 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
-        Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(26.dp))
+        Icon(
+            icon, contentDescription = label,
+            tint = Color.White, modifier = Modifier.size(28.dp),
+        )
+        Spacer(Modifier.height(2.dp))
         Text(
             label,
-            color = Color.White.copy(alpha = 0.7f),
+            color = Color.White.copy(alpha = 0.85f),
             style = MaterialTheme.typography.labelSmall,
         )
     }
+}
+
+/** Small pill option button for the player sheets (size, stroke on/off). */
+@Composable
+private fun SheetOptionBtn(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 4.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) MsColors.Accent else MsColors.Bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = if (selected) Color.Black else MsColors.TextPrimary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+/** Color dot for the subtitle color pickers. */
+@Composable
+private fun ColorDot(color: Color, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .padding(4.dp)
+            .size(34.dp)
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) MsColors.Accent
+                else Color.White.copy(alpha = 0.25f),
+                shape = CircleShape,
+            )
+            .padding(4.dp)
+            .background(color, CircleShape)
+            .clickable(onClick = onClick),
+    )
 }
 
 /** One row in the subs/audio picker sheet. */
