@@ -13,6 +13,7 @@ object PlayerUrls {
     fun stream(mediaId: Long, fileId: Long): String =
         "http://127.0.0.1:${AppUiState.port}/stream/file/$mediaId/$fileId"
 
-    fun sub(subId: Long): String =
-        "http://127.0.0.1:${AppUiState.port}/sub/$subId"
+    fun sub(subId: Long, delayMs: Long = 0L): String =
+        "http://127.0.0.1:${AppUiState.port}/sub/$subId" +
+            (if (delayMs != 0L) "?delayMs=$delayMs" else "")
 }

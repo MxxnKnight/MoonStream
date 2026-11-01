@@ -33,6 +33,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
@@ -48,11 +49,13 @@ import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.player.PlayerUrls
+import com.moon.moonstream.ui.player.SubDelayPrefs
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.util.AppLog
 import kotlinx.coroutines.Dispatchers
@@ -61,10 +64,26 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Which bottom sheet is open in the player. */
-private enum class PlayerSheet { SUBS, AUDIO, PLAYLIST }
+private enum class PlayerSheet { SUBS, AUDIO, PLAYLIST, EPISODES }
 
 /** One selectable track row. */
 private data class TrackOpt(val group: TrackGroup, val index: Int, val label: String)
+
+/** One episode = all its stream files (moon's playlist model 2026-11-02). */
+private data class EpisodeGroup(
+    val season: Int?,
+    val episode: Int?,
+    val files: List<StreamFileEntity>,
+) {
+    fun label(): String =
+        if (season != null && episode != null) {
+            val first = files.firstOrNull()
+            val end = first?.episodeEnd
+            "S$season E$episode" + (if (end != null && end != episode) "-$end" else "")
+        } else {
+            files.firstOrNull()?.fileName?.substringBeforeLast('.')?.take(40) ?: "Streams"
+        }
+}
 
 /**
  * In-app video player (Phase 6).
@@ -77,14 +96,15 @@ fun PlayerScreen(
     videoUri: Uri,
     title: String,
     mediaTitle: String = title,
-    subtitleUris: List<Uri> = emptyList(),
     mediaId: Long = 0L,
     streamFileId: Long = 0L,
+    /** Header Play = continue watching: skip the resume prompt, play from saved spot. */
+    autoResume: Boolean = false,
     onClose: () -> Unit,
     onSwitchPlayer: (
         videoUrl: String, title: String, mediaTitle: String,
-        subtitleUrls: List<String>, mediaId: Long, streamFileId: Long,
-    ) -> Unit = { _, _, _, _, _, _ -> },
+        mediaId: Long, streamFileId: Long,
+    ) -> Unit = { _, _, _, _, _ -> },
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -108,37 +128,23 @@ fun PlayerScreen(
         }
     }
 
-    // Build the ExoPlayer instance.
+    // Build the ExoPlayer instance (media item is set by the load effect below,
+    // so subtitle changes / delay can rebuild it while preserving position).
     var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
     val player = remember {
         ExoPlayer.Builder(context).build().apply {
-            val mediaItem = MediaItem.Builder()
-                .setUri(videoUri)
-                .setSubtitleConfigurations(
-                    subtitleUris.mapIndexed { index, uri ->
-                        MediaItem.SubtitleConfiguration.Builder(uri)
-                            .setMimeType(
-                                when {
-                                    uri.toString().endsWith(".vtt") -> "text/vtt"
-                                    uri.toString().endsWith(".ass") ||
-                                    uri.toString().endsWith(".ssa") -> "text/x-ssa"
-                                    else -> "application/x-subrip"
-                                }
-                            )
-                            .setLanguage("und")
-                            .setId("sub_$index")
-                            .build()
-                    }
-                )
-                .build()
-            setMediaItem(mediaItem)
-            prepare()
-            // Starts paused — the resume check below decides play vs prompt.
+            // Never autoplay before the load effect below decides (resume check).
             playWhenReady = false
         }
     }
 
+    // Subtitle delay (moon's pick 2026-11-02): per-entry ms, server shifts
+    // SRT/VTT cue timestamps via ?delayMs=.
+    var delayMs by remember { mutableLongStateOf(SubDelayPrefs.get(context, mediaId)) }
+
     // Playlist data for series (episodes sheet + next-up card).
+    // moon's model 2026-11-02: Episodes = episode list; Playlist = all streams
+    // of the current episode (series) or all streams of the entry (movie).
     val files by db.streamDao().observeByMedia(mediaId).collectAsState(initial = emptyList())
     val allSubs by db.subtitleDao().observeByMedia(mediaId).collectAsState(initial = emptyList())
     val orderedFiles = remember(files) {
@@ -146,10 +152,25 @@ fun PlayerScreen(
             compareBy({ it.season ?: 0 }, { it.episode ?: Int.MAX_VALUE }, { it.id })
         )
     }
-    val currentIndex = orderedFiles.indexOfFirst { it.id == streamFileId }
-    val nextFile: StreamFileEntity? =
-        if (currentIndex >= 0) orderedFiles.getOrNull(currentIndex + 1) else null
-    val hasPlaylist = orderedFiles.size > 1
+    val groups = remember(orderedFiles) {
+        orderedFiles.groupBy { Pair(it.season, it.episode) }
+            .map { (key, fs) -> EpisodeGroup(key.first, key.second, fs) }
+    }
+    val currentGroupIdx = groups.indexOfFirst { g -> g.files.any { it.id == streamFileId } }
+    val currentGroup = groups.getOrNull(currentGroupIdx)
+    val nextGroup = groups.getOrNull(currentGroupIdx + 1)
+    val showEpisodesBtn = groups.size > 1
+    /** Playlist sheet content: this episode's streams (series) or all streams (movie). */
+    val playlistFiles: List<StreamFileEntity> = when {
+        currentGroup != null && showEpisodesBtn -> currentGroup.files
+        else -> orderedFiles
+    }
+    val showPlaylistBtn = playlistFiles.size > 1
+
+    // Subtitle (uri, fileName) pairs — mime type comes from the real file name.
+    val subPairs = remember(allSubs, delayMs) {
+        allSubs.map { sub -> Uri.parse(PlayerUrls.sub(sub.id, delayMs)) to sub.fileName }
+    }
 
     fun episodeLabel(f: StreamFileEntity): String =
         if (f.season != null && f.episode != null) {
@@ -163,9 +184,34 @@ fun PlayerScreen(
     fun switchEpisode(f: StreamFileEntity) {
         if (f.id == streamFileId) return
         val url = PlayerUrls.stream(mediaId, f.id)
-        val subs = allSubs.map { PlayerUrls.sub(it.id) }
         AppLog.i("PLAYER", "Switching to ${episodeLabel(f)}")
-        onSwitchPlayer(url, "$mediaTitle ${episodeLabel(f)}", mediaTitle, subs, mediaId, f.id)
+        onSwitchPlayer(url, "$mediaTitle ${episodeLabel(f)}", mediaTitle, mediaId, f.id)
+    }
+
+    /** Adjust subtitle delay (250ms steps, ±10s), saved per entry. */
+    fun adjustDelay(delta: Long) {
+        val new = (delayMs + delta).coerceIn(-10_000L, 10_000L)
+        if (new == delayMs) return
+        delayMs = new
+        SubDelayPrefs.set(context, mediaId, new)
+        AppLog.i("PLAYER", "Subtitle delay ${if (new >= 0) "+" else ""}${new}ms")
+        // subPairs recomputes from delayMs; the load effect below rebuilds.
+    }
+
+    // Aspect-ratio cycle (moon's pick 2026-11-02): each tap → next mode.
+    val resizeModes = remember {
+        listOf(
+            AspectRatioFrameLayout.RESIZE_MODE_FIT to "Fit",
+            AspectRatioFrameLayout.RESIZE_MODE_FILL to "Fill",
+            AspectRatioFrameLayout.RESIZE_MODE_ZOOM to "Zoom",
+        )
+    }
+    var resizeIndex by remember { mutableIntStateOf(0) }
+    fun cycleResize() {
+        resizeIndex = (resizeIndex + 1) % resizeModes.size
+        playerViewRef?.resizeMode = resizeModes[resizeIndex].first
+        MsToast.show(resizeModes[resizeIndex].second)
+        AppLog.i("PLAYER", "Resize mode: ${resizeModes[resizeIndex].second}")
     }
 
     /** Capture the current video frame into Pictures/MoonStream. */
@@ -279,21 +325,41 @@ fun PlayerScreen(
         sheet = null
     }
 
-    // Load the saved position once; decide play vs resume prompt.
-    LaunchedEffect(streamFileId, mediaId) {
-        if (streamFileId == 0L) {
-            player.play()
-            return@LaunchedEffect
-        }
-        val saved = withContext(Dispatchers.IO) {
-            try {
-                db.watchProgressDao().get(mediaId, streamFileId)?.positionMs ?: 0L
-            } catch (e: Exception) { 0L }
-        }
-        if (saved > 10_000L) {
-            resumeFrom = saved
-            awaitingResumeChoice = true
-        } else {
+    var mediaReady by remember { mutableStateOf(false) }
+
+    // Load / rebuild the media item. First run: resume check (prompt, or
+    // straight to the saved spot for the header Play button). Later runs
+    // (subs arrived, delay changed): rebuild keeping position + play state.
+    LaunchedEffect(videoUri, subPairs) {
+        val isFirst = !mediaReady
+        val pos = if (isFirst) 0L else player.currentPosition.coerceAtLeast(0L)
+        val keepPlaying = if (isFirst) false else player.isPlaying
+        player.setMediaItem(buildMediaItem(videoUri, subPairs), pos)
+        player.prepare()
+        if (isFirst) {
+            mediaReady = true
+            if (streamFileId == 0L) {
+                player.play()
+                return@LaunchedEffect
+            }
+            val saved = withContext(Dispatchers.IO) {
+                try {
+                    db.watchProgressDao().get(mediaId, streamFileId)?.positionMs ?: 0L
+                } catch (e: Exception) { 0L }
+            }
+            when {
+                // Header Play = continue watching: straight to the saved spot.
+                autoResume && saved > 10_000L -> {
+                    player.seekTo(saved)
+                    player.play()
+                }
+                saved > 10_000L -> {
+                    resumeFrom = saved
+                    awaitingResumeChoice = true
+                }
+                else -> player.play()
+            }
+        } else if (keepPlaying) {
             player.play()
         }
     }
@@ -405,7 +471,8 @@ fun PlayerScreen(
     }
 
     // Next-up card: last 30s, only when a next episode exists.
-    val showNextUp = nextFile != null && !nextUpDismissed &&
+    val nextUpFile = nextGroup?.files?.firstOrNull()
+    val showNextUp = nextUpFile != null && !nextUpDismissed &&
         duration > 60_000L && duration - currentPosition in 1..30_000L
     val nextUpSecs = ((duration - currentPosition) / 1000).toInt().coerceAtLeast(0)
 
@@ -552,15 +619,27 @@ fun PlayerScreen(
                         onClick = { openTrackSheet(PlayerSheet.AUDIO) },
                     )
                     PlayerActionButton(
+                        icon = Icons.Filled.AspectRatio,
+                        label = resizeModes[resizeIndex].second,
+                        onClick = { cycleResize() },
+                    )
+                    PlayerActionButton(
                         icon = Icons.Filled.PhotoCamera,
                         label = "Shot",
                         onClick = { takeScreenshot() },
                     )
-                    if (hasPlaylist) {
+                    if (showPlaylistBtn) {
+                        PlayerActionButton(
+                            icon = Icons.Filled.List,
+                            label = "Playlist",
+                            onClick = { sheet = PlayerSheet.PLAYLIST },
+                        )
+                    }
+                    if (showEpisodesBtn) {
                         PlayerActionButton(
                             icon = Icons.Filled.PlaylistPlay,
                             label = "Episodes",
-                            onClick = { sheet = PlayerSheet.PLAYLIST },
+                            onClick = { sheet = PlayerSheet.EPISODES },
                         )
                     }
                 }
@@ -568,7 +647,7 @@ fun PlayerScreen(
         }
 
         // Next-up card (TMPlayer pattern): last 30s of an episode.
-        if (showNextUp && nextFile != null) {
+        if (showNextUp && nextUpFile != null && nextGroup != null) {
             Card(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -583,7 +662,7 @@ fun PlayerScreen(
                         color = MsColors.TextSecondary,
                     )
                     Text(
-                        episodeLabel(nextFile),
+                        nextGroup.label(),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MsColors.TextPrimary,
@@ -599,7 +678,7 @@ fun PlayerScreen(
                             Text("Hide", color = MsColors.TextSecondary)
                         }
                         Button(
-                            onClick = { switchEpisode(nextFile) },
+                            onClick = { switchEpisode(nextUpFile) },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MsColors.Accent,
                                 contentColor = Color.Black,
@@ -643,7 +722,8 @@ fun PlayerScreen(
                         when (mode) {
                             PlayerSheet.SUBS -> "Subtitles"
                             PlayerSheet.AUDIO -> "Audio"
-                            PlayerSheet.PLAYLIST -> "Episodes"
+                            PlayerSheet.PLAYLIST -> "Playlist"
+                            PlayerSheet.EPISODES -> "Episodes"
                         },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -675,9 +755,46 @@ fun PlayerScreen(
                                     onClick = { selectTrack(opt, forSubs) },
                                 )
                             }
+                            // Subtitle delay (moon's pick 2026-11-02): ±250ms steps.
+                            if (forSubs) {
+                                Spacer(Modifier.height(4.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        "Delay",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MsColors.TextPrimary,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    IconButton(onClick = { adjustDelay(-250) }) {
+                                        Icon(
+                                            Icons.Filled.Remove,
+                                            contentDescription = "Delay -250ms",
+                                            tint = MsColors.TextPrimary,
+                                        )
+                                    }
+                                    Text(
+                                        formatDelay(delayMs),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MsColors.Accent,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.width(80.dp),
+                                    )
+                                    IconButton(onClick = { adjustDelay(250) }) {
+                                        Icon(
+                                            Icons.Filled.Add,
+                                            contentDescription = "Delay +250ms",
+                                            tint = MsColors.TextPrimary,
+                                        )
+                                    }
+                                }
+                            }
                         }
                         PlayerSheet.PLAYLIST -> {
-                            orderedFiles.forEach { f ->
+                            // All streams of this episode (series) / entry (movie).
+                            playlistFiles.forEach { f ->
                                 val isCurrent = f.id == streamFileId
                                 Row(
                                     modifier = Modifier
@@ -686,11 +803,51 @@ fun PlayerScreen(
                                             sheet = null
                                             switchEpisode(f)
                                         }
+                                        .padding(vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            f.quality.ifBlank {
+                                                f.fileName.substringBeforeLast('.').take(40)
+                                            },
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (isCurrent) MsColors.Accent
+                                            else MsColors.TextPrimary,
+                                        )
+                                        if (f.fileSize > 0) {
+                                            Text(
+                                                formatSize(f.fileSize),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MsColors.TextSecondary,
+                                            )
+                                        }
+                                    }
+                                    if (isCurrent) {
+                                        Text(
+                                            "Playing",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MsColors.Accent,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        PlayerSheet.EPISODES -> {
+                            groups.forEach { g ->
+                                val isCurrent = g.files.any { it.id == streamFileId }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            sheet = null
+                                            switchEpisode(g.files.first())
+                                        }
                                         .padding(vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
-                                        episodeLabel(f),
+                                        g.label(),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = if (isCurrent) MsColors.Accent
                                         else MsColors.TextPrimary,
@@ -838,6 +995,29 @@ fun PlayerScreen(
     }
 }
 
+/** Build the player's media item: video + subtitle tracks (mime from real file names). */
+@OptIn(UnstableApi::class)
+private fun buildMediaItem(video: Uri, subs: List<Pair<Uri, String>>): MediaItem =
+    MediaItem.Builder()
+        .setUri(video)
+        .setSubtitleConfigurations(
+            subs.mapIndexed { index, (uri, fileName) ->
+                MediaItem.SubtitleConfiguration.Builder(uri)
+                    .setMimeType(
+                        when {
+                            fileName.endsWith(".vtt", ignoreCase = true) -> "text/vtt"
+                            fileName.endsWith(".ass", ignoreCase = true) ||
+                                fileName.endsWith(".ssa", ignoreCase = true) -> "text/x-ssa"
+                            else -> "application/x-subrip"
+                        },
+                    )
+                    .setLanguage("und")
+                    .setId("sub_$index")
+                    .build()
+            },
+        )
+        .build()
+
 /** Small labeled button for the player's bottom action row. */
 @Composable
 private fun PlayerActionButton(icon: ImageVector, label: String, onClick: () -> Unit) {
@@ -881,6 +1061,15 @@ private fun TrackRow(label: String, selected: Boolean, onClick: () -> Unit) {
             )
         }
     }
+}
+
+private fun formatDelay(ms: Long): String =
+    (if (ms >= 0) "+" else "") + "$ms ms"
+
+private fun formatSize(bytes: Long): String {
+    if (bytes <= 0) return ""
+    val mb = bytes / (1024.0 * 1024.0)
+    return if (mb >= 1024) "%.1f GB".format(mb / 1024) else "%d MB".format(mb.toInt())
 }
 
 private fun formatTime(ms: Long): String {

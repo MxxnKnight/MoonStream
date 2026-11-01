@@ -111,7 +111,7 @@ fun DetailScreen(
     onOpenCreate: (CreatePrefill) -> Unit = {},
     onPlayInApp: (
         videoUrl: String, title: String, mediaTitle: String,
-        subtitleUrls: List<String>, mediaId: Long, streamFileId: Long,
+        mediaId: Long, streamFileId: Long, autoResume: Boolean,
     ) -> Unit = { _, _, _, _, _, _ -> },
 ) {
     val context = LocalContext.current
@@ -182,22 +182,58 @@ fun DetailScreen(
      *  (VLC, mpvRx, …) handle the stream. Needs the server running.
      *  Custom-added subtitles are passed via intent extras so mpvRx/VLC
      *  can load them (moon's question 2026-11-01). */
+    fun playTitle(file: StreamFileEntity): String =
+        if (file.season != null && file.episode != null) {
+            "${m.title} S${file.season}E${file.episode}"
+        } else {
+            m.title
+        }
+
+    /** Per-file play: the player shows the Resume prompt when a position is saved. */
     fun playInApp(file: StreamFileEntity) {
         if (!AppUiState.serverOn) {
             MsToast.show("Turn the server on first, then play")
             return
         }
-        val videoUrl = PlayerUrls.stream(m.id, file.id)
-        val subUrls = subtitles.mapNotNull { sub ->
-            try { PlayerUrls.sub(sub.id) } catch (e: Exception) { null }
+        onPlayInApp(
+            PlayerUrls.stream(m.id, file.id), playTitle(file), m.title,
+            m.id, file.id, false,
+        )
+        recordWatch(file)
+    }
+
+    /**
+     * Header Play = continue watching (moon's pick 2026-11-02): opens the
+     * episode/file he last watched and resumes exactly where he left —
+     * no prompt, the button itself means "continue".
+     */
+    fun playContinue() {
+        if (!AppUiState.serverOn) {
+            MsToast.show("Turn the server on first, then play")
+            return
         }
-        val title = if (file.season != null && file.episode != null) {
-            "${m.title} S${file.season}E${file.episode}"
-        } else {
-            m.title
+        scope.launch(Dispatchers.IO) {
+            val latest = try {
+                db.watchProgressDao().latestForMedia(m.id)
+            } catch (e: Exception) { null }
+            val target = latest?.let { rec -> files.find { it.id == rec.streamFileId } }
+                ?: files.firstOrNull()
+            withContext(Dispatchers.Main) {
+                if (target == null) {
+                    MsToast.show("No files to play yet")
+                    return@withContext
+                }
+                onPlayInApp(
+                    PlayerUrls.stream(m.id, target.id), playTitle(target), m.title,
+                    m.id, target.id, true,
+                )
+                recordWatch(target)
+            }
         }
-        onPlayInApp(videoUrl, title, m.title, subUrls, m.id, file.id)
-        // Record the watch (one row per file — delete-then-insert).
+    }
+
+    /** Record the watch (one row per file — delete-then-insert). */
+    fun recordWatch(file: StreamFileEntity) {
         scope.launch(Dispatchers.IO) {
             try {
                 val epLabel = if (file.season != null && file.episode != null) {
@@ -466,11 +502,7 @@ fun DetailScreen(
             ) {
                 LimePillButton(
                     text = "Play",
-                    onClick = {
-                        val first = files.firstOrNull()
-                        if (first != null) playInApp(first)
-                        else MsToast.show("No files to play yet")
-                    },
+                    onClick = { playContinue() },
                     modifier = Modifier.weight(1f),
                     fontSize = 13,
                 )

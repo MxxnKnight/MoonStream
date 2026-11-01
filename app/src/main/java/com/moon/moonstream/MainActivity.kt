@@ -86,10 +86,11 @@ sealed interface AppScreen {
     data class Player(
         val videoUrl: String,
         val title: String,
-        val subtitleUrls: List<String> = emptyList(),
         val mediaId: Long = 0L,
         val streamFileId: Long = 0L,
         val mediaTitle: String = "",
+        /** Header Play = continue watching: skip resume prompt, play from saved spot. */
+        val autoResume: Boolean = false,
     ) : AppScreen
 }
 
@@ -237,11 +238,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             mediaId = screen.mediaId,
                             onBack = { backStack.removeLast() },
                             onOpenCreate = { prefill -> go(AppScreen.Create(prefill)) },
-                            onPlayInApp = { videoUrl, title, mediaTitle, subtitleUrls, mediaId, streamFileId ->
+                            onPlayInApp = { videoUrl, title, mediaTitle, mediaId, streamFileId, autoResume ->
                                 go(
                                     AppScreen.Player(
-                                        videoUrl, title, subtitleUrls,
-                                        mediaId, streamFileId, mediaTitle,
+                                        videoUrl, title,
+                                        mediaId, streamFileId, mediaTitle, autoResume,
                                     )
                                 )
                             },
@@ -279,14 +280,14 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         videoUri = android.net.Uri.parse(screen.videoUrl),
                         title = screen.title,
                         mediaTitle = screen.mediaTitle.ifBlank { screen.title },
-                        subtitleUris = screen.subtitleUrls.map { android.net.Uri.parse(it) },
                         mediaId = screen.mediaId,
                         streamFileId = screen.streamFileId,
+                        autoResume = screen.autoResume,
                         onClose = { backStack.removeLast() },
-                        onSwitchPlayer = { url, t, mt, subs, mid, fid ->
+                        onSwitchPlayer = { url, t, mt, mid, fid ->
                             // Episode switch: replace this player with the new file's.
                             backStack.removeLast()
-                            go(AppScreen.Player(url, t, subs, mid, fid, mt))
+                            go(AppScreen.Player(url, t, mid, fid, mt))
                         },
                     )
                     AppScreen.Settings -> SettingsScreen(

@@ -302,6 +302,11 @@ interface WatchProgressDao {
     @Query("SELECT * FROM watch_progress WHERE mediaId = :mediaId AND streamFileId = :streamFileId ORDER BY playedAt DESC LIMIT 1")
     suspend fun get(mediaId: Long, streamFileId: Long): WatchProgressEntity?
 
+    /** Most recently watched file of an entry — for the header Play button
+     *  (continue watching, moon's pick 2026-11-02). */
+    @Query("SELECT * FROM watch_progress WHERE mediaId = :mediaId ORDER BY playedAt DESC LIMIT 1")
+    suspend fun latestForMedia(mediaId: Long): WatchProgressEntity?
+
     @Query("UPDATE watch_progress SET positionMs = :positionMs, playedAt = :playedAt WHERE streamFileId = :streamFileId")
     suspend fun updatePosition(streamFileId: Long, positionMs: Long, playedAt: Long)
 

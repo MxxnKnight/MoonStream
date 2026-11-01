@@ -157,7 +157,10 @@ class MoonStreamServer(
                 path.startsWith("/stream/direct/") ->
                     serveDirectBytes(output, path.removePrefix("/stream/direct/"), headers, headOnly)
                 path.startsWith("/sub/") ->
-                    serveSubtitleBytes(output, path.removePrefix("/sub/"), headOnly)
+                    serveSubtitleBytes(
+                        output, path.removePrefix("/sub/"), headOnly,
+                        delayMs = queryLong(rawPath, "delayMs"),
+                    )
                 else ->
                     sendJson(output, 404, JSONObject().put("error", "Not Found").toString(), headOnly)
             }
@@ -474,7 +477,17 @@ class MoonStreamServer(
         }
     }
 
-    private fun serveSubtitleBytes(output: OutputStream, rest: String, headOnly: Boolean) {
+    /** Parse a long query param from the raw request path (e.g. ?delayMs=500). */
+    private fun queryLong(rawPath: String, name: String): Long {
+        val q = rawPath.substringAfter("?", "")
+        if (q.isEmpty()) return 0L
+        return q.split("&").firstOrNull { it.startsWith("$name=") }
+            ?.removePrefix("$name=")?.toLongOrNull() ?: 0L
+    }
+
+    private fun serveSubtitleBytes(
+        output: OutputStream, rest: String, headOnly: Boolean, delayMs: Long = 0L,
+    ) {
         val subId = rest.split("/").firstOrNull()?.toLongOrNull()
         if (subId == null) { sendJson(output, 400, errJson("Bad subtitle id").toString(), headOnly); return }
         val sub = runBlocking { db.subtitleDao().getById(subId) }
@@ -486,17 +499,81 @@ class MoonStreamServer(
             val bytes: ByteArray = runBlocking {
                 backend.readFileRange(sub.channelId, sub.messageId, 0, sub.fileSize.toInt())
             }
+            // Subtitle delay (moon's pick 2026-11-02): shift SRT/VTT cue
+            // timestamps on the fly when ?delayMs= is present.
+            val outBytes =
+                if (delayMs != 0L) shiftSubtitleTimestamps(bytes, sub.fileName, delayMs)
+                else bytes
             val mime = mimeFor(sub.fileName)
             if (headOnly) {
                 sendResponse(output, 200, "OK", mime, ByteArray(0),
-                    contentLengthOverride = bytes.size.toLong())
+                    contentLengthOverride = outBytes.size.toLong())
             } else {
-                sendResponse(output, 200, "OK", mime, bytes)
+                sendResponse(output, 200, "OK", mime, outBytes)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error serving subtitle ${sub.id}", e)
             sendJson(output, 502, errJson("Upstream read failed").toString(), headOnly)
         }
+    }
+
+    /** Shift SRT/VTT cue timestamps by delayMs (only on "-->" timing lines). */
+    private fun shiftSubtitleTimestamps(bytes: ByteArray, fileName: String, delayMs: Long): ByteArray {
+        return try {
+            val text = bytes.toString(Charsets.UTF_8)
+            val lower = fileName.lowercase()
+            val shifted = when {
+                lower.endsWith(".srt") -> shiftCueLines(text, delayMs, ::shiftSrtLine)
+                lower.endsWith(".vtt") -> shiftCueLines(text, delayMs, ::shiftVttLine)
+                else -> text // ASS/SSA: complex format, leave untouched.
+            }
+            shifted.toByteArray(Charsets.UTF_8)
+        } catch (e: Exception) {
+            bytes
+        }
+    }
+
+    private fun shiftCueLines(
+        text: String, delayMs: Long, shiftLine: (String, Long) -> String,
+    ): String =
+        text.lineSequence()
+            .map { line -> if ("-->" in line) shiftLine(line, delayMs) else line }
+            .joinToString("\n")
+
+    private fun shiftSrtLine(line: String, delayMs: Long): String {
+        val ts = Regex("""\d{2}:\d{2}:\d{2},\d{3}""")
+        return ts.replace(line) { m ->
+            val p = m.value.split(":", ",")
+            val ms = (p[0].toLong() * 3600 + p[1].toLong() * 60 + p[2].toLong()) * 1000 +
+                p[3].toLong() + delayMs
+            formatTs(ms.coerceAtLeast(0), ",")
+        }
+    }
+
+    private fun shiftVttLine(line: String, delayMs: Long): String {
+        // Long form first (HH:MM:SS.mmm), else short (MM:SS.mmm) — one pass.
+        val ts = Regex("""(\d{2}:)?\d{2}:\d{2}\.\d{3}""")
+        return ts.replace(line) { m ->
+            val parts = m.value.split(":", ".")
+            val (h, mi, s, x) =
+                if (parts.size == 4) listOf(parts[0], parts[1], parts[2], parts[3])
+                else listOf("0", parts[0], parts[1], parts[2])
+            val ms = (h.toLong() * 3600 + mi.toLong() * 60 + s.toLong()) * 1000 +
+                x.toLong() + delayMs
+            val long = m.value.count { it == ':' } == 2
+            formatTs(ms.coerceAtLeast(0), ".", withHours = long)
+        }
+    }
+
+    private fun formatTs(ms: Long, fracSep: String, withHours: Boolean = true): String {
+        val h = ms / 3600000
+        val m = (ms % 3600000) / 60000
+        val s = (ms % 60000) / 1000
+        val x = ms % 1000
+        val base =
+            if (withHours) "%02d:%02d:%02d".format(h, m, s)
+            else "%02d:%02d".format(m, s)
+        return "$base$fracSep%03d".format(x)
     }
 
     // ---------------------------------------------------------------- helpers
