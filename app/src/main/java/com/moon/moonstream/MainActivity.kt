@@ -50,6 +50,7 @@ import com.moon.moonstream.ui.screens.CreateScreen
 import com.moon.moonstream.ui.screens.DetailScreen
 import com.moon.moonstream.ui.screens.LibraryScreen
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -124,6 +125,9 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     val authState by telegramManager.authState.collectAsState()
     val context = LocalContext.current
 
+    // Warm the library list at launch so the Library tab opens instantly.
+    LaunchedEffect(Unit) { com.moon.moonstream.index.db.LibraryCache.items(context) }
+
     // Automatically install real backend whenever Telegram becomes Ready
     LaunchedEffect(authState) {
         if (authState is com.moon.moonstream.tdlib.AuthState.Ready) {
@@ -179,43 +183,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
             AnimatedContent(
                 targetState = current,
                 transitionSpec = {
-                    // Slide in the direction of travel for tabs; fade for
-                    // pushed screens (Detail/Create). Keep it snappy.
-                    val tabs = listOf(
-                        AppScreen.Server, AppScreen.Library,
-                        AppScreen.Channels, AppScreen.Settings,
-                    )
-                    val fromIdx = tabs.indexOf((initialState as? AppScreen)?.let {
-                        when (it) {
-                            AppScreen.Server -> AppScreen.Server
-                            AppScreen.Library -> AppScreen.Library
-                            AppScreen.Channels -> AppScreen.Channels
-                            AppScreen.Settings -> AppScreen.Settings
-                            else -> null
-                        }
-                    })
-                    val toIdx = tabs.indexOf((targetState as? AppScreen)?.let {
-                        when (it) {
-                            AppScreen.Server -> AppScreen.Server
-                            AppScreen.Library -> AppScreen.Library
-                            AppScreen.Channels -> AppScreen.Channels
-                            AppScreen.Settings -> AppScreen.Settings
-                            else -> null
-                        }
-                    })
-                    if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx) {
-                        val dir = if (toIdx > fromIdx) 1 else -1
-                        slideInHorizontally(
-                            animationSpec = tween(180),
-                            initialOffsetX = { it / 4 * dir },
-                        ) + fadeIn(tween(180)) togetherWith
-                            slideOutHorizontally(
-                                animationSpec = tween(180),
-                                targetOffsetX = { -it / 4 * dir },
-                            ) + fadeOut(tween(180))
-                    } else {
-                        fadeIn(tween(150)) togetherWith fadeOut(tween(150))
-                    }
+                    // Cheap switch: the new screen fades in quickly and the old
+                    // one is dropped at once, so only ONE heavy screen is alive
+                    // during the animation (the old slide+fade composed and
+                    // drew two full screens at the same time).
+                    fadeIn(tween(110)) togetherWith ExitTransition.None
                 },
                 label = "screenSwitch",
                 modifier = Modifier.fillMaxSize(),

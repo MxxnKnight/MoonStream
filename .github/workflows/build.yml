@@ -59,13 +59,13 @@ jobs:
           echo "versionName=${{ inputs.version }} versionCode=$NEW_VC"
           grep -E 'versionCode|versionName' app/build.gradle | head -2
 
-      - name: Build Debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Build APK (perf, non-debuggable)
+        run: ./gradlew :app:assemblePerf --stacktrace
 
       # Rename APKs so the release assets carry the version + ABI.
       - name: Rename APKs
         run: |
-          cd app/build/outputs/apk/debug
+          cd app/build/outputs/apk/perf
           for f in *arm64-v8a*.apk; do [ -f "$f" ] && mv "$f" "MoonStream-${{ inputs.version }}-arm64-v8a.apk"; done
           for f in *armeabi-v7a*.apk; do [ -f "$f" ] && mv "$f" "MoonStream-${{ inputs.version }}-armeabi-v7a.apk"; done
           for f in *x86_64*.apk; do [ -f "$f" ] && mv "$f" "MoonStream-${{ inputs.version }}-x86_64.apk"; done
@@ -78,7 +78,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MoonStream-arm64-v8a
-          path: app/build/outputs/apk/debug/*arm64-v8a*.apk
+          path: app/build/outputs/apk/perf/*arm64-v8a*.apk
           if-no-files-found: warn
           retention-days: 14
 
@@ -86,7 +86,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MoonStream-armeabi-v7a
-          path: app/build/outputs/apk/debug/*armeabi-v7a*.apk
+          path: app/build/outputs/apk/perf/*armeabi-v7a*.apk
           if-no-files-found: warn
           retention-days: 14
 
@@ -94,7 +94,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MoonStream-x86_64
-          path: app/build/outputs/apk/debug/*x86_64*.apk
+          path: app/build/outputs/apk/perf/*x86_64*.apk
           if-no-files-found: warn
           retention-days: 14
 
@@ -102,7 +102,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MoonStream-universal
-          path: app/build/outputs/apk/debug/*universal*.apk
+          path: app/build/outputs/apk/perf/*universal*.apk
           if-no-files-found: warn
           retention-days: 14
 
@@ -118,4 +118,4 @@ jobs:
 
             Install the APK matching your phone (most phones: arm64-v8a).
             Or update from inside the app: Settings → Check for updates.
-          files: app/build/outputs/apk/debug/*.apk
+          files: app/build/outputs/apk/perf/*.apk

@@ -58,6 +58,18 @@ android {
                 signingConfig signingConfigs.release
             }
         }
+        // "perf": a NON-debuggable build signed with the same shared key as
+        // debug, so it installs over your current app as a normal update.
+        // Debug builds run Compose several times slower (debuggable, no AOT
+        // optimisation) - this is what makes tab switches feel laggy.
+        // Flip minifyEnabled to true later (needs a test pass).
+        perf {
+            initWith release
+            signingConfig signingConfigs.debug
+            debuggable false
+            minifyEnabled false
+            matchingFallbacks = ['release']
+        }
     }
     // Release lint needs artifacts absent from the offline mirror; skip it here.
     // TODO: re-enable when CI builds with network access.

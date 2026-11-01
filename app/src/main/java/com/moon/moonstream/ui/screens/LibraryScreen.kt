@@ -92,7 +92,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     val db = remember { MsDatabase.get(context) }
     val scope = rememberCoroutineScope()
 
-    val allItems by db.mediaDao().observeAll().collectAsState(initial = emptyList())
+    val allItems by com.moon.moonstream.index.db.LibraryCache.items(context).collectAsState()
 
     var query by remember { mutableStateOf("") }
     var segment by remember { mutableStateOf(0) }
@@ -128,7 +128,11 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
         else subLangCodes[subLangFilter]?.let { db.subtitleDao().mediaIdsWithSubtitleLang(it).toSet() }
     }
 
-    val filtered = allItems.filter { t ->
+    // remember(...): filtering/sorting the whole library used to re-run on EVERY
+    // recomposition (scrolling, animations). Now only when an input changes.
+    val filtered = remember(
+        allItems, segment, query, qualityIds, subFilter, subIds, subLangIds, sort,
+    ) { allItems.filter { t ->
         val matchesSegment = when (segment) {
             0 -> !t.hidden
             1 -> t.type == "movie" && !t.hidden
@@ -153,7 +157,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             "Size" -> list.sortedByDescending { it.totalSize }
             else -> list // "Recently added": observeAll is updatedAt DESC
         }
-    }
+    } }
     val inHiddenTab = segment == 4
     val totalStreams = allItems.sumOf { it.fileCount }
 
