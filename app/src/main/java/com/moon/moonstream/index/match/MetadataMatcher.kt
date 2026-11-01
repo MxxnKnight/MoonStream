@@ -474,6 +474,7 @@ object MetadataMatcher {
 
     private fun normalizeTitle(t: String): String =
         t.lowercase()
+            .replace(Regex("[''']"), "") // "Widow's" -> "widows", not "widow s"
             .replace(Regex("[^a-z0-9 ]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()

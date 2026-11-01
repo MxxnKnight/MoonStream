@@ -81,6 +81,10 @@ object FilenameParser {
     private val seasonOnlyRe = Regex("""(?i)(?<![a-z0-9])season\s*(\d{1,2})(?![a-z0-9])""")
     private val episodeOnlyRe = Regex("""(?i)(?<![a-z0-9])episode\s*(\d{1,4})(?![a-z0-9])""")
 
+    /** Standalone "E22" (episode without season, e.g. "Psycho Pass E22").
+     *  Must not match words ending in E like "TRUE". */
+    private val standaloneEpRe = Regex("""(?i)(?<![a-z0-9])(?:e|ep)\s*(\d{1,4})(?![a-z0-9])""")
+
     /** [12 - Episode Title] bracketed anime episode. */
     private val bracketEpRe = Regex("""^\[\s*(\d{1,4})\s*[-–—]\s*([^\]]+)\]""")
 
@@ -261,7 +265,21 @@ object FilenameParser {
                 episode = m.groupValues[2].toIntOrNull()
                 title = m.groupValues[1].trim()
             }
+        } ?: standaloneEpRe.find(work)?.let { m ->
+            // "Psycho Pass E22" -> title="Psycho Pass", episode=22.
+            // Don't match if it's part of a word (e.g. "TRUE" ends with E).
+            season = 1
+            episode = m.groupValues[1].toIntOrNull()
+            title = before(m)
         }
+
+        // Strip trailing junk: "COMBINED", "TRUE", lone numbers after episode info.
+        // e.g. "My Brilliant Career S01 COMBINED" -> "My Brilliant Career"
+        // e.g. "Reacher S04 EP 01 03 TRUE" -> "Reacher" (episode already extracted)
+        title = Regex("""(?i)\s+(?:combined|true)\s*$""").replace(title, "")
+        title = Regex("""\s+\d{1,3}\s*$""").replace(title, "").trim()
+        // If title still has S01E01-style markers that weren't caught, strip them.
+        title = Regex("""(?i)\s+s\d{1,2}\s*(?:e|ep)?\s*\d{0,4}\s*$""").replace(title, "").trim()
 
         if (season == null && episode == null) {
             val sOnly = seasonOnlyRe.find(work)
