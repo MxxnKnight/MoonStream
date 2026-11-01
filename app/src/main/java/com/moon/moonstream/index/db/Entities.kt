@@ -65,6 +65,22 @@ data class StreamFileEntity(
     val quality: String,
 )
 
+/**
+ * Continue-watching entry: what the user last played.
+ * (moon's pick 2026-11-01 — v1 tracks "played X ago", not exact position,
+ * since external players don't report position back.)
+ */
+@Entity(tableName = "watch_progress")
+data class WatchProgressEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val mediaId: Long,
+    val streamFileId: Long,
+    val title: String,
+    val episodeLabel: String?,
+    val posterUrl: String?,
+    val playedAt: Long,
+)
+
 /** Resume cursor per channel: newest message id already scanned. */
 @Entity(tableName = "scan_cursors")
 data class ScanCursorEntity(

@@ -199,6 +199,25 @@ fun DetailScreen(
         }
         try {
             context.startActivity(Intent.createChooser(intent, "Play with"))
+            // Record for Continue Watching (moon's pick 2026-11-01).
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val epLabel = if (file.season != null && file.episode != null) {
+                        "S${file.season} E${file.episode}" +
+                            (if (file.episodeEnd != null) "-${file.episodeEnd}" else "")
+                    } else null
+                    db.watchProgressDao().upsert(
+                        com.moon.moonstream.index.db.WatchProgressEntity(
+                            mediaId = m.id,
+                            streamFileId = file.id,
+                            title = m.title,
+                            episodeLabel = epLabel,
+                            posterUrl = m.posterUrl,
+                            playedAt = System.currentTimeMillis(),
+                        )
+                    )
+                } catch (e: Exception) { /* never break playback for logging */ }
+            }
         } catch (e: ActivityNotFoundException) {
             MsToast.show("No video player found on this phone")
         }

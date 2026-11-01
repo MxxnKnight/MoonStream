@@ -287,3 +287,18 @@ interface ChannelConfigDao {
     @Query("UPDATE channel_config SET lastSyncedAt = :at WHERE channelId = :channelId")
     suspend fun setLastSynced(channelId: Long, at: Long)
 }
+
+@Dao
+interface WatchProgressDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: WatchProgressEntity)
+
+    @Query("SELECT * FROM watch_progress ORDER BY playedAt DESC LIMIT :limit")
+    suspend fun recent(limit: Int = 15): List<WatchProgressEntity>
+
+    @Query("DELETE FROM watch_progress WHERE mediaId = :mediaId")
+    suspend fun deleteByMedia(mediaId: Long)
+
+    @Query("DELETE FROM watch_progress")
+    suspend fun clearAll()
+}

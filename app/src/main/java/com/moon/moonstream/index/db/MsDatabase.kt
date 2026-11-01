@@ -19,8 +19,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ScanCursorEntity::class,
         UnmatchedFileEntity::class,
         ChannelConfigEntity::class,
+        WatchProgressEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class MsDatabase : RoomDatabase() {
@@ -30,6 +31,7 @@ abstract class MsDatabase : RoomDatabase() {
     abstract fun scanCursorDao(): ScanCursorDao
     abstract fun unmatchedDao(): UnmatchedDao
     abstract fun channelConfigDao(): ChannelConfigDao
+    abstract fun watchProgressDao(): WatchProgressDao
 
     companion object {
         @Volatile
@@ -66,6 +68,25 @@ abstract class MsDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5 -> v6: adds watch_progress (continue watching).
+         * New table — nothing to migrate.
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS watch_progress (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "mediaId INTEGER NOT NULL, " +
+                        "streamFileId INTEGER NOT NULL, " +
+                        "title TEXT NOT NULL, " +
+                        "episodeLabel TEXT, " +
+                        "posterUrl TEXT, " +
+                        "playedAt INTEGER NOT NULL)"
+                )
+            }
+        }
+
         fun get(context: Context): MsDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -73,7 +94,7 @@ abstract class MsDatabase : RoomDatabase() {
                     MsDatabase::class.java,
                     "moonstream.db",
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     // Pre-release app: unknown schema jumps still wipe and
                     // rescan. Never ship a destructive migration past v1.0
                     // without a real one.

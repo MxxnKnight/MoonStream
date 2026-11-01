@@ -35,6 +35,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
@@ -42,6 +44,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -103,6 +106,13 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     val allItems by com.moon.moonstream.index.db.LibraryCache.items(context).collectAsState()
 
     var query by remember { mutableStateOf("") }
+    var watchProgress by remember { mutableStateOf<List<com.moon.moonstream.index.db.WatchProgressEntity>>(emptyList()) }
+    // Load continue-watching (moon's pick 2026-11-01).
+    LaunchedEffect(Unit) {
+        watchProgress = withContext(Dispatchers.IO) {
+            try { db.watchProgressDao().recent(15) } catch (e: Exception) { emptyList() }
+        }
+    }
     var segment by remember { mutableStateOf(AppUiState.restoreScroll("library_tab")) }
     // Save tab + scroll so Back returns to where you were (moon's bug 2026-11-01).
     DisposableEffect(Unit) {
@@ -243,6 +253,29 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 color = MsColors.TextSecondary,
                 modifier = Modifier.padding(start = 20.dp, top = 2.dp, end = 20.dp, bottom = 12.dp),
             )
+
+            // Continue Watching row (moon's pick 2026-11-01).
+            if (watchProgress.isNotEmpty() && query.isBlank()) {
+                Text(
+                    "Continue Watching",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MsColors.TextPrimary,
+                    modifier = Modifier.padding(start = 20.dp, bottom = 8.dp),
+                )
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(bottom = 16.dp),
+                ) {
+                    items(watchProgress, key = { it.id }) { wp ->
+                        ContinueWatchingCard(
+                            entry = wp,
+                            onClick = { onOpenDetail(wp.mediaId) },
+                        )
+                    }
+                }
+            }
 
             MsTextField(
                 value = query,
