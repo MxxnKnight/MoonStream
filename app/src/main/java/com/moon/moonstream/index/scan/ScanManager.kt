@@ -125,12 +125,20 @@ object ScanManager {
         var repChecked = 0
 
         while (true) {
+            val tgStart = System.currentTimeMillis()
             val page = try {
                 backend.fetchMessages(channelId, fromId, PAGE_SIZE)
             } catch (e: Exception) {
                 Log.e(TAG, "fetchMessages failed ch=$channelId: ${e.message}")
+                com.moon.moonstream.util.AppLog.e("TG", "fetchMessages ch=$channelId failed: ${e.message}")
                 break
             }
+            // TG log (moon's pick #2): what Telegram gave us.
+            com.moon.moonstream.util.AppLog.d(
+                "TG",
+                "fetchMessages ch=$channelId from=$fromId -> ${page.size} msgs " +
+                    "(${System.currentTimeMillis() - tgStart}ms)",
+            )
             if (page.isEmpty()) break
             pages++
 

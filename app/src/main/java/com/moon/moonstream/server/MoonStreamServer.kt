@@ -1,5 +1,7 @@
 package com.moon.moonstream.server
 
+import com.moon.moonstream.util.AppLog
+
 import android.content.Context
 import android.util.Log
 import com.moon.moonstream.BuildConfig
@@ -116,6 +118,8 @@ class MoonStreamServer(
             val method = parts[0].uppercase()
             val rawPath = parts[1]
             val path = URLDecoder.decode(rawPath.substringBefore("?"), "UTF-8")
+            val reqStart = System.currentTimeMillis()
+            val clientIp = try { client.inetAddress?.hostAddress ?: "?" } catch (e: Exception) { "?" }
 
             // Read headers (we only care about Range).
             val headers = mutableMapOf<String, String>()
@@ -157,6 +161,9 @@ class MoonStreamServer(
                 else ->
                     sendJson(output, 404, JSONObject().put("error", "Not Found").toString(), headOnly)
             }
+            // Detailed request log (moon's pick #2, 2026-11-01).
+            val elapsed = System.currentTimeMillis() - reqStart
+            AppLog.i("SERVER", "$method $path <- $clientIp (${elapsed}ms)")
         } catch (e: Exception) {
             // Never leak stack traces to the client; log locally.
             Log.e(TAG, "Error handling client request", e)
@@ -333,6 +340,14 @@ class MoonStreamServer(
         }
         val length = (end - start + 1).coerceAtMost(total - start)
         val mime = mimeFor(targetFile.fileName)
+        // Detailed stream log (moon's pick #2).
+        AppLog.i(
+            "STREAM",
+            "Serving '${targetFile.fileName}' " +
+                "bytes $start-$end/${total} (${length / 1024 / 1024} MB) " +
+                (if (isSplit) "[split x${partsList.size}] " else "") +
+                "mime=$mime",
+        )
         val extra = mutableMapOf(
             "Accept-Ranges" to "bytes",
             "Content-Type" to mime,

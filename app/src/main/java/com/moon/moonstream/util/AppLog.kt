@@ -62,6 +62,7 @@ object AppLog {
         while (lines.size > MAX) lines.removeAt(0)
     }
 
+    fun d(tag: String, msg: String) = add("D", tag, msg)
     fun i(tag: String, msg: String) = add("I", tag, msg)
     fun w(tag: String, msg: String) = add("W", tag, msg)
     fun e(tag: String, msg: String) = add("E", tag, msg)
