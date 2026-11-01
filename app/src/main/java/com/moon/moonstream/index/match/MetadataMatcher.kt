@@ -48,7 +48,17 @@ object MetadataMatcher {
         isAnime: Boolean,
         tmdbKey: String,
         hasEpisode: Boolean = false,
+        imdbId: String? = null,
     ): EnrichedMeta? {
+        // An IMDb id in the filename/caption is exact — trust it over any search.
+        if (!imdbId.isNullOrBlank()) {
+            val first = if (type == "movie") "movie" else "series"
+            val second = if (first == "movie") "series" else "movie"
+            (lookupByImdb(imdbId, first) ?: lookupByImdb(imdbId, second))?.let {
+                com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → IMDb id $imdbId: ${it.title}")
+                return it.copy(confidence = 1.0)
+            }
+        }
         if (title.isBlank()) return null
         return try {
             // Anime first: Kitsu needs no key and knows anime best.
@@ -64,7 +74,7 @@ object MetadataMatcher {
                     return it
                 }
             }
-            tryCinemeta(title, type)?.let {
+            tryCinemeta(title, type, year)?.let {
                 com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → Cinemeta: ${it.title}")
                 return it
             }
@@ -307,9 +317,49 @@ object MetadataMatcher {
         }
     }
 
-    private fun tryCinemeta(title: String, type: String): EnrichedMeta? {
-        // Single-result lookup for auto-matching (no key needed).
-        return searchCinemeta(title, type, 1).firstOrNull()
+    private fun tryCinemeta(title: String, type: String, year: String? = null): EnrichedMeta? {
+        // Look at several candidates (not just the first), score them by title
+        // similarity AND year, and try a couple of query variants - like
+        // Telegram-Stremio's resolver.
+        val wantYear = year?.take(4)?.toIntOrNull()
+        val variants = linkedSetOf(title.trim())
+        title.replace(Regex("(?i)^(the|a|an)\\s+"), "").trim()
+            .takeIf { it.isNotBlank() }?.let { variants += it }
+        if (wantYear != null) variants += "${title.trim()} $wantYear"
+
+        var best: EnrichedMeta? = null
+        var bestScore = 0.0
+        val seen = HashSet<String>()
+        for (q in variants) {
+            for (r in searchCinemeta(q, type, 8)) {
+                val id = r.imdbId ?: continue
+                if (!seen.add(id)) continue
+                val sim = similarity(title, r.title)
+                val candYear = r.year?.toIntOrNull()
+                val score = if (wantYear == null || candYear == null) {
+                    sim
+                } else if (type == "movie") {
+                    when (val d = kotlin.math.abs(wantYear - candYear)) {
+                        0 -> sim + 0.20
+                        1 -> sim + 0.07
+                        else -> sim - 0.10 * (d - 1)
+                    }
+                } else {
+                    // Series year = premiere year; a file can't predate it.
+                    when {
+                        wantYear < candYear - 1 -> sim - 0.20
+                        wantYear == candYear -> sim + 0.10
+                        else -> sim
+                    }
+                }
+                if (score > bestScore) {
+                    bestScore = score
+                    best = r.copy(confidence = score.coerceIn(0.0, 1.0))
+                }
+            }
+            if (bestScore >= 0.95) break
+        }
+        return best?.takeIf { bestScore >= 0.55 }
     }
 
     private fun tryKitsu(title: String, preferSeries: Boolean = false): EnrichedMeta? {

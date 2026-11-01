@@ -518,69 +518,51 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                     val norm = normalizeTitle(picked.title)
                     val now = System.currentTimeMillis()
                     val parsed = FilenameParser.parse(f.fileName)
-                    when (picked.action) {
-                        "new-entry", "new-episode" -> {
-                            // Create the title from the picked metadata, then
-                            // attach this file to it.
-                            val mediaId = db.mediaDao().upsert(
-                                MediaItemEntity(
-                                    channelId = f.channelId,
-                                    title = picked.title,
-                                    normalizedTitle = norm,
-                                    year = picked.year,
-                                    type = "series",
-                                    imdbId = picked.imdbId,
-                                    tmdbId = picked.tmdbId,
-                                    stremioId = StremioIds.forNewItem(
-                                        f.channelId, norm, picked.imdbId,
-                                    ),
-                                    posterUrl = picked.posterUrl,
-                                    overview = picked.overview,
-                                    totalSize = 0L,
-                                    episodeCount = 0,
-                                    fileCount = 0,
-                                    updatedAt = now,
-                                ),
-                            )
-                            db.streamDao().insert(
-                                StreamFileEntity(
-                                    mediaId = mediaId,
-                                    channelId = f.channelId,
-                                    messageId = f.messageId,
-                                    fileName = f.fileName,
-                                    fileSize = f.fileSize,
-                                    season = parsed.season,
-                                    episode = parsed.episode,
-                                    quality = parsed.qualityBadge,
-                                ),
-                            )
-                            db.mediaDao().refreshAggregates(mediaId, now)
-                            db.unmatchedDao().delete(f.id)
-                            MsToast.show("Created “${picked.title}”")
-                        }
-                        else -> {
-                            val media = db.mediaDao().findByTitle(f.channelId, norm)
-                            if (media != null) {
-                                db.streamDao().insert(
-                                    StreamFileEntity(
-                                        mediaId = media.id,
-                                        channelId = f.channelId,
-                                        messageId = f.messageId,
-                                        fileName = f.fileName,
-                                        fileSize = f.fileSize,
-                                        season = parsed.season,
-                                        episode = parsed.episode,
-                                        quality = parsed.qualityBadge,
-                                    ),
-                                )
-                                db.mediaDao().refreshAggregates(media.id, now)
-                                db.unmatchedDao().delete(f.id)
-                                MsToast.show("Linked to ${media.title}")
-                            } else {
-                                MsToast.show("No library entry matches — use Create entry")
-                            }
-                        }
-                    }
+                    // ONE path for every button: reuse the entry that already
+                    // exists (same IMDb id anywhere, else same title in this
+                    // channel) and only create a new one if there is none.
+                    // Before this, "New entry/episode" always inserted a row,
+                    // so linking created duplicates.
+                    val existing = picked.imdbId?.let { db.mediaDao().findByImdb(it) }
+                        ?: db.mediaDao().findByTitle(f.channelId, norm)
+                    val mediaId = existing?.id ?: db.mediaDao().upsert(
+                        MediaItemEntity(
+                            channelId = f.channelId,
+                            title = picked.title,
+                            normalizedTitle = norm,
+                            year = picked.year,
+                            type = parsed.type, // movie vs series from the file itself
+                            imdbId = picked.imdbId,
+                            tmdbId = picked.tmdbId,
+                            stremioId = StremioIds.forNewItem(
+                                f.channelId, norm, picked.imdbId,
+                            ),
+                            posterUrl = picked.posterUrl,
+                            overview = picked.overview,
+                            totalSize = 0L,
+                            episodeCount = 0,
+                            fileCount = 0,
+                            updatedAt = now,
+                        ),
+                    )
+                    db.streamDao().insert(
+                        StreamFileEntity(
+                            mediaId = mediaId,
+                            channelId = f.channelId,
+                            messageId = f.messageId,
+                            fileName = f.fileName,
+                            fileSize = f.fileSize,
+                            season = parsed.season,
+                            episode = parsed.episode,
+                            quality = parsed.qualityBadge,
+                        ),
+                    )
+                    db.mediaDao().refreshAggregates(mediaId, now)
+                    db.unmatchedDao().delete(f.id)
+                    MsToast.show(
+                        if (existing != null) "Linked to \u201c${existing.title}\u201d"
+                        else "Created \u201c${picked.title}\u201d",
+                    )
                     linkFile = null
                 }
             },

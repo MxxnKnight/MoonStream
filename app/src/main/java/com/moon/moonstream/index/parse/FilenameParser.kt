@@ -22,6 +22,8 @@ data class ParsedMedia(
     val qualityBadge: String,
     val languages: List<String>,
     val splitPart: Int? = null,
+    /** Explicit IMDb id found in the name/caption (e.g. "tt0133093"), else null. */
+    val imdbId: String? = null,
 )
 
 /** Lower-cased, punctuation-free title for grouping + matching. */
@@ -38,6 +40,16 @@ object FilenameParser {
     private val splitExtRe = Regex("""(?i)\.(?:(?:mkv|mp4|avi|webm)\.)?0*(\d{1,3})$""")
     private val splitPartRe = Regex("""(?i)(?:^|[\s._\-])(?:part|pt)0*(\d{1,3})(?:[\s._\-]|$)|0*(\d{1,3})$""")
     private val urlRe = Regex("""https?://\S+|t\.me/\S+|tg://\S+|www\.\S+""")
+    /** Explicit IMDb id typed into a name/caption. */
+    private val imdbRe = Regex("""(?i)(?<![a-z0-9])tt\d{7,10}(?![a-z0-9])""")
+    /** Bare site names with unambiguous TLDs: "Movies4u.com", "1TamilMV.cc". */
+    private val domainRe = Regex(
+        """(?i)(?<![a-z0-9])[a-z0-9\-]+\.(?:com|net|org|xyz|cc|info|club|site|ws|lol|vip|cyou|sbs|click|biz|cfd|buzz|icu|ink)(?![a-z0-9])""",
+    )
+    /** Language / audio words left dangling after the title ("Kalki 2898 AD Hindi"). */
+    private val trailingLangRe = Regex(
+        """(?i)(?:\s+(?:hindi|tamil|telugu|malayalam|kannada|bengali|punjabi|english|korean|japanese|dubbed|dual\s+audio|multi\s+audio|dual|multi|audio|org))+$""",
+    )
     private val mentionRe = Regex("""(?:^|\s)@[\w_]+""")
     private val emojiRe = Regex(
         "[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF\u2300-\u23FF\u2B50\u2B55\u200D\uFE0F]",
@@ -111,6 +123,7 @@ object FilenameParser {
      */
     fun clean(raw: String): String {
         var text = urlRe.replace(raw, " ")
+        text = domainRe.replace(text, " ")
         text = mentionRe.replace(text, " ")
         text = emojiRe.replace(text, " ")
         // Drop promo lines, keep the rest.
@@ -122,7 +135,10 @@ object FilenameParser {
     }
 
     fun parse(rawFileName: String, isAnime: Boolean = false): ParsedMedia {
-        val cleaned = clean(rawFileName)
+        // An explicit IMDb id wins over any title guessing; remove it so it
+        // never pollutes the title.
+        val imdbId = imdbRe.find(rawFileName)?.value?.lowercase()
+        val cleaned = clean(imdbRe.replace(rawFileName, " "))
         var splitPart: Int? = null
         splitExtRe.find(cleaned)?.let { m ->
             splitPart = m.groupValues[1].toIntOrNull()
@@ -212,12 +228,14 @@ object FilenameParser {
         // Strip year, quality words and leftover delimiters from the title.
         year?.let { y -> title = title.replace(y, "") }
         title = Regex(
-            """(?i)\b(2160p|1080p|720p|480p|4k|uhd|hdr|hevc|x264|x265|aac|dts|bluray|web-?dl|web-?rip|proper|repack|hq)\b.*$""",
+            """(?i)\b(2160p|1080p|720p|480p|4k|uhd|hdr|hevc|x264|x265|aac|dts|bluray|web-?dl|web-?rip|hd-?rip|hdtv|hdtc|hdcam|dvd-?rip|br-?rip|bd-?rip|cam-?rip|amzn|dsnp|hmax|atvp|zee5|hotstar|sonyliv|10bit|esubs?|msubs?|dd[p+]?\d|atmos|remux|proper|repack|hq)\b.*$""",
         ).replace(title, "")
         title = title.replace(Regex("""[._()\[\]\-]+"""), " ").trim()
         title = title.replace(Regex("""^[:\s._\-~·•]+"""), "")
         title = title.replace(Regex("""[:\s._\-~·•]+$"""), "")
         title = title.replace(Regex("""\s+"""), " ").trim()
+        // Drop dangling language words, but never reduce the title to nothing.
+        trailingLangRe.replace(title, "").trim().takeIf { it.length >= 2 }?.let { title = it }
 
         val type = if (season != null || episode != null) "series" else "movie"
         val partSuffix = if (splitPart != null) " • Part $splitPart" else ""
@@ -233,6 +251,7 @@ object FilenameParser {
             qualityBadge = badge,
             languages = languages,
             splitPart = splitPart,
+            imdbId = imdbId,
         )
     }
 }

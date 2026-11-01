@@ -229,11 +229,12 @@ object ScanManager {
     ): Boolean {
         val type = if (target.isAnime) "anime" else parsed.type
         val norm = normalizeTitle(parsed.title)
-        val cacheKey = "$norm|$type|${parsed.year ?: ""}"
+        val cacheKey = "$norm|$type|${parsed.year ?: ""}|${parsed.imdbId ?: ""}"
         val meta = metaCache.getOrPut(cacheKey) {
             val m = MetadataMatcher.match(
                 parsed.title, parsed.year, type, target.isAnime, tmdbKey,
                 hasEpisode = parsed.episode != null,
+                imdbId = parsed.imdbId,
             )
             if (m?.imdbId != null) MetadataMatcher.enrichFromCinemeta(m, type) else m
         }
