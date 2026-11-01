@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,6 +51,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -80,6 +82,7 @@ import com.moon.moonstream.ui.components.MsSheetContent
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.model.formatBytes
 import com.moon.moonstream.ui.theme.MsColors
+import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.Redaction35
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -100,7 +103,11 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     val allItems by com.moon.moonstream.index.db.LibraryCache.items(context).collectAsState()
 
     var query by remember { mutableStateOf("") }
-    var segment by remember { mutableStateOf(0) }
+    var segment by remember { mutableStateOf(AppUiState.restoreScroll("library_tab")) }
+    // Save tab + scroll so Back returns to where you were (moon's bug 2026-11-01).
+    DisposableEffect(Unit) {
+        onDispose { AppUiState.saveScroll("library_tab", segment) }
+    }
     var showFilters by remember { mutableStateOf(false) }
     var quality by remember { mutableStateOf("Any") }
     var subFilter by remember { mutableStateOf("Any") }
@@ -308,8 +315,17 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     )
                 }
             } else {
+                val gridState = rememberLazyGridState(
+                    initialFirstVisibleItemIndex = AppUiState.restoreScroll("library_grid"),
+                )
+                DisposableEffect(Unit) {
+                    onDispose {
+                        AppUiState.saveScroll("library_grid", gridState.firstVisibleItemIndex)
+                    }
+                }
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
+                    state = gridState,
                     contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 120.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),

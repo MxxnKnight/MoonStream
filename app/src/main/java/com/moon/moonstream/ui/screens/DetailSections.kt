@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -205,57 +206,36 @@ private fun EpisodeCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { expanded = !expanded },
+                    // No ripple on tap (moon's request 2026-11-01) — still expands.
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                    ) { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(width = 96.dp, height = 64.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(
-                            Brush.linearGradient(
-                                listOf(Color(0xFF3A4356), Color(0xFF1E2532)),
-                            ),
-                        ),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(5.dp)
-                            .size(22.dp)
-                            .background(Color(0x99000000), CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "${episode ?: "–"}",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 10.sp,
-                        )
-                    }
-                    if (subtitles.isNotEmpty()) {
-                        Icon(
-                            Icons.Filled.Subtitles,
-                            contentDescription = "Has subtitles",
-                            tint = MsColors.Accent,
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(5.dp)
-                                .size(18.dp),
-                        )
-                    }
-                }
-                Spacer(Modifier.width(12.dp))
+                // Thumbnail removed (moon's request) — just the episode name.
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(
-                        if (episode != null) "Episode $episode" else "Files",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MsColors.TextPrimary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (episode != null) "Episode $episode" else "Files",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MsColors.TextPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (subtitles.isNotEmpty()) {
+                            Icon(
+                                Icons.Filled.Subtitles,
+                                contentDescription = "Has subtitles",
+                                tint = MsColors.Accent,
+                                modifier = Modifier
+                                    .padding(start = 6.dp)
+                                    .size(18.dp),
+                            )
+                        }
+                    }
                     // Quality tags live on the stream file rows only,
                     // not the episode header (moon's request).
                     Text(
@@ -373,24 +353,22 @@ fun StreamRow(
     val context = LocalContext.current
     MsCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                QualityChip(stream.quality)
-                Spacer(Modifier.padding(horizontal = 4.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        stream.fileName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MsColors.TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        formatBytes(stream.fileSize),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MsColors.TextSecondary,
-                    )
-                }
-            }
+            // Quality chip on its own line so it never squeezes the filename
+            // (moon's bug 2026-11-01: tags were hiding the file name).
+            QualityChip(stream.quality)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stream.fileName,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MsColors.TextPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                formatBytes(stream.fileSize),
+                style = MaterialTheme.typography.bodySmall,
+                color = MsColors.TextSecondary,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
