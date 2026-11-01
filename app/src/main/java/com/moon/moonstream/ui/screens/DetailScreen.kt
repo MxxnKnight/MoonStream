@@ -598,7 +598,8 @@ fun DetailScreen(
                     BackendProvider.backend.fetchMessages(chId, msgId, 1))
                     .firstOrNull { it.id == msgId }?.fileName
             },
-            onSave = { link, quality, name ->
+            isSeries = isSeries,
+            onSave = { link, quality, name, season, episode ->
                 scope.launch(Dispatchers.IO) {
                     val parsed = parseTgLink(link)
                     if (parsed == null) {
@@ -615,8 +616,8 @@ fun DetailScreen(
                             messageId = msgId,
                             fileName = name.ifBlank { "Custom stream $msgId" },
                             fileSize = 0L,
-                            season = null,
-                            episode = null,
+                            season = season,
+                            episode = episode,
                             quality = quality.ifBlank { "1080p" },
                         ),
                     )

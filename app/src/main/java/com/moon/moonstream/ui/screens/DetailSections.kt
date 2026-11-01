@@ -13,6 +13,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
@@ -538,14 +540,17 @@ fun AttachSubtitleDialog(
 @Composable
 fun AddStreamSheet(
     onDismiss: () -> Unit,
-    onSave: (link: String, quality: String, name: String) -> Unit,
+    onSave: (link: String, quality: String, name: String, season: Int?, episode: Int?) -> Unit,
     onFetchFileName: suspend (link: String) -> String?,
+    isSeries: Boolean = false,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var link by remember { mutableStateOf("") }
     var quality by remember { mutableStateOf("1080p") }
     var name by remember { mutableStateOf("") }
+    var seasonText by remember { mutableStateOf("") }
+    var episodeText by remember { mutableStateOf("") }
     var fetching by remember { mutableStateOf(false) }
     var lastFetchedLink by remember { mutableStateOf<String?>(null) }
 
@@ -559,9 +564,11 @@ fun AddStreamSheet(
                 val fetched = withContext(Dispatchers.IO) { onFetchFileName(trimmed) }
                 if (!fetched.isNullOrBlank()) {
                     name = fetched
-                    // Auto-detect quality from the filename if it has one.
-                    val q = com.moon.moonstream.index.parse.FilenameParser.parse(fetched).qualityBadge
-                    if (!q.isNullOrBlank()) quality = q
+                    // Auto-detect quality + S/E from the filename.
+                    val p = com.moon.moonstream.index.parse.FilenameParser.parse(fetched)
+                    if (!p.qualityBadge.isNullOrBlank()) quality = p.qualityBadge
+                    if (p.season != null) seasonText = p.season.toString()
+                    if (p.episode != null) episodeText = p.episode.toString()
                 }
             } catch (e: Exception) {
                 // Leave the name field for manual entry.
@@ -608,6 +615,27 @@ fun AddStreamSheet(
                 hint = "File name (optional)",
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (isSeries) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    MsTextField(
+                        value = seasonText,
+                        onValueChange = { seasonText = it.filter { c -> c.isDigit() }.take(4) },
+                        hint = "Season",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                    MsTextField(
+                        value = episodeText,
+                        onValueChange = { episodeText = it.filter { c -> c.isDigit() }.take(4) },
+                        hint = "Episode",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
             MsTextField(
                 value = quality, onValueChange = { quality = it },
                 hint = "Quality label (e.g. 1080p)",
@@ -615,7 +643,13 @@ fun AddStreamSheet(
             )
             LimePillButton(
                 text = "Add stream",
-                onClick = { onSave(link, quality, name) },
+                onClick = {
+                    onSave(
+                        link, quality, name,
+                        if (isSeries) seasonText.toIntOrNull() else null,
+                        if (isSeries) episodeText.toIntOrNull() else null,
+                    )
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
         }

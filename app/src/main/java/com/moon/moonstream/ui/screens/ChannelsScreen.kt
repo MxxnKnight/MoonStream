@@ -16,6 +16,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -171,6 +172,13 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
     val unmatched by db.unmatchedDao().observeAll()
         .collectAsState(initial = emptyList())
     var unmatchedQuery by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    // Bulk selection (moon's pick #5, 2026-11-01): select multiple unmatched
+    // files and link them all to one title.
+    var unmatchedSelectMode by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val unmatchedSelectedIds = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateListOf<Long>() }
+    var linkFileBulk by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<List<UnmatchedFileEntity>>(emptyList())
+    }
     val filteredUnmatched = androidx.compose.runtime.remember(unmatched, unmatchedQuery) {
         if (unmatchedQuery.isBlank()) unmatched
         else unmatched.filter { it.fileName.contains(unmatchedQuery, ignoreCase = true) }
@@ -427,13 +435,47 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
             }
 
             item(key = "unmatchedHeader") {
-                Text(
-                    "Unmatched content (${filteredUnmatched.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MsColors.TextPrimary,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Unmatched content (${filteredUnmatched.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MsColors.TextPrimary,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    if (unmatchedSelectMode) {
+                        LimeTextButton(
+                            text = "Done (${unmatchedSelectedIds.size})",
+                            onClick = {
+                                unmatchedSelectMode = false
+                                unmatchedSelectedIds.clear()
+                            },
+                        )
+                    }
+                }
+                // Bulk actions when selecting (moon's pick #5).
+                if (unmatchedSelectMode && unmatchedSelectedIds.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        LimePillButton(
+                            text = "Link ${unmatchedSelectedIds.size} to Title",
+                            onClick = {
+                                linkFileBulk = filteredUnmatched.filter {
+                                    unmatchedSelectedIds.contains(it.id)
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
             }
 
             item(key = "addCustomContent") {
@@ -449,6 +491,17 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 val directUrl = "http://${AppUiState.currentIp}:${AppUiState.streamPort}/stream/direct/${f.channelId}/${f.messageId}"
                 UnmatchedFileRow(
                     file = f,
+                    selectMode = unmatchedSelectMode,
+                    isSelected = unmatchedSelectedIds.contains(f.id),
+                    onSelect = {
+                        if (unmatchedSelectedIds.contains(f.id)) {
+                            unmatchedSelectedIds.remove(f.id)
+                            if (unmatchedSelectedIds.isEmpty()) unmatchedSelectMode = false
+                        } else {
+                            if (!unmatchedSelectMode) unmatchedSelectMode = true
+                            unmatchedSelectedIds.add(f.id)
+                        }
+                    },
                     onCreateEntry = onCreateEntry,
                     onCopyLink = {
                         clipboard.setText(AnnotatedString(directUrl))
@@ -576,6 +629,72 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                         else "Created \u201c${picked.title}\u201d",
                     )
                     linkFile = null
+                }
+            },
+        )
+    }
+
+    // Bulk link: all selected files -> one title (moon's pick #5).
+    if (linkFileBulk.isNotEmpty()) {
+        val first = linkFileBulk.first()
+        MetadataFixSheet(
+            mode = FixMode.LINK,
+            currentTitle = first.fileName,
+            isAnime = false,
+            initialQuery = first.fileName,
+            onDismiss = { linkFileBulk = emptyList() },
+            onApply = { picked ->
+                scope.launch {
+                    val norm = normalizeTitle(picked.title)
+                    val now = System.currentTimeMillis()
+                    // Find or create ONE entry for all files.
+                    val existing = picked.imdbId?.let { db.mediaDao().findByImdb(it) }
+                        ?: db.mediaDao().findByTitle(first.channelId, norm)
+                    val mediaId = existing?.id ?: db.mediaDao().upsert(
+                        MediaItemEntity(
+                            channelId = first.channelId,
+                            title = picked.title,
+                            normalizedTitle = norm,
+                            year = picked.year,
+                            type = "series", // bulk link assumes series; user can fix
+                            imdbId = picked.imdbId,
+                            tmdbId = picked.tmdbId,
+                            stremioId = StremioIds.forNewItem(
+                                first.channelId, norm, picked.imdbId,
+                            ),
+                            posterUrl = picked.posterUrl,
+                            overview = picked.overview,
+                            totalSize = 0L,
+                            episodeCount = 0,
+                            fileCount = 0,
+                            updatedAt = now,
+                        ),
+                    )
+                    // Link every selected file.
+                    var linked = 0
+                    for (f in linkFileBulk) {
+                        val parsed = FilenameParser.parse(f.fileName)
+                        db.streamDao().insert(
+                            StreamFileEntity(
+                                mediaId = mediaId,
+                                channelId = f.channelId,
+                                messageId = f.messageId,
+                                fileName = f.fileName,
+                                fileSize = f.fileSize,
+                                season = parsed.season,
+                                episode = parsed.episode,
+                                episodeEnd = parsed.episodeEnd,
+                                quality = parsed.qualityBadge,
+                            ),
+                        )
+                        db.unmatchedDao().delete(f.id)
+                        linked++
+                    }
+                    db.mediaDao().refreshAggregates(mediaId, now)
+                    MsToast.show("Linked $linked files to \u201c${picked.title}\u201d")
+                    linkFileBulk = emptyList()
+                    unmatchedSelectMode = false
+                    unmatchedSelectedIds.clear()
                 }
             },
         )
@@ -952,15 +1071,30 @@ private fun DoneCheck(modifier: Modifier = Modifier) {
 
 /** One unmatched file row — kept light for 400+ item lists. */
 @Composable
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun UnmatchedFileRow(
     file: UnmatchedFileEntity,
+    selectMode: Boolean,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
     onCreateEntry: (UnmatchedFileEntity?) -> Unit,
     onCopyLink: () -> Unit,
     onLinkToTitle: () -> Unit,
     onPlay: () -> Unit,
 ) {
-    MsCard(modifier = Modifier.fillMaxWidth()) {
+    MsCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = { if (selectMode) onSelect() },
+                onLongClick = onSelect,
+            )
+            .then(
+                if (isSelected) Modifier.border(
+                    2.dp, MsColors.Accent, RoundedCornerShape(12.dp)
+                ) else Modifier
+            ),
+    ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 file.fileName,
