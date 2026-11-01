@@ -49,6 +49,7 @@ import com.moon.moonstream.ui.screens.ChannelsScreen
 import com.moon.moonstream.ui.screens.CreateScreen
 import com.moon.moonstream.ui.screens.DetailScreen
 import com.moon.moonstream.ui.screens.LibraryScreen
+import com.moon.moonstream.ui.screens.PlayerScreen
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
@@ -82,6 +83,11 @@ sealed interface AppScreen {
     data class Create(val prefill: CreatePrefill? = null) : AppScreen
     data object Settings : AppScreen
     data object Logs : AppScreen
+    data class Player(
+        val videoUrl: String,
+        val title: String,
+        val subtitleUrls: List<String> = emptyList(),
+    ) : AppScreen
 }
 
 private data class Tab(
@@ -225,6 +231,9 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             mediaId = screen.mediaId,
                             onBack = { backStack.removeLast() },
                             onOpenCreate = { prefill -> go(AppScreen.Create(prefill)) },
+                            onPlayInApp = { videoUrl, title, subtitleUrls ->
+                                go(AppScreen.Player(videoUrl, title, subtitleUrls))
+                            },
                         )
                     AppScreen.Channels ->
                         ChannelsScreen(
@@ -254,6 +263,12 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             go(AppScreen.Detail(id))
                         },
                         onCancel = { backStack.removeLast() },
+                    )
+                    is AppScreen.Player -> PlayerScreen(
+                        videoUri = android.net.Uri.parse(screen.videoUrl),
+                        title = screen.title,
+                        subtitleUris = screen.subtitleUrls.map { android.net.Uri.parse(it) },
+                        onClose = { backStack.removeLast() },
                     )
                     AppScreen.Settings -> SettingsScreen(
                         onOpenLogs = { go(AppScreen.Logs) },

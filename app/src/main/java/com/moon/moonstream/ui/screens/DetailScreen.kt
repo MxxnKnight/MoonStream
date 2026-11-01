@@ -108,6 +108,7 @@ fun DetailScreen(
     mediaId: Long,
     onBack: () -> Unit,
     onOpenCreate: (CreatePrefill) -> Unit = {},
+    onPlayInApp: (videoUrl: String, title: String, subtitleUrls: List<String>) -> Unit = { _, _, _ -> },
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -172,6 +173,42 @@ fun DetailScreen(
      *  (VLC, mpvRx, …) handle the stream. Needs the server running.
      *  Custom-added subtitles are passed via intent extras so mpvRx/VLC
      *  can load them (moon's question 2026-11-01). */
+    fun playInApp(file: StreamFileEntity) {
+        if (!AppUiState.serverOn) {
+            MsToast.show("Turn the server on first, then play")
+            return
+        }
+        val videoUrl = "$streamBase/stream/file/${m.id}/${file.id}"
+        val subUrls = subtitles.mapNotNull { sub ->
+            try { "$streamBase/sub/${sub.id}" } catch (e: Exception) { null }
+        }
+        val title = if (file.season != null && file.episode != null) {
+            "${m.title} S${file.season}E${file.episode}"
+        } else {
+            m.title
+        }
+        onPlayInApp(videoUrl, title, subUrls)
+        // Record for Continue Watching.
+        scope.launch(Dispatchers.IO) {
+            try {
+                val epLabel = if (file.season != null && file.episode != null) {
+                    "S${file.season} E${file.episode}" +
+                        (if (file.episodeEnd != null) "-${file.episodeEnd}" else "")
+                } else null
+                db.watchProgressDao().upsert(
+                    com.moon.moonstream.index.db.WatchProgressEntity(
+                        mediaId = m.id,
+                        streamFileId = file.id,
+                        title = m.title,
+                        episodeLabel = epLabel,
+                        posterUrl = m.posterUrl,
+                        playedAt = System.currentTimeMillis(),
+                    )
+                )
+            } catch (e: Exception) { /* never break playback for logging */ }
+        }
+    }
+
     fun playExternal(file: StreamFileEntity) {
         if (!AppUiState.serverOn) {
             MsToast.show("Turn the server on first, then play")
@@ -466,7 +503,7 @@ fun DetailScreen(
                     subtitles = subtitles,
                     seasonIdx = seasonIdx,
                     onSeason = { seasonIdx = it },
-                    onPlay = { playExternal(it) },
+                    onPlay = { playInApp(it) },
                     onCopy = { copyLink(it) },
                     onDelete = { deleteFile(it) },
                     onFixFile = { fixFile = it; fixMode = FixMode.FIX_FILE },
@@ -495,7 +532,7 @@ fun DetailScreen(
                 files.forEach { f ->
                     StreamRow(
                         stream = f,
-                        onPlay = { playExternal(f) },
+                        onPlay = { playInApp(f) },
                         onCopy = { copyLink(f) },
                         onDelete = { deleteFile(f) },
                         onFixFile = { fixFile = f; fixMode = FixMode.FIX_FILE },

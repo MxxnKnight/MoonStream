@@ -124,6 +124,15 @@ dependencies {
     // Coil: real poster art in Library/Detail (mirror has 2.6.0).
     implementation 'io.coil-kt:coil-compose:2.6.0'
 
+    // Media3 ExoPlayer: in-app video player (Phase 6).
+    // Local AARs (Gradle can't reach Google Maven through proxy).
+    implementation files('libs/media3-exoplayer-1.4.1.aar')
+    implementation files('libs/media3-ui-1.4.1.aar')
+    implementation files('libs/media3-common-1.4.1.aar')
+    implementation files('libs/media3-datasource-1.4.1.aar')
+    implementation files('libs/media3-decoder-1.4.1.aar')
+    implementation files('libs/media3-container-1.4.1.aar')
+
     debugImplementation 'androidx.compose.ui:ui-tooling:1.6.1'
     debugImplementation 'androidx.compose.ui:ui-test-manifest:1.5.0'
 }
