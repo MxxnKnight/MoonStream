@@ -105,7 +105,17 @@ fun ServerScreen(
             tick++
         }
     }
-    val uptimeSecs = if (on) ServerTelemetry.uptimeSecs() else 0
+    // Uptime ticks every second while the server is on (moon's bug
+    // 2026-11-01: uptime stayed 0:00 until leaving and returning to
+    // the screen, because uptimeSecs() was read once, not as state).
+    var uptimeSecs by remember(on) { mutableIntStateOf(if (on) ServerTelemetry.uptimeSecs() else 0) }
+    LaunchedEffect(on) {
+        if (!on) return@LaunchedEffect
+        while (true) {
+            delay(1000)
+            uptimeSecs = ServerTelemetry.uptimeSecs()
+        }
+    }
     // Android 13+ needs the notification permission at runtime; without it the
     // foreground service runs but its notification (with the Stop button) is
     // silently hidden. Ask the moment the user turns the server on.
