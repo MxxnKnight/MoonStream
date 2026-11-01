@@ -132,14 +132,13 @@ dependencies {
     implementation 'io.coil-kt:coil-compose:2.6.0'
 
     // Media3 ExoPlayer: in-app video player (Phase 6).
-    // Local AARs (Gradle can't reach Google Maven through proxy).
-    implementation files('libs/media3-exoplayer-1.4.1.aar')
-    implementation files('libs/guava-32.1.2-android.jar')
-    implementation files('libs/media3-ui-1.4.1.aar')
-    implementation files('libs/media3-common-1.4.1.aar')
-    implementation files('libs/media3-datasource-1.4.1.aar')
-    implementation files('libs/media3-decoder-1.4.1.aar')
-    implementation files('libs/media3-container-1.4.1.aar')
+    // Real Maven coordinates (NOT loose .aar files): Gradle then pulls every
+    // module ExoPlayer needs at runtime - media3-extractor, -database,
+    // guava, recyclerview... The old flat AARs were missing extractor and
+    // database, so ExoPlayer.Builder(...).build() threw NoClassDefFoundError
+    // the moment Play was pressed. (Local libs/*.aar are no longer used.)
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    implementation 'androidx.media3:media3-ui:1.4.1'
 
     debugImplementation 'androidx.compose.ui:ui-tooling:1.6.1'
     debugImplementation 'androidx.compose.ui:ui-test-manifest:1.5.0'
