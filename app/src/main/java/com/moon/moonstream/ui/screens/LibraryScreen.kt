@@ -15,6 +15,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -78,7 +81,9 @@ import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.model.formatBytes
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.ui.theme.Redaction35
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Library on REAL data (v0.7.0): observes the Room library built by the
@@ -170,6 +175,44 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
         scope.launch {
             ids.forEach { db.mediaDao().setHidden(it, hidden) }
             MsToast.show(if (hidden) "${ids.size} hidden" else "${ids.size} unhidden")
+            exitSelectMode()
+        }
+    }
+
+    /** Merge selected entries: move all streams/subs to the first one,
+     *  delete the rest. (moon's idea 2026-11-01) */
+    fun mergeSelected() {
+        val ids = selectedIds.toList()
+        if (ids.size < 2) return
+        scope.launch {
+            val targetId = ids.first()
+            withContext(Dispatchers.IO) {
+                for (id in ids.drop(1)) {
+                    db.streamDao().moveAllToMedia(id, targetId)
+                    db.subtitleDao().moveAllToMedia(id, targetId)
+                    db.mediaDao().deleteById(id)
+                }
+                db.mediaDao().refreshAggregates(targetId, System.currentTimeMillis())
+            }
+            val n = ids.size - 1
+            MsToast.show("Merged $n ${if (n == 1) "entry" else "entries"}")
+            exitSelectMode()
+        }
+    }
+
+    /** Delete selected entries and their streams/subs. */
+    fun deleteSelected() {
+        val ids = selectedIds.toList()
+        if (ids.isEmpty()) return
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                for (id in ids) {
+                    db.streamDao().listByMedia(id).forEach { db.streamDao().deleteById(it.id) }
+                    db.subtitleDao().listByMedia(id).forEach { db.subtitleDao().delete(it.id) }
+                    db.mediaDao().deleteById(id)
+                }
+            }
+            MsToast.show("Deleted ${ids.size} ${if (ids.size == 1) "entry" else "entries"}")
             exitSelectMode()
         }
     }
@@ -321,7 +364,8 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     .clip(RoundedCornerShape(24.dp))
                     .background(MsColors.SurfaceAlt)
                     .border(1.dp, MsColors.Divider, RoundedCornerShape(24.dp))
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp)
+                    .horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 BareIconButton(
@@ -373,6 +417,40 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                             color = Color.White,
                         )
                     }
+                }
+                // Merge: needs 2+ selected (moon's idea 2026-11-01).
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(if (selectedIds.size >= 2) Color(0xFF7C3AED) else MsColors.TrackOff)
+                        .clickable(enabled = selectedIds.size >= 2) { mergeSelected() }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Merge (${selectedIds.size})",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                    )
+                }
+                // Delete: needs 1+ selected.
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(if (selectedIds.isNotEmpty()) Color(0xFF991B1B) else MsColors.TrackOff)
+                        .clickable(enabled = selectedIds.isNotEmpty()) { deleteSelected() }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Delete (${selectedIds.size})",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                    )
                 }
             }
         }

@@ -154,6 +154,9 @@ interface StreamDao {
     @Query("DELETE FROM stream_files WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    @Query("UPDATE stream_files SET mediaId = :newMediaId WHERE mediaId = :oldMediaId")
+    suspend fun moveAllToMedia(oldMediaId: Long, newMediaId: Long)
+
     @Query("UPDATE stream_files SET mediaId = :newMediaId WHERE id = :fileId")
     suspend fun moveToMedia(fileId: Long, newMediaId: Long)
 
@@ -208,6 +211,9 @@ interface SubtitleDao {
 
     @Query("UPDATE subtitle_files SET mediaId = :mediaId, season = :season, episode = :episode WHERE id = :id")
     suspend fun attach(id: Long, mediaId: Long, season: Int?, episode: Int?)
+
+    @Query("UPDATE subtitle_files SET mediaId = :newMediaId WHERE mediaId = :oldMediaId")
+    suspend fun moveAllToMedia(oldMediaId: Long, newMediaId: Long)
 
     @Query("DELETE FROM subtitle_files WHERE channelId = :channelId")
     suspend fun deleteByChannel(channelId: Long)
