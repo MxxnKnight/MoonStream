@@ -134,11 +134,67 @@ object FilenameParser {
         return text.replace(Regex("\\s+"), " ").trim()
     }
 
-    fun parse(rawFileName: String, isAnime: Boolean = false): ParsedMedia {
-        // An explicit IMDb id wins over any title guessing; remove it so it
-        // never pollutes the title.
+    // ---- caption-first naming (same idea as NoxMedia's extract_best_filename) ----
+
+    private val dividerRe = Regex("""^[\s\-_=*#~━─—–•·:|]+$""")
+    private val labelRe = Regex("""(?i)^(?:file(?:\s*name)?|name|title)\s*[:：\-]\s*""")
+    private val videoExtRe = Regex("""(?i)\.(?:mkv|mp4|avi|ts|webm|m4v|mov|flv|wmv)(?:\.\d{2,4})?$""")
+    private val epOrYearRe = Regex("""(?i)(?:s\d+|season|ep|episode|\b(?:19|20)\d{2}\b)""")
+    private val mediaLikeRe = Regex(
+        """(?i)\b(?:2160p|1080p|720p|480p|4k|uhd|hdr|hevc|x265|x264|h\.?265|h\.?264|bluray|blu-ray|bdrip|web-?dl|webrip|dvdrip|hdrip|remux|flac|aac|dts|atmos|ddp|truehd)\b|(?<![a-zA-Z0-9])(?:s|season\s*)\d{1,2}(?:[\s._-]*(?:e|ep)\d{1,4})?(?![a-zA-Z0-9])|(?<![a-zA-Z0-9])\d{1,2}x\d{1,4}(?![a-zA-Z0-9])|(?:^|[\s._\-(\[])(?:19|20)\d{2}(?:[\s._\-)\]]|$)""",
+    )
+    /** Names our own backend invents when Telegram gave none (file_123, video_9.mp4) or hash-like names. */
+    private val genericNameRe = Regex("""(?i)^(?:(?:file|video)_\d+|[0-9a-f]{16,}|\d{6,})(?:\.\w{2,4})?$""")
+
+    /**
+     * Picks the best text to parse: the cleaned caption when it looks like a
+     * release name (or the filename is generic/obfuscated), else the filename.
+     * Captions are where channels usually put the clean "Title (Year) ..." and
+     * where the ads/links are, so they are cleaned first.
+     */
+    fun bestName(fileName: String, caption: String): String {
+        val fn = fileName.trim()
+        if (caption.isBlank()) return fn
+        var cap = urlRe.replace(caption, " ")
+        cap = domainRe.replace(cap, " ")
+        cap = mentionRe.replace(cap, " ")
+        val lines = cap.split("\n", "\r")
+            .map { emojiRe.replace(it, " ").trim().trimStart('-', '*', '#', '\u2022', ' ') }
+            .filter { it.isNotEmpty() && !dividerRe.matches(it) && !promoLineRe.containsMatchIn(it) }
+            .map { labelRe.replace(it, "").trim() }
+            .filter { it.isNotEmpty() && Regex("[a-zA-Z0-9]{2,}").containsMatchIn(it) }
+        if (lines.isEmpty()) return fn
+
+        // A single line that is itself a complete file name wins; otherwise the
+        // first media-looking line; otherwise everything joined.
+        val capText = lines.firstOrNull { videoExtRe.containsMatchIn(it) && epOrYearRe.containsMatchIn(it) }
+            ?: lines.firstOrNull { mediaLikeRe.containsMatchIn(it) }
+            ?: lines.joinToString(" ")
+        val fnIsGeneric = genericNameRe.matches(fn)
+        // The caption must actually contain a title (letters before the first
+        // quality/year tag) - "1080p WEB-DL" alone must not replace a good name.
+        val head = capText.substring(0, mediaLikeRe.find(capText)?.range?.first ?: capText.length)
+        val capHasTitle = Regex("[A-Za-z]{3,}").containsMatchIn(head) ||
+            sxxexxRe.containsMatchIn(capText)
+        val capIsMedia = mediaLikeRe.containsMatchIn(capText) && capHasTitle
+        if (!capIsMedia && !fnIsGeneric) return fn
+        // Don't lose episode numbers: if only the filename has S01E02, keep it.
+        val fnHasEp = sxxexxRe.containsMatchIn(fn) || nxnRe.containsMatchIn(fn)
+        val capHasEp = sxxexxRe.containsMatchIn(capText) || nxnRe.containsMatchIn(capText)
+        if (fnHasEp && !capHasEp && !fnIsGeneric) return fn
+
+        // parse() strips a trailing ".ext", so make sure there is one.
+        val ext = Regex("""(?i)\.(?:mkv|mp4|avi|ts|webm|m4v|mov|rar|zip|7z)(?:\.\d{2,4})?$""").find(fn)?.value
+        return if (videoExtRe.containsMatchIn(capText)) capText else capText + (ext ?: ".mkv")
+    }
+
+    fun parse(rawFileName: String, isAnime: Boolean = false, caption: String = ""): ParsedMedia {
+        val name = bestName(rawFileName, caption)
+        // An explicit IMDb id (filename OR caption) wins over any title
+        // guessing; remove it so it never pollutes the title.
         val imdbId = imdbRe.find(rawFileName)?.value?.lowercase()
-        val cleaned = clean(imdbRe.replace(rawFileName, " "))
+            ?: imdbRe.find(caption)?.value?.lowercase()
+        val cleaned = clean(imdbRe.replace(name, " "))
         var splitPart: Int? = null
         splitExtRe.find(cleaned)?.let { m ->
             splitPart = m.groupValues[1].toIntOrNull()

@@ -97,6 +97,7 @@ class TdlibMoonStreamBackend(
                             fileSize = doc.document?.size ?: 0L,
                             mimeType = doc.mimeType.ifBlank { null },
                             date = msg.date.toLong(),
+                            caption = content.caption?.text.orEmpty(),
                         )
                     }
                     is TdApi.MessageVideo -> {
@@ -108,6 +109,7 @@ class TdlibMoonStreamBackend(
                             fileSize = video.video?.size ?: 0L,
                             mimeType = video.mimeType.ifBlank { "video/mp4" },
                             date = msg.date.toLong(),
+                            caption = content.caption?.text.orEmpty(),
                         )
                     }
                     else -> null // skip text, stickers, etc.

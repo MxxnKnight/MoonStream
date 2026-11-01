@@ -155,7 +155,7 @@ object ScanManager {
                     indexed++
                     continue
                 }
-                val parsed = FilenameParser.parse(msg.fileName, target.isAnime)
+                val parsed = FilenameParser.parse(msg.fileName, target.isAnime, msg.caption)
                 if (parsed.title.isBlank()) {
                     db.unmatchedDao().insert(
                         UnmatchedFileEntity(

@@ -42,6 +42,8 @@ data class MsMessage(
     val mimeType: String?,
     /** epoch seconds */
     val date: Long,
+    /** Telegram message caption (often has the clean release name); "" when none. */
+    val caption: String = "",
 )
 
 /** The logged-in Telegram user (for the Account screen). */
