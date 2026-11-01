@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -56,14 +57,15 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
-import androidx.media3.common.text.CaptionStyleCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
+import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.player.PlayerUrls
 import com.moon.moonstream.ui.player.SubDelayPrefs
@@ -499,7 +501,8 @@ fun PlayerScreen(
             // e.g. credits) clears the resume position — Kodi-style rules.
             val pos = player.currentPosition.coerceAtLeast(0L)
             val dur = player.duration.coerceAtLeast(0L)
-            val finalPos = if (pos < 10_000L || (dur > 0 && pos >= dur * 9 / 10)) 0L else pos
+            val finished = dur > 0 && pos >= dur * 9 / 10
+            val finalPos = if (pos < 10_000L || finished) 0L else pos
             if (streamFileId != 0L) {
                 ioScope.launch(Dispatchers.IO) {
                     try {
@@ -507,6 +510,22 @@ fun PlayerScreen(
                             streamFileId, finalPos, System.currentTimeMillis(),
                         )
                     } catch (e: Exception) { /* never break close */ }
+                    // Auto-delete the downloaded file after watching
+                    // (moon's pick 2026-11-02): watched-to-the-end ⇒ the
+                    // local bytes are removed so storage doesn't grow.
+                    if (finished) {
+                        try {
+                            val f = files.find { it.id == streamFileId }
+                            if (f != null) {
+                                val deleted = BackendProvider.backend
+                                    .deleteCachedFile(f.channelId, f.messageId)
+                                AppLog.i(
+                                    "PLAYER",
+                                    "Auto-delete stream cache for '${f.fileName}': $deleted",
+                                )
+                            }
+                        } catch (e: Exception) { /* never break close */ }
+                    }
                 }
             }
             player.release()

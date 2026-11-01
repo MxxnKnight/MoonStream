@@ -104,6 +104,13 @@ interface MoonStreamBackend {
 
     /** Download a backup document's full bytes. */
     suspend fun downloadBackup(ref: BackupRef): ByteArray?
+
+    /**
+     * Delete the locally downloaded bytes of a file (moon's pick 2026-11-02:
+     * auto-delete the stream cache after watching). Default no-op returning
+     * false — the TDLib backend overrides this with TdApi.DeleteFile.
+     */
+    suspend fun deleteCachedFile(channelId: Long, messageId: Long): Boolean = false
 }
 
 /** A backup document found in Saved Messages. */

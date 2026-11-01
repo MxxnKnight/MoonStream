@@ -49,6 +49,13 @@ A class that implements `MoonStreamBackend` — i.e. it keeps these promises:
    for the Account screen. Only called when `READY`.
 6. **`logout()`** — kills the session, wipes stored secrets, flips
    `authState` back to `LOGGED_OUT`.
+7. **`deleteCachedFile(channelId, messageId)`** — delete the locally
+   downloaded bytes of a file (moon's pick 2026-11-02: auto-delete the
+   stream cache after watching). The app calls this when the in-app
+   player closes a finished video (>=90% watched). Has a no-op default
+   (`false`), so old implementations keep compiling — override it with
+   `TdApi.DeleteFile`. Return true when the bytes are gone (or were
+   never downloaded).
 
 Rules: never crash the app from these — return empty lists on failure and
 let the UI show its empty states. Never log secrets. API ID/hash and

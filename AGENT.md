@@ -149,3 +149,36 @@ Then implement all three in `backend/TdlibMoonStreamBackend.kt`.
   needed for upload.
 - Compile via the normal CI workflow after implementing; the assistant
   reviews before merge.
+
+## Stream cache auto-delete — instructions for moon's AI (Antigravity)
+
+moon picked (2026-11-02): after he finishes watching a video in the in-app
+player, the app auto-deletes the locally downloaded bytes so storage
+doesn't grow. The app side is done (0.13.0): when the player closes a
+finished video (>=90% watched), it calls the new contract method below.
+The contract method has a no-op default (`false`), so nothing breaks
+until you implement it — the feature just silently does nothing.
+
+### What to add to `backend/TdlibMoonStreamBackend.kt`
+
+Override the contract default:
+
+```kotlin
+override suspend fun deleteCachedFile(channelId: Long, messageId: Long): Boolean {
+    return try {
+        val fileId = messageFileIdCache[channelId to messageId]
+            ?: return true // never downloaded → nothing to clean
+        val res = telegramManager.send(TdApi.DeleteFile(fileId))
+        res.isSuccess
+    } catch (e: Exception) {
+        false
+    }
+}
+```
+
+### Rules
+
+- This ONE override is the whole backend change. Don't touch anything else.
+- Never log file paths or contents — a success/failure boolean is enough.
+- Compile via the normal CI workflow after implementing; the assistant
+  reviews before merge.
