@@ -16,6 +16,7 @@ import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -34,6 +35,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
@@ -62,6 +64,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 /** Which bottom sheet is open in the player. */
 private enum class PlayerSheet { SUBS, AUDIO, PLAYLIST, EPISODES }
@@ -691,9 +694,12 @@ fun PlayerScreen(
             }
         }
 
-        // Bottom sheets: subs / audio / playlist.
+        // Bottom sheets: subs / audio / playlist / episodes.
+        // Pull down on the sheet (from the top, list at top) to close it.
         if (sheet != null) {
             val mode = sheet!!
+            var sheetOffsetY by remember(mode) { mutableFloatStateOf(0f) }
+            val sheetScroll = rememberScrollState()
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -707,17 +713,47 @@ fun PlayerScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .offset { IntOffset(0, sheetOffsetY.roundToInt()) }
                         .background(
                             MsColors.Surface,
                             RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
                         )
+                        .pointerInput(mode) {
+                            detectVerticalDragGestures(
+                                onDragEnd = {
+                                    // Pulled far enough → close, else snap back.
+                                    if (sheetOffsetY > 140) sheet = null
+                                    else sheetOffsetY = 0f
+                                },
+                                onDragCancel = { sheetOffsetY = 0f },
+                            ) { change, dragAmount ->
+                                // Only drag the sheet (not scroll the list) when
+                                // pulling down with the list already at the top.
+                                if (dragAmount > 0 && sheetScroll.value == 0) {
+                                    sheetOffsetY =
+                                        (sheetOffsetY + dragAmount).coerceAtLeast(0f)
+                                    change.consume()
+                                }
+                            }
+                        }
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() },
                         ) { /* consume taps: don't dismiss */ }
                         .padding(16.dp)
-                        .verticalScroll(rememberScrollState()),
+                        .verticalScroll(sheetScroll),
                 ) {
+                    // Drag handle.
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(bottom = 8.dp)
+                            .size(width = 40.dp, height = 4.dp)
+                            .background(
+                                Color.White.copy(alpha = 0.3f),
+                                RoundedCornerShape(2.dp),
+                            ),
+                    )
                     Text(
                         when (mode) {
                             PlayerSheet.SUBS -> "Subtitles"
