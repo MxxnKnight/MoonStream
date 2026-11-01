@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
+import com.moon.moonstream.ui.player.PlayerUrls
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -108,7 +109,10 @@ fun DetailScreen(
     mediaId: Long,
     onBack: () -> Unit,
     onOpenCreate: (CreatePrefill) -> Unit = {},
-    onPlayInApp: (videoUrl: String, title: String, subtitleUrls: List<String>, mediaId: Long, streamFileId: Long) -> Unit = { _, _, _, _, _ -> },
+    onPlayInApp: (
+        videoUrl: String, title: String, mediaTitle: String,
+        subtitleUrls: List<String>, mediaId: Long, streamFileId: Long,
+    ) -> Unit = { _, _, _, _, _, _ -> },
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -168,11 +172,6 @@ fun DetailScreen(
     // Stream URLs served by the in-phone server: /stream/file/<mediaId>/<fileId>
     // (same shape the server advertises in its /stream responses).
     val streamBase = "http://${AppUiState.currentIp}:${AppUiState.port}"
-    // In-app player: same phone as the server → localhost. Never the WiFi IP:
-    // it can go stale and the connection just hangs (moon's 0.9.5
-    // ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT). Copy Link keeps the LAN URL
-    // for Stremio / other devices.
-    val playerBase = "http://127.0.0.1:${AppUiState.port}"
 
     fun copyLink(file: StreamFileEntity) {
         clipboard.setText(AnnotatedString("$streamBase/stream/file/${m.id}/${file.id}"))
@@ -188,16 +187,16 @@ fun DetailScreen(
             MsToast.show("Turn the server on first, then play")
             return
         }
-        val videoUrl = "$playerBase/stream/file/${m.id}/${file.id}"
+        val videoUrl = PlayerUrls.stream(m.id, file.id)
         val subUrls = subtitles.mapNotNull { sub ->
-            try { "$playerBase/sub/${sub.id}" } catch (e: Exception) { null }
+            try { PlayerUrls.sub(sub.id) } catch (e: Exception) { null }
         }
         val title = if (file.season != null && file.episode != null) {
             "${m.title} S${file.season}E${file.episode}"
         } else {
             m.title
         }
-        onPlayInApp(videoUrl, title, subUrls, m.id, file.id)
+        onPlayInApp(videoUrl, title, m.title, subUrls, m.id, file.id)
         // Record the watch (one row per file — delete-then-insert).
         scope.launch(Dispatchers.IO) {
             try {

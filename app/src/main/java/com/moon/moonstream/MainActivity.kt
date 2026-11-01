@@ -89,6 +89,7 @@ sealed interface AppScreen {
         val subtitleUrls: List<String> = emptyList(),
         val mediaId: Long = 0L,
         val streamFileId: Long = 0L,
+        val mediaTitle: String = "",
     ) : AppScreen
 }
 
@@ -236,8 +237,13 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             mediaId = screen.mediaId,
                             onBack = { backStack.removeLast() },
                             onOpenCreate = { prefill -> go(AppScreen.Create(prefill)) },
-                            onPlayInApp = { videoUrl, title, subtitleUrls, mediaId, streamFileId ->
-                                go(AppScreen.Player(videoUrl, title, subtitleUrls, mediaId, streamFileId))
+                            onPlayInApp = { videoUrl, title, mediaTitle, subtitleUrls, mediaId, streamFileId ->
+                                go(
+                                    AppScreen.Player(
+                                        videoUrl, title, subtitleUrls,
+                                        mediaId, streamFileId, mediaTitle,
+                                    )
+                                )
                             },
                         )
                     AppScreen.Channels ->
@@ -272,10 +278,16 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     is AppScreen.Player -> PlayerScreen(
                         videoUri = android.net.Uri.parse(screen.videoUrl),
                         title = screen.title,
+                        mediaTitle = screen.mediaTitle.ifBlank { screen.title },
                         subtitleUris = screen.subtitleUrls.map { android.net.Uri.parse(it) },
                         mediaId = screen.mediaId,
                         streamFileId = screen.streamFileId,
                         onClose = { backStack.removeLast() },
+                        onSwitchPlayer = { url, t, mt, subs, mid, fid ->
+                            // Episode switch: replace this player with the new file's.
+                            backStack.removeLast()
+                            go(AppScreen.Player(url, t, subs, mid, fid, mt))
+                        },
                     )
                     AppScreen.Settings -> SettingsScreen(
                         onOpenLogs = { go(AppScreen.Logs) },
