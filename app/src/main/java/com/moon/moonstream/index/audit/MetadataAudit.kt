@@ -45,6 +45,10 @@ object MetadataAudit {
         val details = mutableListOf<String>()
         var moved = 0
         var checked = 0
+        // Cache match results by title to avoid hammering the APIs
+        // (moon's concern 2026-11-01: rate limits on free APIs).
+        // 10 GoT episodes = 1 request, not 10.
+        val matchCache = mutableMapOf<String, com.moon.moonstream.index.match.EnrichedMeta?>()
 
         for ((idx, media) in items.withIndex()) {
             onProgress(idx + 1, items.size)
@@ -75,12 +79,15 @@ object MetadataAudit {
                         val type = if (media.type == "anime") "anime" else parsed.type
                         // Network must run on IO (moon's logs 2026-11-01:
                         // NetworkOnMainThreadException during audit).
-                        val m = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            MetadataMatcher.match(
+                        val cacheKey = "${parsed.title}|$type|${parsed.year ?: ""}"
+                        val m = matchCache.getOrPut(cacheKey) {
+                            kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                                MetadataMatcher.match(
                             parsed.title, parsed.year, type,
                             media.type == "anime", tmdbKey,
                             hasEpisode = parsed.episode != null,
                             )
+                        }
                         }
                         if (m != null && m.confidence >= 0.85 && !titlesMatch(m.title, media.title)) {
                             badReason = "re-match gives '${m.title}' (was '${media.title}')"
