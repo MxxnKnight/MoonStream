@@ -239,13 +239,14 @@ object ScanManager {
             if (m?.imdbId != null) MetadataMatcher.enrichFromCinemeta(m, type) else m
         }
 
-        // Low-confidence match: don't create a wrong entry — send to
-        // unmatched so the user can manually link it. (moon: "low confidence
-        // files can go to the unmatched content area!")
-        if (meta != null && meta.confidence < 0.75) {
+        // No match OR low-confidence: don't create a wrong entry — send to
+        // unmatched so the user can manually link it.
+        // (moon 2026-11-01: "if no tmdb results, why index as entry?")
+        if (meta == null || meta.confidence < 0.75) {
             com.moon.moonstream.util.AppLog.w(
                 "MATCH",
-                "'${parsed.title}' low confidence (${"%.2f".format(meta.confidence)}) → unmatched",
+                if (meta == null) "'${parsed.title}' no match → unmatched"
+                else "'${parsed.title}' low confidence (${"%.2f".format(meta.confidence)}) → unmatched",
             )
             db.unmatchedDao().insert(
                 UnmatchedFileEntity(
