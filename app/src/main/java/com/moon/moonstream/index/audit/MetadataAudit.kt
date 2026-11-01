@@ -65,6 +65,11 @@ object MetadataAudit {
                 }
 
                 // Check 2 (API): re-match and compare.
+                // Conservative: only flag if re-match gives a DIFFERENT title
+                // with HIGH confidence (>= 0.85). Low confidence or null just
+                // means the API was flaky — don't punish a good existing match
+                // (moon's bug 2026-11-01: deep audit moved perfect GoT files
+                // to unmatched when the re-match failed).
                 if (badReason == null && !structuralOnly) {
                     try {
                         val type = if (media.type == "anime") "anime" else parsed.type
@@ -73,9 +78,7 @@ object MetadataAudit {
                             media.type == "anime", tmdbKey,
                             hasEpisode = parsed.episode != null,
                         )
-                        if (m == null || m.confidence < 0.75) {
-                            badReason = "low confidence (${m?.let { "%.2f".format(it.confidence) } ?: "no match"})"
-                        } else if (!titlesMatch(m.title, media.title)) {
+                        if (m != null && m.confidence >= 0.85 && !titlesMatch(m.title, media.title)) {
                             badReason = "re-match gives '${m.title}' (was '${media.title}')"
                         }
                     } catch (e: Exception) {

@@ -49,6 +49,8 @@ import com.moon.moonstream.index.scan.ScanPrefs
 import com.moon.moonstream.ui.theme.MsColors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
 enum class FixMode { FIX_TITLE, FIX_FILE, LINK }
@@ -123,14 +125,18 @@ fun MetadataFixSheet(
             val key = ScanPrefs.getTmdbKey(context)
             // Cinemeta needs no key — only hint when TMDB is the sole source.
             noKeyHint = false
-            results = MetadataMatcher.searchTitles(
-                query = query,
-                // Anime goes through Kitsu; otherwise use the toggle —
-                // movies were wrongly searching TV shows.
-                type = if (isAnime) "series" else searchType,
-                isAnime = isAnime,
-                tmdbKey = key,
-            )
+            // Network must run on IO dispatcher, not Main (moon's bug
+            // 2026-11-01: search returned empty due to NetworkOnMainThread).
+            results = withContext(Dispatchers.IO) {
+                MetadataMatcher.searchTitles(
+                    query = query,
+                    // Anime goes through Kitsu; otherwise use the toggle —
+                    // movies were wrongly searching TV shows.
+                    type = if (isAnime) "series" else searchType,
+                    isAnime = isAnime,
+                    tmdbKey = key,
+                )
+            }
             searching = false
         }
     }
