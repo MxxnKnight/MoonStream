@@ -168,6 +168,11 @@ fun DetailScreen(
     // Stream URLs served by the in-phone server: /stream/file/<mediaId>/<fileId>
     // (same shape the server advertises in its /stream responses).
     val streamBase = "http://${AppUiState.currentIp}:${AppUiState.port}"
+    // In-app player: same phone as the server → localhost. Never the WiFi IP:
+    // it can go stale and the connection just hangs (moon's 0.9.5
+    // ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT). Copy Link keeps the LAN URL
+    // for Stremio / other devices.
+    val playerBase = "http://127.0.0.1:${AppUiState.port}"
 
     fun copyLink(file: StreamFileEntity) {
         clipboard.setText(AnnotatedString("$streamBase/stream/file/${m.id}/${file.id}"))
@@ -183,9 +188,9 @@ fun DetailScreen(
             MsToast.show("Turn the server on first, then play")
             return
         }
-        val videoUrl = "$streamBase/stream/file/${m.id}/${file.id}"
+        val videoUrl = "$playerBase/stream/file/${m.id}/${file.id}"
         val subUrls = subtitles.mapNotNull { sub ->
-            try { "$streamBase/sub/${sub.id}" } catch (e: Exception) { null }
+            try { "$playerBase/sub/${sub.id}" } catch (e: Exception) { null }
         }
         val title = if (file.season != null && file.episode != null) {
             "${m.title} S${file.season}E${file.episode}"
