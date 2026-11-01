@@ -52,6 +52,16 @@ fun FilePickerSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selected by remember { mutableStateOf(setOf<Long>()) }
+    // In subtitle mode, only show subtitle files (.srt/.vtt/.ass/.ssa),
+    // not video files (moon's bug 2026-11-01: picker showed 250MB+ videos).
+    val visibleFiles = remember(files, subtitleMode) {
+        if (!subtitleMode) files
+        else files.filter { f ->
+            val n = f.fileName.lowercase()
+            n.endsWith(".srt") || n.endsWith(".vtt") ||
+            n.endsWith(".ass") || n.endsWith(".ssa")
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -62,7 +72,7 @@ fun FilePickerSheet(
         MsSheetContent(
             title = if (subtitleMode) "Pick subtitle files" else "Pick files",
         ) {
-            if (files.isEmpty()) {
+            if (visibleFiles.isEmpty()) {
                 Text(
                     "No unmatched files. Scan a channel first — files the " +
                         "scanner can't identify land here.",
@@ -76,7 +86,7 @@ fun FilePickerSheet(
                         .heightIn(max = 380.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(files, key = { it.id }) { f ->
+                    items(visibleFiles, key = { it.id }) { f ->
                         val checked = f.id in selected
                         Row(
                             modifier = Modifier

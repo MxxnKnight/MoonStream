@@ -73,11 +73,15 @@ object MetadataAudit {
                 if (badReason == null && !structuralOnly) {
                     try {
                         val type = if (media.type == "anime") "anime" else parsed.type
-                        val m = MetadataMatcher.match(
+                        // Network must run on IO (moon's logs 2026-11-01:
+                        // NetworkOnMainThreadException during audit).
+                        val m = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            MetadataMatcher.match(
                             parsed.title, parsed.year, type,
                             media.type == "anime", tmdbKey,
                             hasEpisode = parsed.episode != null,
-                        )
+                            )
+                        }
                         if (m != null && m.confidence >= 0.85 && !titlesMatch(m.title, media.title)) {
                             badReason = "re-match gives '${m.title}' (was '${media.title}')"
                         }

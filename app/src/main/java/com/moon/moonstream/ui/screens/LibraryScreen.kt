@@ -592,7 +592,7 @@ private fun FilterSheet(
         containerColor = MsColors.Surface,
         contentColor = MsColors.TextPrimary,
     ) {
-        MsSheetContent(title = "Filters") {
+        MsSheetContent(title = "Filters", scrollable = true) {
             FilterRow("Quality", listOf("Any", "4K", "1080p", "720p", "480p"), quality, onQuality)
             FilterRow("Subtitles", listOf("Any", "Has subtitles", "No subtitles"), subFilter, onSubFilter)
             FilterRow(
