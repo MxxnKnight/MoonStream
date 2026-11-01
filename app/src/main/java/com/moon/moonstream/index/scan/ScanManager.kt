@@ -295,6 +295,7 @@ object ScanManager {
                 fileSize = fileSize,
                 season = parsed.season,
                 episode = parsed.episode,
+                episodeEnd = parsed.episodeEnd,
                 quality = parsed.qualityBadge,
             ),
         )

@@ -60,6 +60,8 @@ data class StreamFileEntity(
     val fileSize: Long,
     val season: Int?,
     val episode: Int?,
+    /** Last episode for multi-episode files (e.g. "E7-8" → episode=7, episodeEnd=8). Null = single. */
+    val episodeEnd: Int? = null,
     val quality: String,
 )
 

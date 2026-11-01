@@ -20,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         UnmatchedFileEntity::class,
         ChannelConfigEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class MsDatabase : RoomDatabase() {
@@ -56,6 +56,16 @@ abstract class MsDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v4 -> v5: adds stream_files.episodeEnd (multi-episode files like "E7-8").
+         * Nullable — existing rows get null (single episode).
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE stream_files ADD COLUMN episodeEnd INTEGER")
+            }
+        }
+
         fun get(context: Context): MsDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -63,7 +73,7 @@ abstract class MsDatabase : RoomDatabase() {
                     MsDatabase::class.java,
                     "moonstream.db",
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     // Pre-release app: unknown schema jumps still wipe and
                     // rescan. Never ship a destructive migration past v1.0
                     // without a real one.

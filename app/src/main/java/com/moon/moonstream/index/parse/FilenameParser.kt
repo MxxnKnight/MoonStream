@@ -18,6 +18,7 @@ data class ParsedMedia(
     val year: String?,
     val season: Int?,
     val episode: Int?,
+    val episodeEnd: Int? = null,
     val quality: String,
     val qualityBadge: String,
     val languages: List<String>,
@@ -84,6 +85,10 @@ object FilenameParser {
     /** Standalone "E22" (episode without season, e.g. "Psycho Pass E22").
      *  Must not match words ending in E like "TRUE". */
     private val standaloneEpRe = Regex("""(?i)(?<![a-z0-9])(?:e|ep)\s*(\d{1,4})(?![a-z0-9])""")
+
+    /** Multi-episode range: "E7-8", "Ep 1-10", "E01-E05", "S01E01-E02".
+     *  Group 1 = start, group 2 = end. */
+    private val multiEpRe = Regex("""(?i)(?<![a-z0-9])(?:e|ep)\s*(\d{1,4})\s*[-–—]\s*(?:e|ep)?\s*(\d{1,4})(?![a-z0-9])""")
 
     /** [12 - Episode Title] bracketed anime episode. */
     private val bracketEpRe = Regex("""^\[\s*(\d{1,4})\s*[-–—]\s*([^\]]+)\]""")
@@ -239,6 +244,7 @@ object FilenameParser {
 
         var season: Int? = null
         var episode: Int? = null
+        var episodeEnd: Int? = null
         var title: String = work
 
         fun before(match: MatchResult): String =
@@ -265,6 +271,13 @@ object FilenameParser {
                 episode = m.groupValues[2].toIntOrNull()
                 title = m.groupValues[1].trim()
             }
+        } ?: multiEpRe.find(work)?.let { m ->
+            // "Show E7-8" -> title="Show", episode=7, episodeEnd=8.
+            // "Show Ep 1-10" -> episode=1, episodeEnd=10.
+            season = 1
+            episode = m.groupValues[1].toIntOrNull()
+            episodeEnd = m.groupValues[2].toIntOrNull()
+            title = before(m)
         } ?: standaloneEpRe.find(work)?.let { m ->
             // "Psycho Pass E22" -> title="Psycho Pass", episode=22.
             // Don't match if it's part of a word (e.g. "TRUE" ends with E).
@@ -321,6 +334,7 @@ object FilenameParser {
             year = year,
             season = season,
             episode = episode,
+            episodeEnd = episodeEnd,
             quality = quality,
             qualityBadge = badge,
             languages = languages,

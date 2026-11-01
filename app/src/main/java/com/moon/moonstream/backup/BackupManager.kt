@@ -109,6 +109,7 @@ object BackupManager {
                     .put("fileSize", f.fileSize)
                     .put("season", f.season)
                     .put("episode", f.episode)
+                    .put("episodeEnd", f.episodeEnd)
                     .put("quality", f.quality)
             }))
             .put("subtitle_files", arr(db.subtitleDao().getAll().map { s ->
@@ -243,6 +244,7 @@ object BackupManager {
                         fileSize = o.optLong("fileSize", 0),
                         season = if (o.isNull("season")) null else o.optInt("season"),
                         episode = if (o.isNull("episode")) null else o.optInt("episode"),
+                        episodeEnd = if (o.isNull("episodeEnd")) null else o.optInt("episodeEnd"),
                         quality = o.optString("quality", ""),
                     ),
                 )
