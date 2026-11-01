@@ -8,6 +8,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.moon.moonstream.ui.components.MsToast
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -463,6 +466,30 @@ private fun ManifestDrawer() {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        // NoxMedia-style "copied" feedback (moon's request 2026-11-01).
+        AnimatedVisibility(
+            visible = copied,
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(300)),
+        ) {
+            Text(
+                "copied",
+                style = MaterialTheme.typography.bodySmall,
+                color = MsColors.GlowLight,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+        if (!copied) {
+            Icon(
+                Icons.Filled.ContentCopy,
+                contentDescription = "Copy URL",
+                tint = MsColors.TextSecondary,
+                modifier = Modifier
+                    .padding(start = 8.dp)
+                    .size(18.dp),
+            )
+        }
     }
 }
 
@@ -522,7 +549,8 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
             .clip(RoundedCornerShape(28.dp))
             .background(
                 Brush.linearGradient(
-                    listOf(Color(0xFF8B5CF6), Color(0xFF4C1D95), Color(0xFF2A1A5E)),
+                    // Follows the theme accent (moon's request 2026-11-01).
+                    listOf(MsColors.GlowLight, MsColors.GlowDeep, MsColors.Bg),
                 ),
             )
             .clickable(onClick = onOpenLibrary)
@@ -534,7 +562,7 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                 .clip(RoundedCornerShape(26.5.dp))
                 .background(
                     Brush.linearGradient(
-                        listOf(Color(0xFF5B21B6), Color(0xFF3B0F8A), Color(0xFF1E1B4B)),
+                        listOf(MsColors.GlowDeep.copy(alpha = 0.55f), MsColors.Bg, MsColors.Bg),
                     ),
                 )
                 .padding(20.dp),

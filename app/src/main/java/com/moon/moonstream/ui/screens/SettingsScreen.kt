@@ -42,6 +42,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -452,11 +453,16 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         }
     }
 
+    val settingsScroll = rememberScrollState(AppUiState.restoreScroll("settings"))
+    // Save position when leaving so Back restores it.
+    DisposableEffect(Unit) {
+        onDispose { AppUiState.saveScroll("settings", settingsScroll.value) }
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MsColors.Bg)
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(settingsScroll)
             .padding(16.dp)
             .padding(bottom = 100.dp), // clear the floating nav pill
         verticalArrangement = Arrangement.spacedBy(4.dp),

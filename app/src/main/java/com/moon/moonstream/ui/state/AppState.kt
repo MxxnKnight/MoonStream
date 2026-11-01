@@ -78,6 +78,11 @@ enum class MsAccent(
 data class LogLine(val time: String, val tag: String, val message: String)
 
 object AppUiState {
+    /** Saved scroll positions per screen, so Back returns to where you were
+     *  (moon's bug 2026-11-01: Logs -> Back landed at top of Settings). */
+    private val scrollPositions = mutableMapOf<String, Int>()
+    fun saveScroll(key: String, value: Int) { scrollPositions[key] = value }
+    fun restoreScroll(key: String): Int = scrollPositions[key] ?: 0
     var serverOn by mutableStateOf(false)
     var port by mutableStateOf(8080)
     /** Separate port for raw file/subtitle bytes (PLAN.md Phase 4). */
