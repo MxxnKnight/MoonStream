@@ -463,7 +463,9 @@ fun DetailScreen(
                 LimePillButton(
                     text = "Play",
                     onClick = {
-                        MsToast.show("In-app player is coming — use Copy Link with Stremio for now")
+                        val first = files.firstOrNull()
+                        if (first != null) playInApp(first)
+                        else MsToast.show("No files to play yet")
                     },
                     modifier = Modifier.weight(1f),
                     fontSize = 13,
