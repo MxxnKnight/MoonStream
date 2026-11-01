@@ -532,6 +532,7 @@ fun DetailScreen(
             isAnime = isAnime,
             onDismiss = { fixMode = null; fixFile = null },
             mediaType = m.type,
+            initialQuery = fixFile?.fileName ?: m.title,
             onApply = { picked ->
                 when (mode) {
                     FixMode.FIX_TITLE -> applyFixTitle(picked)
@@ -573,7 +574,9 @@ fun DetailScreen(
             onFetchFileName = { link ->
                 val parsed = parseTgLink(link) ?: return@AddStreamSheet null
                 val (chId, msgId) = parsed
-                BackendProvider.backend.fetchMessages(chId, msgId, 1)
+                // TDLib history excludes fromMessageId — request msgId+1 to include it.
+                (BackendProvider.backend.fetchMessages(chId, msgId + 1, 1) +
+                    BackendProvider.backend.fetchMessages(chId, msgId, 1))
                     .firstOrNull { it.id == msgId }?.fileName
             },
             onSave = { link, quality, name ->

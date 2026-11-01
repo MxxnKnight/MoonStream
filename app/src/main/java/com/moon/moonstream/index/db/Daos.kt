@@ -42,6 +42,10 @@ interface MediaDao {
     @Query("SELECT * FROM media_items WHERE channelId = :channelId AND normalizedTitle = :norm LIMIT 1")
     suspend fun findByTitle(channelId: Long, norm: String): MediaItemEntity?
 
+    /** Any-channel lookup for the "In library" badge (moon's request 2026-11-01). */
+    @Query("SELECT * FROM media_items WHERE normalizedTitle = :norm LIMIT 1")
+    suspend fun findByNormAnyChannel(norm: String): MediaItemEntity?
+
     @Query("SELECT * FROM media_items WHERE id = :id")
     fun observeById(id: Long): Flow<MediaItemEntity?>
 

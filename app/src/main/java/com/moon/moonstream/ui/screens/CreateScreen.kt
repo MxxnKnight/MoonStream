@@ -142,6 +142,7 @@ fun CreateScreen(
     var fileLinkQuality by remember { mutableStateOf("Auto") }
     var fileLinkFetching by remember { mutableStateOf(false) }
     var fileLinkName by remember { mutableStateOf<String?>(null) }
+    var fileLinkSize by remember { mutableStateOf(0L) }
 
     // Add-by-link state for subtitles.
     var showSubLink by remember { mutableStateOf(false) }
@@ -487,14 +488,20 @@ fun CreateScreen(
                                 scope.launch(Dispatchers.IO) {
                                     try {
                                         val (chId, msgId) = parsed
-                                        val fetched = com.moon.moonstream.backend.BackendProvider.backend
-                                            .fetchMessages(chId, msgId, 1)
-                                            .firstOrNull { m -> m.id == msgId }?.fileName
+                                        val backend = com.moon.moonstream.backend.BackendProvider.backend
+                                        // TDLib history is exclusive of fromMessageId — request
+                                        // msgId+1 to include the target message itself.
+                                        val fetched = (backend.fetchMessages(chId, msgId + 1, 1) +
+                                            backend.fetchMessages(chId, msgId, 1))
+                                            .firstOrNull { m -> m.id == msgId }
+                                        val fetchedName = fetched?.fileName
+                                        val fetchedSize = fetched?.fileSize ?: 0L
                                         withContext(Dispatchers.Main) {
-                                            if (!fetched.isNullOrBlank()) {
-                                                fileLinkName = fetched
+                                            if (!fetchedName.isNullOrBlank()) {
+                                                fileLinkName = fetchedName
+                                                fileLinkSize = fetchedSize
                                                 // Auto-parse S/E and quality.
-                                                val p = com.moon.moonstream.index.parse.FilenameParser.parse(fetched)
+                                                val p = com.moon.moonstream.index.parse.FilenameParser.parse(fetchedName)
                                                 if (p.season != null) fileLinkSeason = p.season.toString()
                                                 if (p.episode != null) fileLinkEpisode = p.episode.toString()
                                                 val q = p.qualityBadge
@@ -573,7 +580,7 @@ fun CreateScreen(
                                 channelId = chId,
                                 messageId = msgId,
                                 fileName = name,
-                                fileSize = 0L,
+                                fileSize = fileLinkSize,
                                 season = if (isSeries) fileLinkSeason.toIntOrNull() ?: globalSeason.toIntOrNull() else null,
                                 episode = if (isSeries) fileLinkEpisode.toIntOrNull() ?: globalEpisode.toIntOrNull() else null,
                                 isSubtitle = false,
@@ -583,6 +590,7 @@ fun CreateScreen(
                         // Reset for next.
                         fileLink = ""
                         fileLinkName = null
+                        fileLinkSize = 0L
                         fileLinkSeason = ""
                         fileLinkEpisode = ""
                         fileLinkQuality = "Auto"
@@ -698,9 +706,13 @@ fun CreateScreen(
                                 scope.launch(Dispatchers.IO) {
                                     try {
                                         val (chId, msgId) = parsed
-                                        val fetched = com.moon.moonstream.backend.BackendProvider.backend
-                                            .fetchMessages(chId, msgId, 1)
-                                            .firstOrNull { m -> m.id == msgId }?.fileName
+                                        val backend = com.moon.moonstream.backend.BackendProvider.backend
+                                        // TDLib history is exclusive of fromMessageId — request
+                                        // msgId+1 to include the target message itself.
+                                        val fetched = (backend.fetchMessages(chId, msgId + 1, 1) +
+                                            backend.fetchMessages(chId, msgId, 1))
+                                            .firstOrNull { m -> m.id == msgId }
+                                            ?.fileName
                                         withContext(Dispatchers.Main) {
                                             if (!fetched.isNullOrBlank()) subLinkName = fetched
                                             subLinkFetching = false
@@ -754,7 +766,7 @@ fun CreateScreen(
                                 channelId = chId,
                                 messageId = msgId,
                                 fileName = name,
-                                fileSize = 0L,
+                                fileSize = fileLinkSize,
                                 season = null,
                                 episode = null,
                                 isSubtitle = true,

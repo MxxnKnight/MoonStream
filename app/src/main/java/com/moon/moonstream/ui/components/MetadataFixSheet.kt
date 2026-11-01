@@ -45,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.moon.moonstream.index.match.EnrichedMeta
 import com.moon.moonstream.index.match.MetadataMatcher
+import com.moon.moonstream.index.db.MsDatabase
+import com.moon.moonstream.index.parse.normalizeTitle
 import com.moon.moonstream.index.scan.ScanPrefs
 import com.moon.moonstream.ui.theme.MsColors
 import kotlinx.coroutines.Job
@@ -90,12 +92,17 @@ fun MetadataFixSheet(
     onCustomContent: () -> Unit = {},
     /** "movie" | "series" | "anime" — drives the metadata search type. */
     mediaType: String = "series",
+    /** Pre-fill the search field (moon's request 2026-11-01: parsed name auto-filled). */
+    initialQuery: String = "",
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(initialQuery) }
     var results by remember { mutableStateOf<List<EnrichedMeta>>(emptyList()) }
+    // IMDb IDs + normalized titles already in the library — for the "In library" badge
+    // (moon's request 2026-11-01: know when an entry already exists).
+    var libraryKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var searching by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<EnrichedMeta?>(null) }
     var searchJob by remember { mutableStateOf<Job?>(null) }
@@ -220,11 +227,37 @@ fun MetadataFixSheet(
                     )
                 }
                 results.isNotEmpty() -> {
+                    // Check which results already have a library entry.
+                    LaunchedEffect(results) {
+                        if (mode == FixMode.LINK && results.isNotEmpty()) {
+                            libraryKeys = withContext(Dispatchers.IO) {
+                                val db = MsDatabase.get(context)
+                                val keys = mutableSetOf<String>()
+                                for (r in results) {
+                                    val exists = if (!r.imdbId.isNullOrBlank()) {
+                                        db.mediaDao().findByImdb(r.imdbId) != null
+                                    } else {
+                                        db.mediaDao().findByNormAnyChannel(
+                                            normalizeTitle(r.title),
+                                        ) != null
+                                    }
+                                    if (exists) {
+                                        r.imdbId?.let { keys.add(it) }
+                                        keys.add(normalizeTitle(r.title))
+                                    }
+                                }
+                                keys
+                            }
+                        }
+                    }
                     LazyColumn(modifier = Modifier.height(264.dp)) {
                         items(results) { r ->
+                            val inLibrary = !r.imdbId.isNullOrBlank() && libraryKeys.contains(r.imdbId) ||
+                                libraryKeys.contains(normalizeTitle(r.title))
                             MetaResultRow(
                                 result = r,
                                 selected = selected == r,
+                                inLibrary = inLibrary,
                                 onPick = { selected = r },
                             )
                             Spacer(Modifier.height(6.dp))
@@ -318,6 +351,7 @@ fun MetadataFixSheet(
 private fun MetaResultRow(
     result: EnrichedMeta,
     selected: Boolean,
+    inLibrary: Boolean = false,
     onPick: () -> Unit,
 ) {
     Row(
@@ -370,6 +404,30 @@ private fun MetaResultRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
             )
+            if (inLibrary) {
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(MsColors.Accent.copy(alpha = 0.18f))
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Check,
+                        contentDescription = "In library",
+                        tint = MsColors.Accent,
+                        modifier = Modifier.size(12.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "In library",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MsColors.Accent,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
             if (!result.overview.isNullOrBlank()) {
                 Text(
                     result.overview!!,

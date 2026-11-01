@@ -512,6 +512,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
             mode = FixMode.LINK,
             currentTitle = f.fileName,
             isAnime = false,
+            initialQuery = f.fileName,
             onDismiss = { linkFile = null },
             onApply = { picked ->
                 scope.launch {
