@@ -189,6 +189,30 @@ fun DetailScreen(
             m.title
         }
 
+    /** Record the watch (one row per file — delete-then-insert). */
+    fun recordWatch(file: StreamFileEntity) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val epLabel = if (file.season != null && file.episode != null) {
+                    "S${file.season} E${file.episode}" +
+                        (if (file.episodeEnd != null) "-${file.episodeEnd}" else "")
+                } else null
+                val dao = db.watchProgressDao()
+                dao.deleteByStreamFile(file.id)
+                dao.upsert(
+                    com.moon.moonstream.index.db.WatchProgressEntity(
+                        mediaId = m.id,
+                        streamFileId = file.id,
+                        title = m.title,
+                        episodeLabel = epLabel,
+                        posterUrl = m.posterUrl,
+                        playedAt = System.currentTimeMillis(),
+                    )
+                )
+            } catch (e: Exception) { /* never break playback for logging */ }
+        }
+    }
+
     /** Per-file play: the player shows the Resume prompt when a position is saved. */
     fun playInApp(file: StreamFileEntity) {
         if (!AppUiState.serverOn) {
@@ -229,30 +253,6 @@ fun DetailScreen(
                 )
                 recordWatch(target)
             }
-        }
-    }
-
-    /** Record the watch (one row per file — delete-then-insert). */
-    fun recordWatch(file: StreamFileEntity) {
-        scope.launch(Dispatchers.IO) {
-            try {
-                val epLabel = if (file.season != null && file.episode != null) {
-                    "S${file.season} E${file.episode}" +
-                        (if (file.episodeEnd != null) "-${file.episodeEnd}" else "")
-                } else null
-                val dao = db.watchProgressDao()
-                dao.deleteByStreamFile(file.id)
-                dao.upsert(
-                    com.moon.moonstream.index.db.WatchProgressEntity(
-                        mediaId = m.id,
-                        streamFileId = file.id,
-                        title = m.title,
-                        episodeLabel = epLabel,
-                        posterUrl = m.posterUrl,
-                        playedAt = System.currentTimeMillis(),
-                    )
-                )
-            } catch (e: Exception) { /* never break playback for logging */ }
         }
     }
 
