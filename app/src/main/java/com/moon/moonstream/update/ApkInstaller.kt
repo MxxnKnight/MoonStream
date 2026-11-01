@@ -65,6 +65,18 @@ object ApkInstaller {
 
     /** Fires the system package installer for a downloaded APK. */
     fun install(context: Context, apk: File) {
+        // TMPlayer v1.28.3 fix: use PackageInstaller for self-updates.
+        // On Android 12+, the system grants silent self-update (no Play Protect popup).
+        // On older versions, falls back to the ACTION_VIEW installer.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            try {
+                installViaSession(context, apk)
+                return
+            } catch (e: Exception) {
+                Log.w(TAG, "PackageInstaller failed, falling back to ACTION_VIEW", e)
+            }
+        }
+        // Fallback: legacy installer (shows Play Protect popup).
         try {
             val uri = FileProvider.getUriForFile(
                 context,
@@ -81,5 +93,47 @@ object ApkInstaller {
             Log.e(TAG, "install failed", e)
             throw e
         }
+    }
+
+    /**
+     * Installs via PackageInstaller session (TMPlayer's Play Protect fix).
+     * On Android 12+, self-updates install silently — Play Protect verifies
+     * in the background without the scary "App scan recommended" popup.
+     */
+    @androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.S)
+    private fun installViaSession(context: Context, apk: File) {
+        val packageInstaller = context.packageManager.packageInstaller
+        val params = android.content.pm.PackageInstaller.SessionParams(
+            android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL
+        ).apply {
+            // Don't ask the user — we're updating ourselves.
+            setRequireUserAction(
+                android.content.pm.PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED
+            )
+        }
+        val sessionId = packageInstaller.createSession(params)
+        val session = packageInstaller.openSession(sessionId)
+        try {
+            apk.inputStream().use { input ->
+                session.openWrite("apk", 0, apk.length()).use { output ->
+                    input.copyTo(output)
+                    session.fsync(output)
+                }
+            }
+            // Commit — system handles the install.
+            // No PendingIntent needed for USER_ACTION_NOT_REQUIRED on self-update.
+            session.commit(
+                android.app.PendingIntent.getBroadcast(
+                    context,
+                    sessionId,
+                    Intent(context, InstallReceiver::class.java),
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                        android.app.PendingIntent.FLAG_MUTABLE,
+                ).intentSender
+            )
+        } finally {
+            session.close()
+        }
+        Log.i(TAG, "PackageInstaller session $sessionId committed")
     }
 }

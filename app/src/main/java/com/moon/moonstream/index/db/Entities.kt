@@ -79,6 +79,8 @@ data class WatchProgressEntity(
     val episodeLabel: String?,
     val posterUrl: String?,
     val playedAt: Long,
+    /** Last playback position in ms for in-player Resume (0 = none). */
+    val positionMs: Long = 0,
 )
 
 /** Resume cursor per channel: newest message id already scanned. */

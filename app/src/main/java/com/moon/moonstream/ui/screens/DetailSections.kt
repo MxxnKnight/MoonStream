@@ -92,6 +92,7 @@ import com.moon.moonstream.ui.components.MsSheetContent
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.components.QualityChip
 import com.moon.moonstream.ui.model.formatBytes
+import com.moon.moonstream.ui.model.timeAgo
 import com.moon.moonstream.ui.theme.MsColors
 
 /** t.me/c/<chat>/<msg> → (channelId, messageId). Username links can't be
@@ -116,6 +117,8 @@ fun SeriesSeasons(
     onDelete: (StreamFileEntity) -> Unit,
     onFixFile: (StreamFileEntity) -> Unit,
     onUnlinkSub: (SubtitleFileEntity) -> Unit,
+    /** streamFileId -> last playedAt, for "watched X ago" (moon's design 2026-11-02). */
+    watchedAt: Map<Long, Long> = emptyMap(),
 ) {
     val bySeason = files.groupBy { it.season ?: 0 }
     val seasons = bySeason.keys.sorted()
@@ -183,6 +186,7 @@ fun SeriesSeasons(
             onDelete = onDelete,
             onFixFile = onFixFile,
             onUnlinkSub = onUnlinkSub,
+            watchedAt = watchedAt,
         )
     }
 }
@@ -199,6 +203,7 @@ private fun EpisodeCard(
     onDelete: (StreamFileEntity) -> Unit,
     onFixFile: (StreamFileEntity) -> Unit,
     onUnlinkSub: (SubtitleFileEntity) -> Unit,
+    watchedAt: Map<Long, Long> = emptyMap(),
 ) {
     var expanded by remember { mutableStateOf(false) }
     val qualities = files.map { it.quality }.distinct().take(3)
@@ -269,6 +274,7 @@ private fun EpisodeCard(
                             onCopy = { onCopy(f) },
                             onDelete = { onDelete(f) },
                             onFixFile = { onFixFile(f) },
+                            watchedAt = watchedAt[f.id],
                         )
                     }
                     if (subtitles.isNotEmpty()) {
@@ -292,6 +298,8 @@ fun FileRow(
     onCopy: () -> Unit,
     onDelete: () -> Unit,
     onFixFile: () -> Unit,
+    /** Last playedAt for this file, or null if never watched. */
+    watchedAt: Long? = null,
 ) {
     val context = LocalContext.current
     Box(
@@ -309,6 +317,15 @@ fun FileRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            // "watched 4m ago" — moon's design 2026-11-02: plain text only,
+            // shown on the file itself, no Library row.
+            if (watchedAt != null) {
+                Text(
+                    "watched ${timeAgo(watchedAt)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MsColors.TextSecondary,
+                )
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 QualityChip(stream.quality)
                 Spacer(Modifier.width(8.dp))
@@ -351,6 +368,8 @@ fun StreamRow(
     onCopy: () -> Unit,
     onDelete: () -> Unit,
     onFixFile: () -> Unit,
+    /** Last playedAt for this file, or null if never watched. */
+    watchedAt: Long? = null,
 ) {
     val context = LocalContext.current
     MsCard(modifier = Modifier.fillMaxWidth()) {
@@ -366,6 +385,14 @@ fun StreamRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            // "watched 4m ago" — moon's design 2026-11-02.
+            if (watchedAt != null) {
+                Text(
+                    "watched ${timeAgo(watchedAt)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MsColors.TextSecondary,
+                )
+            }
             Text(
                 formatBytes(stream.fileSize),
                 style = MaterialTheme.typography.bodySmall,

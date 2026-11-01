@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -28,8 +29,12 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.ui.theme.MsColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * In-app video player (Phase 6, item 1).
@@ -42,10 +47,14 @@ fun PlayerScreen(
     videoUri: Uri,
     title: String,
     subtitleUris: List<Uri> = emptyList(),
+    mediaId: Long = 0L,
+    streamFileId: Long = 0L,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val db = remember { MsDatabase.get(context) }
+    val ioScope = rememberCoroutineScope()
 
     // Build the ExoPlayer instance.
     val player = remember {
@@ -71,7 +80,51 @@ fun PlayerScreen(
                 .build()
             setMediaItem(mediaItem)
             prepare()
-            playWhenReady = true
+            // Starts paused — the resume check below decides play vs prompt.
+            playWhenReady = false
+        }
+    }
+
+    // Resume state (moon's design 2026-11-02): if this file has a saved
+    // position, opening the player asks "Resume from 12:34?" instead of
+    // just restarting.
+    var awaitingResumeChoice by remember { mutableStateOf(false) }
+    var resumeFrom by remember { mutableLongStateOf(0L) }
+
+    // Load the saved position once; decide play vs resume prompt.
+    LaunchedEffect(streamFileId, mediaId) {
+        if (streamFileId == 0L) {
+            player.play()
+            return@LaunchedEffect
+        }
+        val saved = withContext(Dispatchers.IO) {
+            try {
+                db.watchProgressDao().get(mediaId, streamFileId)?.positionMs ?: 0L
+            } catch (e: Exception) { 0L }
+        }
+        if (saved > 10_000L) {
+            resumeFrom = saved
+            awaitingResumeChoice = true
+        } else {
+            player.play()
+        }
+    }
+
+    // Save position every 5s while playing (for Resume + "watched X ago").
+    LaunchedEffect(streamFileId) {
+        if (streamFileId == 0L) return@LaunchedEffect
+        while (true) {
+            delay(5000)
+            val pos = player.currentPosition
+            if (pos > 10_000L) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        db.watchProgressDao().updatePosition(
+                            streamFileId, pos, System.currentTimeMillis(),
+                        )
+                    } catch (e: Exception) { /* never break playback */ }
+                }
+            }
         }
     }
 
@@ -80,20 +133,35 @@ fun PlayerScreen(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> player.pause()
-                Lifecycle.Event.ON_RESUME -> player.play()
+                // Don't auto-resume while the Resume prompt is up.
+                Lifecycle.Event.ON_RESUME -> if (!awaitingResumeChoice) player.play()
                 else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            // Final save: barely-started (<10s) or nearly finished (>=90%,
+            // e.g. credits) clears the resume position — Kodi-style rules.
+            val pos = player.currentPosition.coerceAtLeast(0L)
+            val dur = player.duration.coerceAtLeast(0L)
+            val finalPos = if (pos < 10_000L || (dur > 0 && pos >= dur * 9 / 10)) 0L else pos
+            if (streamFileId != 0L) {
+                ioScope.launch(Dispatchers.IO) {
+                    try {
+                        db.watchProgressDao().updatePosition(
+                            streamFileId, finalPos, System.currentTimeMillis(),
+                        )
+                    } catch (e: Exception) { /* never break close */ }
+                }
+            }
             player.release()
         }
     }
 
     // Controls visibility state.
     var controlsVisible by remember { mutableStateOf(true) }
-    var isPlaying by remember { mutableStateOf(true) }
+    var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
 
@@ -249,6 +317,66 @@ fun PlayerScreen(
                         player.seekTo((player.currentPosition + 10_000).coerceAtMost(duration))
                     }) {
                         Icon(Icons.Filled.Forward10, "Forward 10s", tint = Color.White, modifier = Modifier.size(36.dp))
+                    }
+                }
+            }
+        }
+
+        // Resume prompt (moon's design 2026-11-02): shown on open when this
+        // file has a saved position.
+        if (awaitingResumeChoice) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.7f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .background(MsColors.Surface, RoundedCornerShape(16.dp))
+                        .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        "Resume playback?",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MsColors.TextPrimary,
+                    )
+                    Text(
+                        "Continue from ${formatTime(resumeFrom)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MsColors.TextSecondary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = {
+                                awaitingResumeChoice = false
+                                player.seekTo(0L)
+                                player.play()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MsColors.Bg,
+                                contentColor = MsColors.TextPrimary,
+                            ),
+                        ) {
+                            Text("Start over")
+                        }
+                        Button(
+                            onClick = {
+                                awaitingResumeChoice = false
+                                player.seekTo(resumeFrom)
+                                player.play()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MsColors.Accent,
+                                contentColor = Color.Black,
+                            ),
+                        ) {
+                            Text("Resume")
+                        }
                     }
                 }
             }

@@ -108,7 +108,7 @@ fun DetailScreen(
     mediaId: Long,
     onBack: () -> Unit,
     onOpenCreate: (CreatePrefill) -> Unit = {},
-    onPlayInApp: (videoUrl: String, title: String, subtitleUrls: List<String>) -> Unit = { _, _, _ -> },
+    onPlayInApp: (videoUrl: String, title: String, subtitleUrls: List<String>, mediaId: Long, streamFileId: Long) -> Unit = { _, _, _, _, _ -> },
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -123,6 +123,11 @@ fun DetailScreen(
         channelId?.let { db.subtitleDao().observeUnlinkedByChannel(it) }
             ?: flowOf(emptyList())
         ).collectAsState(initial = emptyList())
+    // "watched X ago" per file (moon's design 2026-11-02) — newest entry wins.
+    val watchList by db.watchProgressDao().observeByMedia(mediaId).collectAsState(initial = emptyList())
+    val watchedAt = remember(watchList) {
+        watchList.groupBy { it.streamFileId }.mapValues { (_, rows) -> rows.maxOf { it.playedAt } }
+    }
 
     var fixMode by remember { mutableStateOf<FixMode?>(null) }
     var fixFile by remember { mutableStateOf<StreamFileEntity?>(null) }
@@ -187,15 +192,17 @@ fun DetailScreen(
         } else {
             m.title
         }
-        onPlayInApp(videoUrl, title, subUrls)
-        // Record for Continue Watching.
+        onPlayInApp(videoUrl, title, subUrls, m.id, file.id)
+        // Record the watch (one row per file — delete-then-insert).
         scope.launch(Dispatchers.IO) {
             try {
                 val epLabel = if (file.season != null && file.episode != null) {
                     "S${file.season} E${file.episode}" +
                         (if (file.episodeEnd != null) "-${file.episodeEnd}" else "")
                 } else null
-                db.watchProgressDao().upsert(
+                val dao = db.watchProgressDao()
+                dao.deleteByStreamFile(file.id)
+                dao.upsert(
                     com.moon.moonstream.index.db.WatchProgressEntity(
                         mediaId = m.id,
                         streamFileId = file.id,
@@ -236,14 +243,16 @@ fun DetailScreen(
         }
         try {
             context.startActivity(Intent.createChooser(intent, "Play with"))
-            // Record for Continue Watching (moon's pick 2026-11-01).
+            // Record the watch (one row per file — delete-then-insert).
             scope.launch(Dispatchers.IO) {
                 try {
                     val epLabel = if (file.season != null && file.episode != null) {
                         "S${file.season} E${file.episode}" +
                             (if (file.episodeEnd != null) "-${file.episodeEnd}" else "")
                     } else null
-                    db.watchProgressDao().upsert(
+                    val dao = db.watchProgressDao()
+                    dao.deleteByStreamFile(file.id)
+                    dao.upsert(
                         com.moon.moonstream.index.db.WatchProgressEntity(
                             mediaId = m.id,
                             streamFileId = file.id,
@@ -513,6 +522,7 @@ fun DetailScreen(
                             MsToast.show("Subtitle removed")
                         }
                     },
+                    watchedAt = watchedAt,
                 )
             } else {
                 // Movies: flat file list + subtitles section.
@@ -536,6 +546,7 @@ fun DetailScreen(
                         onCopy = { copyLink(f) },
                         onDelete = { deleteFile(f) },
                         onFixFile = { fixFile = f; fixMode = FixMode.FIX_FILE },
+                        watchedAt = watchedAt[f.id],
                     )
                 }
                 SubtitleSection(

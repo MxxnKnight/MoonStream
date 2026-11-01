@@ -127,6 +127,7 @@ dependencies {
     // Media3 ExoPlayer: in-app video player (Phase 6).
     // Local AARs (Gradle can't reach Google Maven through proxy).
     implementation files('libs/media3-exoplayer-1.4.1.aar')
+    implementation files('libs/guava-32.1.2-android.jar')
     implementation files('libs/media3-ui-1.4.1.aar')
     implementation files('libs/media3-common-1.4.1.aar')
     implementation files('libs/media3-datasource-1.4.1.aar')

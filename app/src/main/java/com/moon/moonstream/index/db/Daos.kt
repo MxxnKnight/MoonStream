@@ -296,6 +296,18 @@ interface WatchProgressDao {
     @Query("SELECT * FROM watch_progress ORDER BY playedAt DESC LIMIT :limit")
     suspend fun recent(limit: Int = 15): List<WatchProgressEntity>
 
+    @Query("SELECT * FROM watch_progress WHERE mediaId = :mediaId")
+    fun observeByMedia(mediaId: Long): Flow<List<WatchProgressEntity>>
+
+    @Query("SELECT * FROM watch_progress WHERE mediaId = :mediaId AND streamFileId = :streamFileId ORDER BY playedAt DESC LIMIT 1")
+    suspend fun get(mediaId: Long, streamFileId: Long): WatchProgressEntity?
+
+    @Query("UPDATE watch_progress SET positionMs = :positionMs, playedAt = :playedAt WHERE streamFileId = :streamFileId")
+    suspend fun updatePosition(streamFileId: Long, positionMs: Long, playedAt: Long)
+
+    @Query("DELETE FROM watch_progress WHERE streamFileId = :streamFileId")
+    suspend fun deleteByStreamFile(streamFileId: Long)
+
     @Query("DELETE FROM watch_progress WHERE mediaId = :mediaId")
     suspend fun deleteByMedia(mediaId: Long)
 

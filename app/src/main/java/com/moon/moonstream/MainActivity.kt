@@ -87,6 +87,8 @@ sealed interface AppScreen {
         val videoUrl: String,
         val title: String,
         val subtitleUrls: List<String> = emptyList(),
+        val mediaId: Long = 0L,
+        val streamFileId: Long = 0L,
     ) : AppScreen
 }
 
@@ -231,8 +233,8 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             mediaId = screen.mediaId,
                             onBack = { backStack.removeLast() },
                             onOpenCreate = { prefill -> go(AppScreen.Create(prefill)) },
-                            onPlayInApp = { videoUrl, title, subtitleUrls ->
-                                go(AppScreen.Player(videoUrl, title, subtitleUrls))
+                            onPlayInApp = { videoUrl, title, subtitleUrls, mediaId, streamFileId ->
+                                go(AppScreen.Player(videoUrl, title, subtitleUrls, mediaId, streamFileId))
                             },
                         )
                     AppScreen.Channels ->
@@ -268,6 +270,8 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         videoUri = android.net.Uri.parse(screen.videoUrl),
                         title = screen.title,
                         subtitleUris = screen.subtitleUrls.map { android.net.Uri.parse(it) },
+                        mediaId = screen.mediaId,
+                        streamFileId = screen.streamFileId,
                         onClose = { backStack.removeLast() },
                     )
                     AppScreen.Settings -> SettingsScreen(
