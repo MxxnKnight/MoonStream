@@ -61,9 +61,12 @@ class MoonStreamServer(
         if (running) return true
         return try {
             if (executor.isShutdown) executor = Executors.newFixedThreadPool(8)
+            // Set BEFORE bind: acceptor threads check `running` in their loop,
+            // and if they wake before this flag is set they exit silently —
+            // leaving a "running" but deaf server (moon's 2026-11-02 timeouts).
+            running = true
             addonSocket = bind(addonPort, "addon")
             streamSocket = bind(streamPort, "stream")
-            running = true
             Log.i(TAG, "Server started: addon=$addonPort stream=$streamPort")
             true
         } catch (e: Exception) {
