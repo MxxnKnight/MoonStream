@@ -9,6 +9,8 @@ import java.util.Locale
 
 /** One log line. */
 data class LogLine(
+    /** Unique per line — used as the LazyColumn key (identical lines are common). */
+    val id: Long,
     val time: String,
     val tag: String,
     val level: String, // "I", "W", "E"
@@ -33,10 +35,14 @@ object AppLog {
     val lines = mutableStateListOf<LogLine>()
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val nextId = java.util.concurrent.atomic.AtomicLong(0)
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.US)
 
     private fun add(level: String, tag: String, msg: String) {
-        val line = LogLine(timeFmt.format(Date()), tag, level, msg)
+        // SimpleDateFormat is NOT thread-safe and add() is called from many
+        // threads during scans/audits — guard it.
+        val time = synchronized(timeFmt) { timeFmt.format(Date()) }
+        val line = LogLine(nextId.incrementAndGet(), time, tag, level, msg)
         // Also to logcat for debugging (safe from any thread).
         when (level) {
             "E" -> android.util.Log.e("MoonStream", "[$tag] $msg")

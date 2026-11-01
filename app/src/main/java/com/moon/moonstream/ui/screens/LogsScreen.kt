@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.MaterialTheme
@@ -122,14 +121,14 @@ fun LogsScreen(onBack: () -> Unit) {
         } else {
             // Long-press any line to select and copy text. The container sits
             // outside the LazyColumn so selection works across rows.
-            SelectionContainer {
+            run {
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 124.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    items(lines, key = { it.time + it.tag + it.message }) { line ->
+                    items(lines, key = { it.id }) { line ->
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = line.time,
