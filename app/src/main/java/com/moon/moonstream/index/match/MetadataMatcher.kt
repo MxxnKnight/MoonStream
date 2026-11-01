@@ -164,7 +164,9 @@ object MetadataMatcher {
         }
         return try {
             if (isAnime) {
-                searchKitsu(query, limit)
+                // Kitsu only knows anime; if it finds nothing (entry flagged
+                // anime by mistake, or Kitsu down) fall back to Cinemeta.
+                searchKitsu(query, limit).ifEmpty { searchCinemeta(query, "series", limit) }
             } else {
                 // Try TMDB first (when key set), ALWAYS fall back to Cinemeta.
                 // Both are tried; results merged with TMDB first.
@@ -209,7 +211,7 @@ object MetadataMatcher {
         val name = root.optString("name").takeIf { it.isNotBlank() } ?: return null
         return EnrichedMeta(
             title = name,
-            year = Regex("""^(\\d{4})""").find(root.optString("releaseInfo"))?.groupValues?.get(1),
+            year = Regex("""^(\d{4})""").find(root.optString("releaseInfo"))?.groupValues?.get(1),
             overview = root.optString("description").takeIf { it.isNotBlank() },
             posterUrl = root.optString("poster").takeIf { it.isNotBlank() },
             imdbId = imdbId,
@@ -225,7 +227,9 @@ object MetadataMatcher {
      */
     private fun searchCinemeta(query: String, type: String, limit: Int): List<EnrichedMeta> {
         val kind = if (type == "movie") "movie" else "series"
-        val q = URLEncoder.encode(query, "UTF-8")
+        // Path segment, not a query string: a space must be %20 ('+' would be
+        // searched literally, so multi-word titles returned nothing).
+        val q = URLEncoder.encode(query.trim(), "UTF-8").replace("+", "%20")
         val root = getJson("https://v3-cinemeta.strem.io/catalog/$kind/top/search=$q.json")
             ?: return emptyList()
         val metas = root.optJSONArray("metas") ?: return emptyList()
@@ -387,11 +391,15 @@ object MetadataMatcher {
                 setRequestProperty("User-Agent", UA)
                 headers.forEach { (k, v) -> setRequestProperty(k, v) }
             }
-            if (conn.responseCode != HttpURLConnection.HTTP_OK) return null
+            if (conn.responseCode != HttpURLConnection.HTTP_OK) {
+                com.moon.moonstream.util.AppLog.w("MATCH", "HTTP ${conn.responseCode} from ${URL(url).host}")
+                return null
+            }
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             if (body.isBlank()) null else JSONObject(body)
         } catch (e: Exception) {
             Log.d(TAG, "GET failed $url: ${e.message}")
+            com.moon.moonstream.util.AppLog.w("MATCH", "Request to ${runCatching { URL(url).host }.getOrDefault("?")} failed: ${e.javaClass.simpleName} ${e.message}")
             null
         } finally {
             conn?.disconnect()
