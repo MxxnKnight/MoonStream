@@ -38,6 +38,10 @@
             android:name=".index.scan.ScanService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+        <service
+            android:name=".update.UpdateDownloadService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

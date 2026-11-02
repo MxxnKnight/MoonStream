@@ -98,9 +98,13 @@ import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import com.moon.moonstream.update.ApkInstaller
 import com.moon.moonstream.update.UpdateChecker
+import com.moon.moonstream.update.UpdateDownloadService
 import com.moon.moonstream.update.UpdateInfo
+import com.moon.moonstream.update.UpdateState
 import com.moon.moonstream.cache.CacheManager
 import com.moon.moonstream.cache.TdStreamCache
 
@@ -376,7 +380,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     var checkingUpdate by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var updateError by remember { mutableStateOf<String?>(null) }
-    var downloadProgress by remember { mutableStateOf<Int?>(null) }
+    // 0.15.4: observe the foreground download service (survives screen changes).
+    val updateState by UpdateDownloadService.state.collectAsState()
 
     fun checkForUpdates() {
         if (checkingUpdate) return
@@ -401,25 +406,10 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     }
 
     fun downloadAndInstall(info: UpdateInfo) {
-        if (downloadProgress != null) return
-        downloadProgress = 0
-        scope.launch(Dispatchers.IO) {
-            try {
-                val apk = ApkInstaller.download(context, info) { p ->
-                    scope.launch(Dispatchers.Main) { downloadProgress = p }
-                }
-                withContext(Dispatchers.Main) {
-                    downloadProgress = null
-                    updateInfo = null
-                    ApkInstaller.install(context, apk)
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    downloadProgress = null
-                    updateError = "Download failed: ${e.message ?: "unknown error"}"
-                }
-            }
-        }
+        // 0.15.4: download runs in a foreground service so it survives
+        // screen changes and app backgrounding (moon's request).
+        UpdateDownloadService.start(context, info)
+        MsToast.show("Downloading v${info.version} — continues in background")
     }
 
     fun saved(key: String) = MsToast.show("Saved")
@@ -1249,7 +1239,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     // --- OTA update dialog ---
     updateInfo?.let { info ->
         AlertDialog(
-            onDismissRequest = { if (downloadProgress == null) updateInfo = null },
+            onDismissRequest = { if (updateState !is UpdateState.Downloading) updateInfo = null },
             title = {
                 Text(
                     "Update available: ${info.version}",
@@ -1267,16 +1257,23 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                             color = MsColors.TextSecondary,
                         )
                     }
-                    if (downloadProgress != null) {
+                    if (updateState is UpdateState.Downloading) {
+                        val p = (updateState as UpdateState.Downloading).progress
                         Text(
-                            "Downloading… ${downloadProgress}%",
+                            "Downloading… $p% (continues in background)",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MsColors.TextPrimary,
                         )
                         androidx.compose.material3.LinearProgressIndicator(
-                            progress = (downloadProgress ?: 0) / 100f,
+                            progress = p / 100f,
                             modifier = Modifier.fillMaxWidth(),
                             color = MsColors.Accent,
+                        )
+                    } else if (updateState is UpdateState.Failed) {
+                        Text(
+                            "Download failed: ${(updateState as UpdateState.Failed).message}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.Error,
                         )
                     } else {
                         Text(
@@ -1293,7 +1290,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 LimePillButton(
                     text = "Download & install",
                     fontSize = 14,
-                    enabled = downloadProgress == null,
+                    enabled = updateState !is UpdateState.Downloading,
                     onClick = { downloadAndInstall(info) },
                 )
             },
