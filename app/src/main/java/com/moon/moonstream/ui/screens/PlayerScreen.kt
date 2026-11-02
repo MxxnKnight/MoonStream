@@ -87,6 +87,7 @@ import com.moon.moonstream.ui.player.PlayerUrls
 import com.moon.moonstream.ui.player.SubDelayPrefs
 import com.moon.moonstream.ui.player.TdStreamUri
 import com.moon.moonstream.ui.player.TdSubUri
+import com.moon.moonstream.ui.state.LanguagePrefs
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.util.AppLog
 import kotlinx.coroutines.Dispatchers
@@ -319,21 +320,36 @@ fun PlayerScreen(
     }
     val showPlaylistBtn = playlistFiles.size > 1
 
-    // Subtitle (uri, fileName) pairs — mime type comes from the real file name.
-    // Straight from Telegram when we know the size (so subtitles work with the
-    // addon server off, delay applied on-device); the server route stays as a
-    // fallback for odd rows.
-    val subPairs = remember(allSubs, delayMs) {
-        allSubs.map { sub ->
-            val uri = if (sub.fileSize in 1..TdSubUri.MAX_BYTES) {
-                TdSubUri.build(
-                    sub.channelId, sub.messageId, sub.fileSize, sub.fileName, delayMs,
-                )
-            } else {
-                Uri.parse(PlayerUrls.sub(sub.id, delayMs))
+    // Language preference (Settings → Languages). First choice wins; the
+    // second is used only when the first isn't on this title at all.
+    val subFirst = remember { LanguagePrefs.subtitleFirst(context) }
+    val subSecond = remember { LanguagePrefs.subtitleSecond(context) }
+    val audioFirst = remember { LanguagePrefs.audioFirst(context) }
+    val audioSecond = remember { LanguagePrefs.audioSecond(context) }
+    val chosenSubLang = remember(allSubs, subFirst, subSecond) {
+        LanguagePrefs.chooseSubtitle(allSubs.map { it.language }, subFirst, subSecond)
+    }
+
+    // Subtitle tracks — mime type comes from the real file name, language from
+    // the indexer. Straight from Telegram when we know the size (so subtitles
+    // work with the addon server off, delay applied on-device); the server
+    // route stays as a fallback for odd rows. Preferred language sorts first,
+    // which is what Media3 picks.
+    val subPairs = remember(allSubs, delayMs, chosenSubLang) {
+        allSubs
+            .sortedByDescending { sub ->
+                chosenSubLang?.let { LanguagePrefs.matches(sub.language, it) } ?: false
             }
-            uri to sub.fileName
-        }
+            .map { sub ->
+                val uri = if (sub.fileSize in 1..TdSubUri.MAX_BYTES) {
+                    TdSubUri.build(
+                        sub.channelId, sub.messageId, sub.fileSize, sub.fileName, delayMs,
+                    )
+                } else {
+                    Uri.parse(PlayerUrls.sub(sub.id, delayMs))
+                }
+                SubTrack(uri, sub.fileName, sub.language)
+            }
     }
 
     fun episodeLabel(f: StreamFileEntity): String =
@@ -513,7 +529,7 @@ fun PlayerScreen(
     // Load / rebuild the media item. First run: resume check (prompt, or
     // straight to the saved spot for the header Play button). Later runs
     // (subs arrived, delay changed): rebuild keeping position + play state.
-    LaunchedEffect(playUri, subPairs, filesLoaded) {
+    LaunchedEffect(playUri, subPairs, filesLoaded, chosenSubLang) {
         // The Room row can land a frame after the screen opens. Wait for it,
         // otherwise playback would start on the HTTP fallback and swap
         // sources (and lose the resume choice) mid-load.
@@ -522,6 +538,23 @@ fun PlayerScreen(
         val pos = if (isFirst) 0L else player.currentPosition.coerceAtLeast(0L)
         val keepPlaying = if (isFirst) false else player.isPlaying
         player.setMediaItem(buildMediaItem(playUri, subPairs), pos)
+        // Language picks are applied per media item (a new item resets tracks).
+        // Audio keeps a real first/second order; text uses the language we
+        // found on this title, so "Mal, else Eng" doesn't need two passes.
+        val audioLangs = listOfNotNull(
+            LanguagePrefs.iso(audioFirst),
+            LanguagePrefs.iso(audioSecond),
+        ).distinct()
+        val textLang = chosenSubLang?.let { LanguagePrefs.iso(it) }
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .apply {
+                if (audioLangs.isNotEmpty()) setPreferredAudioLanguages(*audioLangs.toTypedArray())
+                if (textLang != null) setPreferredTextLanguage(textLang)
+                // No matching subtitle language → stay off instead of guessing.
+                setSelectUndeterminedTextLanguage(false)
+                if (subsOff) setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            }
+            .build()
         player.prepare()
         if (isFirst) {
             mediaReady = true
@@ -1809,23 +1842,29 @@ fun PlayerScreen(
     }
 }
 
+/** One subtitle track: where the bytes come from, its name, its language. */
+internal data class SubTrack(val uri: Uri, val fileName: String, val language: String)
+
 /** Build the player's media item: video + subtitle tracks (mime from real file names). */
 @OptIn(UnstableApi::class)
-private fun buildMediaItem(video: Uri, subs: List<Pair<Uri, String>>): MediaItem =
+private fun buildMediaItem(video: Uri, subs: List<SubTrack>): MediaItem =
     MediaItem.Builder()
         .setUri(video)
         .setSubtitleConfigurations(
-            subs.mapIndexed { index, (uri, fileName) ->
-                MediaItem.SubtitleConfiguration.Builder(uri)
+            subs.mapIndexed { index, sub ->
+                MediaItem.SubtitleConfiguration.Builder(sub.uri)
                     .setMimeType(
                         when {
-                            fileName.endsWith(".vtt", ignoreCase = true) -> "text/vtt"
-                            fileName.endsWith(".ass", ignoreCase = true) ||
-                                fileName.endsWith(".ssa", ignoreCase = true) -> "text/x-ssa"
+                            sub.fileName.endsWith(".vtt", ignoreCase = true) -> "text/vtt"
+                            sub.fileName.endsWith(".ass", ignoreCase = true) ||
+                                sub.fileName.endsWith(".ssa", ignoreCase = true) -> "text/x-ssa"
                             else -> "application/x-subrip"
                         },
                     )
-                    .setLanguage("und")
+                    // Real language so Media3 can pick by preference; "und"
+                    // when the indexer had no hint (those stay manual).
+                    .setLanguage(LanguagePrefs.iso(sub.language) ?: "und")
+                    .setLabel(sub.fileName)
                     .setId("sub_$index")
                     .build()
             },

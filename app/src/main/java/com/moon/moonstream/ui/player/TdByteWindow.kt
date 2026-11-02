@@ -1,6 +1,7 @@
 package com.moon.moonstream.ui.player
 
 import android.content.Context
+import android.os.SystemClock
 import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.cache.TdStreamCache
 import com.moon.moonstream.util.AppLog
@@ -12,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -62,6 +64,28 @@ internal class TdByteWindow(
     /** Bytes deleted from our window since the last Telegram-side purge. */
     private var deletedSincePurge = 0L
     private var purgeRunning = false
+
+    /** Only one prefetch run may be alive; a seek cancels the old one. */
+    private var prefetchJob: Job? = null
+
+    /**
+     * Rate limiting. The backend reports every failure as "no bytes", so a
+     * Telegram FLOOD_WAIT is indistinguishable from "not downloaded yet".
+     * Treat empty replies as pressure: slow down, then back off exponentially
+     * with jitter, and never retry faster than [MIN_FETCH_GAP_MS] apart.
+     */
+    @Volatile
+    private var nextFetchAtMs = 0L
+
+    @Volatile
+    private var backoffUntilMs = 0L
+
+    /** A reader is blocked on the network, so prefetch should yield to it. */
+    @Volatile
+    private var readerWaiting = false
+
+    /** Consecutive empty replies (only touched while holding [mutex]). */
+    private var emptyRun = 0
 
     @Volatile
     private var closed = false
@@ -125,6 +149,7 @@ internal class TdByteWindow(
     private fun ensureChunk(index: Long) {
         if (have(index)) return
         try {
+            readerWaiting = true
             runBlocking {
                 withTimeout(READ_TIMEOUT_MS) {
                     mutex.withLock {
@@ -137,6 +162,8 @@ internal class TdByteWindow(
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             throw InterruptedIOException("Cancelled while loading chunk $index")
+        } finally {
+            readerWaiting = false
         }
     }
 
@@ -155,6 +182,7 @@ internal class TdByteWindow(
 
         while (got < want) {
             if (closed) return
+            awaitRateLimit()
             val bytes = try {
                 BackendProvider.backend.readFileRange(
                     channelId = channelId,
@@ -171,10 +199,11 @@ internal class TdByteWindow(
                     partial.delete()
                     throw IOException("No bytes for chunk $index (offset ${start + got})")
                 }
-                delay(250L)
+                registerEmptyReply(index, emptyReplies)
                 continue
             }
             emptyReplies = 0
+            registerBytes()
             partial.appendBytes(bytes)
             got += bytes.size
         }
@@ -189,22 +218,66 @@ internal class TdByteWindow(
         }
     }
 
-    /** Fetches the next [count] chunks in the background, best effort. */
+    /**
+     * Waits until it is polite to talk to Telegram again: the pacing gap after
+     * the last request, plus any backoff from empty replies. Called while
+     * holding [mutex], so nothing else is fetching meanwhile.
+     */
+    private suspend fun awaitRateLimit() {
+        while (!closed) {
+            val now = SystemClock.elapsedRealtime()
+            val wait = maxOf(nextFetchAtMs - now, backoffUntilMs - now)
+            if (wait <= 0L) return
+            delay(minOf(wait, 1_000L))
+        }
+    }
+
+    /** An empty reply: assume we are being throttled and back off. */
+    private fun registerEmptyReply(index: Long, attempt: Int) {
+        emptyRun++
+        val base = BASE_BACKOFF_MS shl minOf(emptyRun - 1, 5)
+        val capped = minOf(base, MAX_BACKOFF_MS)
+        val jitter = (capped / 4.0 * Math.random()).toLong()
+        backoffUntilMs = SystemClock.elapsedRealtime() + capped + jitter
+        AppLog.i(
+            "TDLOCAL",
+            "no bytes for chunk $index (attempt $attempt), backing off ${capped + jitter} ms",
+        )
+    }
+
+    /** Real bytes arrived: clear the backoff and pace the next request. */
+    private fun registerBytes() {
+        emptyRun = 0
+        backoffUntilMs = 0L
+        nextFetchAtMs = SystemClock.elapsedRealtime() + MIN_FETCH_GAP_MS
+    }
+
+    /**
+     * Fetches the next [count] chunks in one background run, best effort.
+     * A new run replaces the old one, and a blocked reader always goes first:
+     * prefetching must never make playback wait longer for its own chunk.
+     */
     private fun prefetch(fromIndex: Long, count: Int) {
         if (closed) return
         val last = LowStorageWindow.chunkCount(fileSize)
-        for (i in 0 until count) {
-            val idx = fromIndex + i
-            if (idx >= last) return
-            if (have(idx)) continue
-            prefetchScope.launch {
+        val todo = (0 until count)
+            .map { fromIndex + it }
+            .filter { it < last && !have(it) }
+        if (todo.isEmpty()) return
+        prefetchJob?.cancel()
+        prefetchJob = prefetchScope.launch {
+            for (idx in todo) {
+                if (closed) return@launch
                 try {
+                    while (readerWaiting && !closed) delay(50L)
                     mutex.withLock {
                         if (!closed && !have(idx)) download(idx)
                     }
                 } catch (e: Exception) {
-                    // Prefetch is an optimisation — playback still works.
+                    // Prefetch is an optimisation — playback still works, and
+                    // one failure means stop piling on extra requests.
                     AppLog.i("TDLOCAL", "prefetch chunk $idx skipped: ${e.message}")
+                    return@launch
                 }
             }
         }
@@ -276,6 +349,7 @@ internal class TdByteWindow(
     /** Closes handles and removes this file's chunks from disk. */
     fun release() {
         closed = true
+        prefetchJob?.cancel()
         prefetchScope.cancel()
         try {
             openFile?.close()
@@ -292,5 +366,14 @@ internal class TdByteWindow(
 
         /** Delete Telegram's copy after this much of our window has been deleted. */
         const val PURGE_AFTER_BYTES = 96L * 1024 * 1024
+
+        /** Minimum gap between two network requests, so we never spam TDLib. */
+        const val MIN_FETCH_GAP_MS = 200L
+
+        /** First backoff step; doubles per consecutive empty reply. */
+        const val BASE_BACKOFF_MS = 400L
+
+        /** Ceiling on a single backoff wait (plus up to 25% jitter). */
+        const val MAX_BACKOFF_MS = 8_000L
     }
 }

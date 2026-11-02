@@ -41,6 +41,23 @@ Stremio/external players exactly as before.
 - **`cache/TdStreamCache.kt`** — owner of `filesDir/tdstream`: measures it,
   clears it, and never clears a folder belonging to an active playback.
 
+### Added — follow-up: language preference + rate limiting
+
+- **`ui/state/LanguagePrefs.kt`** and a new **Settings → Languages** group:
+  a first and second choice for subtitle and audio language (defaults Mal
+  then Eng). The player opens the wanted subtitle by itself, uses the second
+  language only when the title has nothing in the first, and leaves foreign
+  tracks in the manual menu. Subtitle tracks now carry their real language
+  tag (`mal`, `eng`, …) instead of `und`, which is what makes auto-selection
+  possible at all — before this, subtitles always started Off.
+- **Rate limiting in the chunk fetcher** (`TdByteWindow`): the backend reports
+  a throttled request as "no bytes", so empty replies are now treated as
+  backpressure — a 200 ms minimum gap between requests, exponential backoff
+  with jitter (0.4 s → 8 s), a per-run prefetch that stops on its first
+  failure, and a blocked reader that always outranks prefetch. The give-up
+  threshold rose to 6 empty replies, which spends roughly 20 s waiting —
+  enough for a Telegram flood-wait to pass without showing an error.
+
 ### Changed
 
 - **`ui/screens/PlayerScreen.kt`** — the `ExoPlayer` is built with
@@ -75,8 +92,12 @@ Stremio/external players exactly as before.
 
 ### Known limitations
 
-- Not device-tested: first-frame latency, seek behaviour and MKV playback
-  over this path are compile/APK-build verified only.
+- Not device-tested: first-frame latency, seek behaviour, subtitle
+  auto-selection and MKV playback over this path are compile/APK-build
+  verified only.
+- Audio falls back to the file's default track when neither preference is
+  present; the backend still cannot report a Telegram flood-wait as such, so
+  the player backs off blindly rather than for the exact wait time.
 - ASS/SSA subtitle delay is not applied (same restriction as the server).
 - Subtitles larger than 8 MB, or rows without a size, fall back to the
   addon-server URL.

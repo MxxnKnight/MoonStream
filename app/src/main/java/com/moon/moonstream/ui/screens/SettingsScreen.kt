@@ -89,6 +89,7 @@ import com.moon.moonstream.ui.components.ScanActionButton
 import com.moon.moonstream.ui.components.SettingRow
 import com.moon.moonstream.ui.components.SettingsGroup
 import com.moon.moonstream.ui.state.AppUiState
+import com.moon.moonstream.ui.state.LanguagePrefs
 import com.moon.moonstream.ui.state.MsAccent
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.index.scan.ScanPrefs
@@ -151,6 +152,12 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     var prefQuality by remember { mutableStateOf("1080p") }
     var filterCamTs by remember { mutableStateOf(true) }
     val qualityPriority = remember { mutableStateListOf("4K", "1080p", "720p") }
+
+    // --- Language state (in-app player) ---
+    var subLangFirst by remember { mutableStateOf(LanguagePrefs.subtitleFirst(context)) }
+    var subLangSecond by remember { mutableStateOf(LanguagePrefs.subtitleSecond(context)) }
+    var audioLangFirst by remember { mutableStateOf(LanguagePrefs.audioFirst(context)) }
+    var audioLangSecond by remember { mutableStateOf(LanguagePrefs.audioSecond(context)) }
 
     // --- Appearance state ---
     var dupProtection by remember { mutableStateOf(true) }
@@ -847,6 +854,69 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 info = "Hides cinema-recorded (CAM) and telesync (TS) versions from the stream list. They are usually the worst quality.",
             ) {
                 MsToggle(checked = filterCamTs, onCheckedChange = { filterCamTs = it; MsToast.show("Saved") })
+            }
+        }
+
+        SettingsGroup("Languages") {
+            SettingBlock(
+                title = "Subtitle language",
+                info = "The in-app player turns on this subtitle by itself. If the title has no file in the first language, the second one is used. Anything else stays in the player's subtitle menu.",
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MsDropdown(
+                        selected = subLangFirst,
+                        options = LanguagePrefs.CHOICES,
+                        onSelect = {
+                            subLangFirst = it
+                            LanguagePrefs.setSubtitleFirst(context, it)
+                            MsToast.show("Subtitles: $it first")
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    MsDropdown(
+                        selected = subLangSecond,
+                        options = LanguagePrefs.CHOICES + LanguagePrefs.NONE,
+                        onSelect = {
+                            subLangSecond = it
+                            LanguagePrefs.setSubtitleSecond(context, it)
+                            MsToast.show(if (it == LanguagePrefs.NONE) "No fallback subtitle" else "Fallback: $it")
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            SettingBlock(
+                title = "Audio language",
+                info = "Which audio track the player prefers when a file carries several. The second one is used when the first isn't in the file.",
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MsDropdown(
+                        selected = audioLangFirst,
+                        options = LanguagePrefs.CHOICES,
+                        onSelect = {
+                            audioLangFirst = it
+                            LanguagePrefs.setAudioFirst(context, it)
+                            MsToast.show("Audio: $it first")
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    MsDropdown(
+                        selected = audioLangSecond,
+                        options = LanguagePrefs.CHOICES + LanguagePrefs.NONE,
+                        onSelect = {
+                            audioLangSecond = it
+                            LanguagePrefs.setAudioSecond(context, it)
+                            MsToast.show(if (it == LanguagePrefs.NONE) "No fallback audio" else "Fallback: $it")
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
 

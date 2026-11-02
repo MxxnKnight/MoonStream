@@ -31,8 +31,13 @@ object LowStorageWindow {
     /** How many chunks ahead of the play position to fetch in the background. */
     const val PREFETCH_CHUNKS = 2
 
-    /** Give up (and surface an error) after this many empty backend replies. */
-    const val MAX_EMPTY_REPLIES = 3
+    /**
+     * Give up (and surface an error) after this many empty backend replies in
+     * a row. With the player's exponential backoff this spends roughly 20 s
+     * waiting — long enough for a Telegram flood-wait to pass, short enough
+     * that a dead file still shows an error.
+     */
+    const val MAX_EMPTY_REPLIES = 6
 
     /** Chunk index containing [position]. */
     fun chunkIndex(position: Long): Long =
