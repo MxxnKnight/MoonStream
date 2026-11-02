@@ -38,7 +38,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -135,6 +137,8 @@ fun DetailScreen(
 
     var fixMode by remember { mutableStateOf<FixMode?>(null) }
     var fixFile by remember { mutableStateOf<StreamFileEntity?>(null) }
+    // Manual episode assignment dialog (moon's pick 2026-11-02).
+    var setEpisodeFile by remember { mutableStateOf<StreamFileEntity?>(null) }
     var showAddStream by remember { mutableStateOf(false) }
     var showAddSubtitle by remember { mutableStateOf(false) }
     var attachSub by remember { mutableStateOf<SubtitleFileEntity?>(null) }
@@ -574,6 +578,7 @@ fun DetailScreen(
                         }
                     },
                     watchedAt = watchedAt,
+                    onSetEpisode = { setEpisodeFile = it },
                 )
             } else {
                 // Movies: flat file list + subtitles section.
@@ -598,6 +603,7 @@ fun DetailScreen(
                         onDelete = { deleteFile(f) },
                         onFixFile = { fixFile = f; fixMode = FixMode.FIX_FILE },
                         watchedAt = watchedAt[f.id],
+                        onSetEpisode = { setEpisodeFile = f },
                     )
                 }
                 SubtitleSection(
@@ -683,6 +689,98 @@ fun DetailScreen(
                 fixMode = null
                 fixFile = null
             },
+        )
+    }
+
+    // Manual episode assignment (moon's pick 2026-11-02): link a file in
+    // "Other files"/"Files" to a specific season + episode.
+    setEpisodeFile?.let { f ->
+        var seasonText by remember(f.id) {
+            mutableStateOf(f.season?.toString() ?: "1")
+        }
+        var episodeText by remember(f.id) {
+            mutableStateOf(f.episode?.toString() ?: "")
+        }
+        AlertDialog(
+            onDismissRequest = { setEpisodeFile = null },
+            title = {
+                Text(
+                    "Set episode",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MsColors.TextPrimary,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        f.fileName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextSecondary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MsTextField(
+                            value = seasonText,
+                            onValueChange = { seasonText = it.filter { c -> c.isDigit() } },
+                            label = "Season",
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number
+                            ),
+                        )
+                        MsTextField(
+                            value = episodeText,
+                            onValueChange = { episodeText = it.filter { c -> c.isDigit() } },
+                            label = "Episode",
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number
+                            ),
+                        )
+                    }
+                    Text(
+                        "The file moves into that episode's list.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextSecondary,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val season = seasonText.toIntOrNull()
+                        val episode = episodeText.toIntOrNull()
+                        if (episode == null) {
+                            MsToast.show("Enter an episode number")
+                            return@TextButton
+                        }
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                db.streamDao().updateSeasonEpisode(
+                                    f.id, season, episode
+                                )
+                                withContext(Dispatchers.Main) {
+                                    MsToast.show("Linked to S${season ?: 1} E$episode")
+                                    setEpisodeFile = null
+                                }
+                            } catch (e: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    MsToast.show("Failed: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text("Save", color = MsColors.Accent)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { setEpisodeFile = null }) {
+                    Text("Cancel", color = MsColors.TextSecondary)
+                }
+            },
+            containerColor = MsColors.Surface,
         )
     }
 

@@ -119,6 +119,8 @@ fun SeriesSeasons(
     onUnlinkSub: (SubtitleFileEntity) -> Unit,
     /** streamFileId -> last playedAt, for "watched X ago" (moon's design 2026-11-02). */
     watchedAt: Map<Long, Long> = emptyMap(),
+    /** Manual season/episode assignment (moon's pick 2026-11-02). */
+    onSetEpisode: ((StreamFileEntity) -> Unit)? = null,
 ) {
     val bySeason = files.groupBy { it.season ?: 0 }
     val seasons = bySeason.keys.sorted()
@@ -187,6 +189,7 @@ fun SeriesSeasons(
             onFixFile = onFixFile,
             onUnlinkSub = onUnlinkSub,
             watchedAt = watchedAt,
+            onSetEpisode = onSetEpisode,
         )
     }
 }
@@ -204,6 +207,7 @@ private fun EpisodeCard(
     onFixFile: (StreamFileEntity) -> Unit,
     onUnlinkSub: (SubtitleFileEntity) -> Unit,
     watchedAt: Map<Long, Long> = emptyMap(),
+    onSetEpisode: ((StreamFileEntity) -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val qualities = files.map { it.quality }.distinct().take(3)
@@ -275,6 +279,7 @@ private fun EpisodeCard(
                             onDelete = { onDelete(f) },
                             onFixFile = { onFixFile(f) },
                             watchedAt = watchedAt[f.id],
+                            onSetEpisode = onSetEpisode?.let { fn -> { fn(f) } },
                         )
                     }
                     if (subtitles.isNotEmpty()) {
@@ -300,6 +305,8 @@ fun FileRow(
     onFixFile: () -> Unit,
     /** Last playedAt for this file, or null if never watched. */
     watchedAt: Long? = null,
+    /** Manual season/episode assignment (moon's pick 2026-11-02). Null = hide. */
+    onSetEpisode: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     Box(
@@ -356,6 +363,22 @@ fun FileRow(
                 onClick = onFixFile,
                 fontSize = 12,
             )
+            // Manual episode assignment (moon's pick 2026-11-02).
+            if (onSetEpisode != null) {
+                LimeTextButton(
+                    text = "set episode",
+                    onClick = onSetEpisode,
+                    fontSize = 12,
+                )
+            }
+            // Manual episode assignment (moon's pick 2026-11-02).
+            if (onSetEpisode != null) {
+                LimeTextButton(
+                    text = "set episode",
+                    onClick = onSetEpisode,
+                    fontSize = 12,
+                )
+            }
         }
     }
 }
@@ -370,6 +393,8 @@ fun StreamRow(
     onFixFile: () -> Unit,
     /** Last playedAt for this file, or null if never watched. */
     watchedAt: Long? = null,
+    /** Manual season/episode assignment (moon's pick 2026-11-02). Null = hide. */
+    onSetEpisode: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     MsCard(modifier = Modifier.fillMaxWidth()) {
