@@ -20,6 +20,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -40,7 +41,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -538,6 +541,10 @@ fun PlayerScreen(
 
     // Controls visibility state.
     var controlsVisible by remember { mutableStateOf(true) }
+    // Lock state (mpvex-style, moon's pick 2026-11-02): when locked, all
+    // controls hide and only the slide-to-unlock pill appears on tap.
+    var controlsLocked by remember { mutableStateOf(false) }
+    var showUnlockPill by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
@@ -587,9 +594,29 @@ fun PlayerScreen(
 
     // Auto-hide controls after 3s.
     LaunchedEffect(controlsVisible, isPlaying) {
-        if (controlsVisible && isPlaying) {
+        if (controlsVisible && isPlaying && !controlsLocked) {
             delay(3000)
             controlsVisible = false
+        }
+    }
+
+    // Unlock pill auto-hides after 2s (mpvex-style).
+    LaunchedEffect(showUnlockPill) {
+        if (showUnlockPill) {
+            delay(2000)
+            showUnlockPill = false
+        }
+    }
+
+    // Saved resume position for the Resume button (moon's pick 2026-11-02).
+    var savedResumePos by remember { mutableStateOf(0L) }
+    LaunchedEffect(mediaId, streamFileId) {
+        savedResumePos = withContext(Dispatchers.IO) {
+            try {
+                if (streamFileId != 0L) {
+                    db.watchProgressDao().get(mediaId, streamFileId)?.positionMs ?: 0L
+                } else 0L
+            } catch (e: Exception) { 0L }
         }
     }
 
@@ -603,26 +630,36 @@ fun PlayerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(Unit) {
+            .pointerInput(controlsLocked) {
                 detectTapGestures(
-                    onTap = { controlsVisible = !controlsVisible },
+                    onTap = {
+                        if (controlsLocked) {
+                            // Locked: tap reveals the slide-to-unlock pill.
+                            showUnlockPill = true
+                        } else {
+                            controlsVisible = !controlsVisible
+                        }
+                    },
                     onDoubleTap = { offset ->
                         // Double-tap left/right: ∓10s (TMPlayer pattern).
-                        val forward = offset.x > size.width / 2
-                        val newPos = (player.currentPosition + if (forward) 10_000 else -10_000)
-                            .coerceIn(0L, player.duration.coerceAtLeast(0L))
-                        player.seekTo(newPos)
+                        // Disabled while locked.
+                        if (!controlsLocked) {
+                            val forward = offset.x > size.width / 2
+                            val newPos = (player.currentPosition + if (forward) 10_000 else -10_000)
+                                .coerceIn(0L, player.duration.coerceAtLeast(0L))
+                            player.seekTo(newPos)
+                        }
                     },
                 )
             }
-            .pointerInput(sheet) {
+            .pointerInput(sheet, controlsLocked) {
                 // Vertical swipes: left half = brightness, right half = volume
-                // (video-player style). Skipped while a sheet is open.
+                // (video-player style). Skipped while a sheet is open or locked.
                 detectVerticalDragGestures(
                     onDragEnd = { /* HUD hides on its own timer */ },
                     onDragCancel = { },
                 ) { change, dragAmount ->
-                    if (sheet == null) {
+                    if (sheet == null && !controlsLocked) {
                         change.consume()
                         // Up = increase; a full-height swipe ≈ the full range.
                         val delta = -dragAmount / 800f
@@ -664,7 +701,7 @@ fun PlayerScreen(
 
         // Top bar (mpvex-style): back + title pill on the left,
         // quick-action cluster on the right.
-        if (controlsVisible) {
+        if (controlsVisible && !controlsLocked) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -727,12 +764,21 @@ fun PlayerScreen(
                         contentDescription = "Screenshot",
                         onClick = { takeScreenshot() },
                     )
+                    PlayerIconButton(
+                        icon = Icons.Filled.Lock,
+                        contentDescription = "Lock controls",
+                        onClick = {
+                            controlsLocked = true
+                            controlsVisible = false
+                            showUnlockPill = true
+                        },
+                    )
                 }
             }
         }
 
         // Center transport: -10s / play-pause / +10s (mpvex-style: 64dp play).
-        if (controlsVisible) {
+        if (controlsVisible && !controlsLocked) {
             Row(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalArrangement = Arrangement.spacedBy(28.dp),
@@ -780,7 +826,7 @@ fun PlayerScreen(
 
         // Bottom cluster (mpvex-style): corner button clusters above the
         // seekbar, seekbar pinned to the bottom edge with monospace timers.
-        if (controlsVisible) {
+        if (controlsVisible && !controlsLocked) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -812,6 +858,26 @@ fun PlayerScreen(
                     }
                     Spacer(Modifier.weight(1f))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // Next episode (moon's pick 2026-11-02).
+                        val nextFile = nextGroup?.files?.firstOrNull()
+                        if (nextFile != null) {
+                            PlayerIconButton(
+                                icon = Icons.Filled.SkipNext,
+                                contentDescription = "Next episode",
+                                onClick = { switchEpisode(nextFile) },
+                            )
+                        }
+                        // Resume from saved position (moon's pick 2026-11-02):
+                        // shown when there's a saved spot and we're far from it.
+                        if (savedResumePos > 10_000L &&
+                            kotlin.math.abs(currentPosition - savedResumePos) > 10_000L
+                        ) {
+                            PlayerIconButton(
+                                icon = Icons.Filled.History,
+                                contentDescription = "Resume from saved position",
+                                onClick = { player.seekTo(savedResumePos) },
+                            )
+                        }
                         // Aspect button shows the current mode as its label
                         // (mpvex-style stateful button).
                         Surface(
@@ -948,8 +1014,27 @@ fun PlayerScreen(
             }
         }
 
+        // Slide-to-unlock pill (mpvex-style): shown on tap while locked,
+        // auto-hides after 2s via the LaunchedEffect above.
+        if (controlsLocked && showUnlockPill) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                UnlockSlider(
+                    onUnlock = {
+                        controlsLocked = false
+                        showUnlockPill = false
+                        controlsVisible = true
+                    },
+                    modifier = Modifier.padding(bottom = 64.dp),
+                )
+            }
+        }
+
         // Next-up card (TMPlayer pattern): last 30s of an episode.
-        if (showNextUp && nextUpFile != null && nextGroup != null) {
+        // Hidden while controls are locked.
+        if (showNextUp && nextUpFile != null && nextGroup != null && !controlsLocked) {
             Card(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -1391,7 +1476,13 @@ fun PlayerScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
-                CircularProgressIndicator(color = MsColors.Accent)
+                // Material3 loader, mpvex-style 96dp (replaces the small default).
+                CircularProgressIndicator(
+                    modifier = Modifier.size(96.dp),
+                    color = MsColors.Accent,
+                    trackColor = Color.White.copy(alpha = 0.18f),
+                    strokeWidth = 6.dp,
+                )
             }
         }
 
@@ -1499,6 +1590,85 @@ private fun PlayerIconButton(
                 contentDescription = contentDescription,
                 tint = if (active) MsColors.Accent else Color.White,
                 modifier = Modifier.size(iconSize),
+            )
+        }
+    }
+}
+
+/**
+ * Slide-to-unlock pill (mpvex-style): drag the thumb right to unlock.
+ * Shown when controls are locked and the user taps the screen.
+ */
+@Composable
+private fun UnlockSlider(
+    onUnlock: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var offsetX by remember { mutableStateOf(0f) }
+    var widthPx by remember { mutableStateOf(0f) }
+    val density = LocalDensity.current
+    val thumbSize = 48.dp
+    val thumbPx = with(density) { thumbSize.toPx() }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth(0.72f)
+            .height(56.dp)
+            .onSizeChanged { widthPx = it.width.toFloat() }
+            .background(Color.Black.copy(alpha = 0.62f), RoundedCornerShape(28.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(28.dp))
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        val maxSlide = (widthPx - thumbPx - 8.dp.toPx(density)).coerceAtLeast(0f)
+                        if (maxSlide > 0 && offsetX >= maxSlide * 0.75f) onUnlock()
+                        offsetX = 0f
+                    },
+                    onDragCancel = { offsetX = 0f },
+                ) { change, dragAmount ->
+                    val maxSlide = (widthPx - thumbPx - 8.dp.toPx(density)).coerceAtLeast(0f)
+                    offsetX = (offsetX + dragAmount).coerceIn(0f, maxSlide)
+                    change.consume()
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        // Background hint: lock icon + text.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 52.dp),
+        ) {
+            Icon(
+                Icons.Filled.Lock,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.65f),
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Slide to unlock",
+                color = Color.White.copy(alpha = 0.65f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        // Draggable thumb.
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset { IntOffset(offsetX.roundToInt(), 0) }
+                .padding(4.dp)
+                .size(thumbSize)
+                .background(MsColors.Accent, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = "Slide",
+                tint = Color.Black,
+                modifier = Modifier.size(26.dp),
             )
         }
     }
