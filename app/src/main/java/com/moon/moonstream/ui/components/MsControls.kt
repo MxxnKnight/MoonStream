@@ -1,5 +1,6 @@
 package com.moon.moonstream.ui.components
 
+import com.moon.moonstream.index.tools.LibraryToolsRunner
 import com.moon.moonstream.ui.components.MsToast
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
@@ -962,6 +963,83 @@ fun ScanActionButton(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+    }
+}
+
+/**
+ * Button for Library Tools that run in [LibraryToolsRunner]'s background
+ * scope. Survives screen changes — the button observes the runner's state
+ * and shows live progress (moon's fix 2026-11-02).
+ */
+@Composable
+fun BackgroundToolButton(
+    toolId: String,
+    idleText: String,
+    onStart: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val running = LibraryToolsRunner.isToolRunning(toolId)
+    val anyRunning = LibraryToolsRunner.isRunning
+    val progress = LibraryToolsRunner.progressText
+
+    // Animated ellipsis dots while running.
+    var dots by remember { mutableIntStateOf(0) }
+    LaunchedEffect(running) {
+        if (running) {
+            while (true) {
+                kotlinx.coroutines.delay(400)
+                dots = (dots + 1) % 4
+            }
+        } else {
+            dots = 0
+        }
+    }
+
+    val label = when {
+        running && progress != null -> progress!! + ".".repeat(dots)
+        running -> "Working" + ".".repeat(dots)
+        else -> idleText
+    }
+
+    Box(
+        modifier = modifier
+            .heightIn(min = 40.dp)
+            .clip(CircleShape)
+            .border(1.dp, MsColors.TextSecondary.copy(alpha = 0.55f), CircleShape)
+            .clickable(enabled = !anyRunning) { onStart() }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (running) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    color = MsColors.Accent,
+                    strokeWidth = 2.dp,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = MsColors.Accent,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
+        } else {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = MsColors.Accent,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

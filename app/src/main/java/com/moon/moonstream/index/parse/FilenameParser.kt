@@ -86,9 +86,10 @@ object FilenameParser {
      *  Must not match words ending in E like "TRUE". */
     private val standaloneEpRe = Regex("""(?i)(?<![a-z0-9])(?:e|ep)\s*(\d{1,4})(?![a-z0-9])""")
 
-    /** Multi-episode range: "E7-8", "Ep 1-10", "E01-E05", "S01E01-E02".
+    /** Multi-episode range: "E7-8", "Ep 1-10", "E01-E05", "S01E01-E02",
+     *  "EP (01-06)" (moon's #Love file 2026-11-02 — parens around the range).
      *  Group 1 = start, group 2 = end. */
-    private val multiEpRe = Regex("""(?i)(?<![a-z0-9])(?:e|ep)\s*(\d{1,4})\s*[-–—]\s*(?:e|ep)?\s*(\d{1,4})(?![a-z0-9])""")
+    private val multiEpRe = Regex("""(?i)(?<![a-z0-9])(?:e|ep)\s*\(?\s*(\d{1,4})\s*[-–—]\s*(?:e|ep)?\s*(\d{1,4})\s*\)?(?![a-z0-9])""")
 
     /** [12 - Episode Title] bracketed anime episode. */
     private val bracketEpRe = Regex("""^\[\s*(\d{1,4})\s*[-–—]\s*([^\]]+)\]""")
