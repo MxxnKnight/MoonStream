@@ -647,23 +647,20 @@ fun PlayerScreen(
                             streamFileId, finalPos, System.currentTimeMillis(),
                         )
                     } catch (e: Exception) { /* never break close */ }
-                    // Auto-delete the downloaded file after watching
-                    // (moon's pick 2026-11-02): watched-to-the-end ⇒ the
-                    // local bytes are removed so storage doesn't grow.
-                    if (finished) {
-                        try {
-                            val f = files.find { it.id == streamFileId }
-                            if (f != null) {
-                                val deleted = BackendProvider.backend
-                                    .deleteCachedFile(f.channelId, f.messageId)
-                                AppLog.i(
-                                    "PLAYER",
-                                    "finished — Telegram copy of '${f.fileName}' " +
-                                        if (deleted) "deleted" else "NOT deleted (backend said no)",
-                                )
-                            }
-                        } catch (e: Exception) { /* never break close */ }
-                    } else {
+                    // Auto-delete the downloaded bytes on every close
+                    // (moon's call 2026-11-02: no 90% rule — always clear).
+                    try {
+                        val f = files.find { it.id == streamFileId }
+                        if (f != null) {
+                            val deleted = BackendProvider.backend
+                                .deleteCachedFile(f.channelId, f.messageId)
+                            AppLog.i(
+                                "PLAYER",
+                                "closed — Telegram copy of '${f.fileName}' " +
+                                    if (deleted) "deleted" else "NOT deleted (backend said no)",
+                            )
+                        }
+                    } catch (e: Exception) { /* never break close */ } else {
                         AppLog.i(
                             "PLAYER",
                             "not finished — Telegram's copy left for resume, goes at Clear Cache",
