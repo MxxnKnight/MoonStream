@@ -180,6 +180,29 @@ class TdlibMoonStreamBackend(
         }
     }
 
+    /**
+     * Drop TDLib's own downloaded copy of a message's file.
+     *
+     * The in-app player keeps its own 8 MB chunk window and deletes chunks as
+     * they are watched, so without this TDLib's dir grows to the whole video
+     * even though nothing in the app needs those bytes any more. Called by
+     * TdByteWindow under its download mutex, and only after the chunks it
+     * holds are complete — a later read simply re-downloads its range.
+     *
+     * Returning true on a cache miss is deliberate: no fileId means this
+     * process never fetched the file, so there is nothing to clean.
+     */
+    override suspend fun deleteCachedFile(channelId: Long, messageId: Long): Boolean {
+        return try {
+            val fileId = messageFileIdCache[channelId to messageId]
+                ?: return true // never downloaded → nothing to clean
+            val res = telegramManager.send(TdApi.DeleteFile(fileId))
+            res.isSuccess
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     override suspend fun getMe(): MsProfile {
         return try {
             val result = telegramManager.send(TdApi.GetMe())
