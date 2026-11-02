@@ -17,6 +17,7 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -41,8 +42,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -658,7 +662,8 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
-        // Top bar: close + title.
+        // Top bar (mpvex-style): back + title pill on the left,
+        // quick-action cluster on the right.
         if (controlsVisible) {
             Row(
                 modifier = Modifier
@@ -668,59 +673,113 @@ fun PlayerScreen(
                             listOf(Color.Black.copy(alpha = 0.65f), Color.Transparent)
                         )
                     )
-                    .padding(8.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onClose) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
+                PlayerIconButton(
+                    icon = Icons.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    onClick = onClose,
+                )
+                Spacer(Modifier.width(12.dp))
+                // Title pill: tappable → playlist/episodes sheet when available.
+                Surface(
+                    onClick = {
+                        if (showEpisodesBtn) sheet = PlayerSheet.EPISODES
+                        else if (showPlaylistBtn) sheet = PlayerSheet.PLAYLIST
+                    },
+                    shape = RoundedCornerShape(50),
+                    color = Color.Black.copy(alpha = 0.45f),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                ) {
+                    Text(
+                        text = title,
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontFamily = FontFamily.Monospace
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .widthIn(max = 320.dp)
+                            .padding(horizontal = 16.dp, vertical = 9.dp),
+                    )
                 }
-                Text(
-                    text = title,
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
+                Spacer(Modifier.weight(1f))
+                // Top-right cluster.
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (showEpisodesBtn) {
+                        PlayerIconButton(
+                            icon = Icons.Filled.PlaylistPlay,
+                            contentDescription = "Episodes",
+                            onClick = { sheet = PlayerSheet.EPISODES },
+                        )
+                    }
+                    if (showPlaylistBtn) {
+                        PlayerIconButton(
+                            icon = Icons.Filled.List,
+                            contentDescription = "Playlist",
+                            onClick = { sheet = PlayerSheet.PLAYLIST },
+                        )
+                    }
+                    PlayerIconButton(
+                        icon = Icons.Filled.PhotoCamera,
+                        contentDescription = "Screenshot",
+                        onClick = { takeScreenshot() },
+                    )
+                }
+            }
+        }
+
+        // Center transport: -10s / play-pause / +10s (mpvex-style: 64dp play).
+        if (controlsVisible) {
+            Row(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalArrangement = Arrangement.spacedBy(28.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PlayerIconButton(
+                    icon = Icons.Filled.Replay10,
+                    contentDescription = "Back 10s",
+                    onClick = {
+                        player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0L))
+                    },
+                    size = 52.dp,
+                    iconSize = 24.dp,
+                )
+                // Big play/pause: 64dp circle, no border (mpvex-style).
+                Surface(
+                    onClick = { if (isPlaying) player.pause() else player.play() },
+                    shape = CircleShape,
+                    color = Color.White.copy(alpha = 0.14f),
+                    modifier = Modifier.size(76.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            if (isPlaying) "Pause" else "Play",
+                            tint = Color.White,
+                            modifier = Modifier.size(38.dp),
+                        )
+                    }
+                }
+                PlayerIconButton(
+                    icon = Icons.Filled.Forward10,
+                    contentDescription = "Forward 10s",
+                    onClick = {
+                        player.seekTo(
+                            (player.currentPosition + 10_000)
+                                .coerceAtMost(duration.coerceAtLeast(0L))
+                        )
+                    },
+                    size = 52.dp,
+                    iconSize = 24.dp,
                 )
             }
         }
 
-        // Center transport: -10s / play-pause / +10s.
-        if (controlsVisible) {
-            Row(
-                modifier = Modifier.align(Alignment.Center),
-                horizontalArrangement = Arrangement.spacedBy(32.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = {
-                    player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0L))
-                }) {
-                    Icon(
-                        Icons.Filled.Replay10, "Back 10s",
-                        tint = Color.White, modifier = Modifier.size(48.dp),
-                    )
-                }
-                IconButton(onClick = { if (isPlaying) player.pause() else player.play() }) {
-                    Icon(
-                        if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        if (isPlaying) "Pause" else "Play",
-                        tint = Color.White, modifier = Modifier.size(72.dp),
-                    )
-                }
-                IconButton(onClick = {
-                    player.seekTo(
-                        (player.currentPosition + 10_000)
-                            .coerceAtMost(duration.coerceAtLeast(0L))
-                    )
-                }) {
-                    Icon(
-                        Icons.Filled.Forward10, "Forward 10s",
-                        tint = Color.White, modifier = Modifier.size(48.dp),
-                    )
-                }
-            }
-        }
-
-        // Bottom cluster: seek bar + times + action buttons.
+        // Bottom cluster (mpvex-style): corner button clusters above the
+        // seekbar, seekbar pinned to the bottom edge with monospace timers.
         if (controlsVisible) {
             Column(
                 modifier = Modifier
@@ -731,93 +790,124 @@ fun PlayerScreen(
                             listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
                         )
                     )
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 8.dp, bottom = 12.dp),
             ) {
+                // Button row: left cluster (Subs, Audio) / right cluster (Aspect).
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        PlayerIconButton(
+                            icon = Icons.Filled.ClosedCaption,
+                            contentDescription = "Subtitles",
+                            onClick = { openTrackSheet(PlayerSheet.SUBS) },
+                        )
+                        PlayerIconButton(
+                            icon = Icons.Filled.Audiotrack,
+                            contentDescription = "Audio",
+                            onClick = { openTrackSheet(PlayerSheet.AUDIO) },
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // Aspect button shows the current mode as its label
+                        // (mpvex-style stateful button).
+                        Surface(
+                            onClick = { cycleResize() },
+                            shape = RoundedCornerShape(50),
+                            color = Color.White.copy(alpha = 0.12f),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                            modifier = Modifier.height(45.dp),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 14.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.AspectRatio,
+                                    contentDescription = "Aspect ratio",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    resizeModes[resizeIndex].second,
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontFamily = FontFamily.Monospace
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                // Seekbar row: timer — bar — timer (monospace, mpvex-style).
                 if (duration > 0L) {
-                    Slider(
-                        value = currentPosition.toFloat(),
-                        onValueChange = { player.seekTo(it.toLong()) },
-                        valueRange = 0f..duration.toFloat(),
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = SliderDefaults.colors(
-                            thumbColor = MsColors.Accent,
-                            activeTrackColor = MsColors.Accent,
-                        ),
-                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             formatTime(currentPosition),
-                            color = Color.White.copy(alpha = 0.8f),
-                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.9f),
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace
+                            ),
+                            modifier = Modifier.width(64.dp),
                         )
+                        // Wide touch target: extra vertical padding around the slider.
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(vertical = 2.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Slider(
+                                value = currentPosition.toFloat(),
+                                onValueChange = { player.seekTo(it.toLong()) },
+                                valueRange = 0f..duration.toFloat(),
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = MsColors.Accent,
+                                    activeTrackColor = MsColors.Accent,
+                                ),
+                            )
+                        }
                         Text(
                             formatTime(duration),
-                            color = Color.White.copy(alpha = 0.8f),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PlayerActionButton(
-                        icon = Icons.Filled.ClosedCaption,
-                        label = "Subs",
-                        onClick = { openTrackSheet(PlayerSheet.SUBS) },
-                    )
-                    PlayerActionButton(
-                        icon = Icons.Filled.Audiotrack,
-                        label = "Audio",
-                        onClick = { openTrackSheet(PlayerSheet.AUDIO) },
-                    )
-                    PlayerActionButton(
-                        icon = Icons.Filled.AspectRatio,
-                        label = resizeModes[resizeIndex].second,
-                        onClick = { cycleResize() },
-                    )
-                    PlayerActionButton(
-                        icon = Icons.Filled.PhotoCamera,
-                        label = "Shot",
-                        onClick = { takeScreenshot() },
-                    )
-                    if (showPlaylistBtn) {
-                        PlayerActionButton(
-                            icon = Icons.Filled.List,
-                            label = "Playlist",
-                            onClick = { sheet = PlayerSheet.PLAYLIST },
-                        )
-                    }
-                    if (showEpisodesBtn) {
-                        PlayerActionButton(
-                            icon = Icons.Filled.PlaylistPlay,
-                            label = "Episodes",
-                            onClick = { sheet = PlayerSheet.EPISODES },
+                            color = Color.White.copy(alpha = 0.9f),
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace
+                            ),
+                            modifier = Modifier.width(64.dp),
+                            textAlign = TextAlign.End,
                         )
                     }
                 }
             }
         }
 
-        // Brightness/volume gesture HUD.
+        // Brightness/volume gesture HUD (mpvex-style): slim vertical slider
+        // at the screen edge — left edge for brightness, right for volume.
         gestureHud?.let { hud ->
+            val edge = if (hud is GestureHud.Brightness) Alignment.CenterStart
+            else Alignment.CenterEnd
             Box(
                 modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
+                contentAlignment = edge,
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier
+                        .padding(horizontal = 20.dp)
                         .background(
-                            Color.Black.copy(alpha = 0.65f),
-                            RoundedCornerShape(14.dp),
+                            Color.Black.copy(alpha = 0.55f),
+                            RoundedCornerShape(18.dp),
                         )
-                        .padding(horizontal = 28.dp, vertical = 18.dp),
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
                 ) {
                     Icon(
                         when (hud) {
@@ -826,18 +916,33 @@ fun PlayerScreen(
                         },
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(22.dp),
                     )
-                    LinearProgressIndicator(
-                        progress = hud.fraction,
-                        modifier = Modifier.width(120.dp),
-                        color = MsColors.Accent,
-                        trackColor = Color.White.copy(alpha = 0.25f),
-                    )
+                    Spacer(Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .width(6.dp)
+                            .height(120.dp)
+                            .background(
+                                Color.White.copy(alpha = 0.25f),
+                                RoundedCornerShape(3.dp),
+                            ),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight(hud.fraction.coerceIn(0f, 1f))
+                                .align(Alignment.BottomCenter)
+                                .background(MsColors.Accent, RoundedCornerShape(3.dp)),
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         "${(hud.fraction * 100).toInt()}%",
                         color = Color.White,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontFamily = FontFamily.Monospace
+                        ),
                     )
                 }
             }
@@ -907,29 +1012,17 @@ fun PlayerScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(max = 520.dp)
                         .offset { IntOffset(0, sheetOffsetY.roundToInt()) }
                         .background(
                             MsColors.Surface,
                             RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
                         )
-                        .pointerInput(mode) {
-                            detectVerticalDragGestures(
-                                onDragEnd = {
-                                    // Pulled far enough → close, else snap back.
-                                    if (sheetOffsetY > 140) sheet = null
-                                    else sheetOffsetY = 0f
-                                },
-                                onDragCancel = { sheetOffsetY = 0f },
-                            ) { change, dragAmount ->
-                                // Only drag the sheet (not scroll the list) when
-                                // pulling down with the list already at the top.
-                                if (dragAmount > 0 && sheetScroll.value == 0) {
-                                    sheetOffsetY =
-                                        (sheetOffsetY + dragAmount).coerceAtLeast(0f)
-                                    change.consume()
-                                }
-                            }
-                        }
+                        // NOTE: drag-to-close lives ONLY on the drag handle
+                        // below (generous touch target). A sheet-wide drag
+                        // detector was here before and fought the vertical
+                        // scroll for the same gestures — scrolling felt stuck
+                        // and the handle needed pixel-perfect touches.
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() },
@@ -937,17 +1030,38 @@ fun PlayerScreen(
                         .padding(16.dp)
                         .verticalScroll(sheetScroll),
                 ) {
-                    // Drag handle.
+                    // Drag handle: full-width, 32dp-tall touch target with the
+                    // visual bar centered — easy to grab, no precise aiming.
+                    // The drag-to-close gesture lives here only.
                     Box(
                         modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .padding(bottom = 8.dp)
-                            .size(width = 40.dp, height = 4.dp)
-                            .background(
-                                Color.White.copy(alpha = 0.3f),
-                                RoundedCornerShape(2.dp),
-                            ),
-                    )
+                            .fillMaxWidth()
+                            .height(32.dp)
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures(
+                                    onDragEnd = {
+                                        // Pulled far enough → close, else snap back.
+                                        if (sheetOffsetY > 140) sheet = null
+                                        else sheetOffsetY = 0f
+                                    },
+                                    onDragCancel = { sheetOffsetY = 0f },
+                                ) { change, dragAmount ->
+                                    sheetOffsetY =
+                                        (sheetOffsetY + dragAmount).coerceAtLeast(0f)
+                                    change.consume()
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 40.dp, height = 4.dp)
+                                .background(
+                                    Color.White.copy(alpha = 0.3f),
+                                    RoundedCornerShape(2.dp),
+                                ),
+                        )
+                    }
                     Text(
                         when (mode) {
                             PlayerSheet.SUBS -> "Subtitles"
@@ -1029,7 +1143,8 @@ fun PlayerScreen(
                                     modifier = Modifier.padding(vertical = 4.dp),
                                 )
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
@@ -1055,7 +1170,8 @@ fun PlayerScreen(
                                     }
                                 }
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
@@ -1076,7 +1192,8 @@ fun PlayerScreen(
                                     }
                                 }
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
@@ -1102,7 +1219,8 @@ fun PlayerScreen(
                                     }
                                 }
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
@@ -1357,24 +1475,34 @@ private fun buildMediaItem(video: Uri, subs: List<Pair<Uri, String>>): MediaItem
 
 /** Small labeled button for the player's bottom action row. */
 @Composable
-private fun PlayerActionButton(icon: ImageVector, label: String, onClick: () -> Unit) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+/**
+ * mpvex-style player button: 45dp circle, subtle white background +
+ * 1dp border, 20dp glyph. No heavy backgrounds, no labels.
+ */
+@Composable
+private fun PlayerIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    size: Dp = 45.dp,
+    iconSize: Dp = 20.dp,
+    active: Boolean = false,
+) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = Color.White.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+        modifier = Modifier.size(size),
     ) {
-        Icon(
-            icon, contentDescription = label,
-            tint = Color.White, modifier = Modifier.size(28.dp),
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            label,
-            color = Color.White.copy(alpha = 0.85f),
-            style = MaterialTheme.typography.labelSmall,
-        )
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = contentDescription,
+                tint = if (active) MsColors.Accent else Color.White,
+                modifier = Modifier.size(iconSize),
+            )
+        }
     }
 }
 

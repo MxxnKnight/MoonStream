@@ -722,7 +722,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         SettingsGroup("Streaming & Storage") {
             SettingRow(
                 title = "Cache MB",
-                info = "How much phone storage the app may use for its cache (update downloads, thumbnails). The video server streams straight from Telegram and doesn't store video.",
+                info = "How much phone storage the app may use for its own cache (update downloads, thumbnails). Video you play in the app is downloaded by Telegram and stored separately — see Stream cache below.",
             ) {
                 MsTextField(
                     value = cacheMb,
@@ -1508,6 +1508,7 @@ private fun CacheStorageBlock() {
     val scope = rememberCoroutineScope()
     val used = AppUiState.cacheUsedMb
     val max = AppUiState.cacheMaxMb.coerceAtLeast(1)
+    val streamMb = AppUiState.streamCacheMb
     val bar = remember { Animatable(used.toFloat() / max) }
 
     // Measure the real cache dir size when this block appears.
@@ -1534,7 +1535,7 @@ private fun CacheStorageBlock() {
             )
             Spacer(Modifier.width(10.dp))
             InfoDot(onClick = {
-                MsToast.show("Temporary files the app keeps on your phone (update downloads). Clearing never touches your library or channels. Video streams straight from Telegram and isn't stored.")
+                MsToast.show("Temporary files the app keeps on your phone (update downloads). Clearing never touches your library or channels. Video you play is downloaded by Telegram too — see Stream cache below.")
             })
         }
         Row(
@@ -1570,6 +1571,32 @@ private fun CacheStorageBlock() {
                 .clip(RoundedCornerShape(4.dp)),
             color = MsColors.Accent,
             trackColor = MsColors.TrackOff,
+        )
+        // Stream cache (moon's request 2026-11-02): bytes Telegram
+        // downloaded while playing video inside the app. Measured read-only;
+        // only Telegram itself can safely delete these, so there is no Clear
+        // button here yet — that needs the small Telegram-module update.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Stream cache",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MsColors.TextSecondary,
+            )
+            Text(
+                text = "$streamMb MB",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MsColors.TextPrimary,
+            )
+        }
+        Text(
+            text = "Video you play in the app is downloaded by Telegram and kept on your phone. A Clear button for this is coming with the Telegram-module update.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MsColors.TextSecondary,
         )
     }
 }

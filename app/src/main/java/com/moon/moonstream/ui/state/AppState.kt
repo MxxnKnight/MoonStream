@@ -101,6 +101,8 @@ object AppUiState {
     // the server streams video straight from Telegram, it doesn't cache it).
     var cacheUsedMb by mutableStateOf(0)
     var cacheMaxMb by mutableStateOf(2048)
+    /** MB under filesDir/tdlib_files — bytes Telegram downloaded while playing video. Read-only. */
+    var streamCacheMb by mutableStateOf(0)
 
     // Logs (fake lines; TODO Phase 4: real ring buffer from the server)
     val logLines = mutableStateListOf<LogLine>()
@@ -187,7 +189,11 @@ object AppUiState {
     fun refreshCacheUsed(context: Context) {
         CoroutineScope(Dispatchers.IO).launch {
             val mb = (CacheManager.usedBytes(context) / (1024 * 1024)).toInt()
-            withContext(Dispatchers.Main) { cacheUsedMb = mb }
+            val streamMb = (CacheManager.streamCacheBytes(context) / (1024 * 1024)).toInt()
+            withContext(Dispatchers.Main) {
+                cacheUsedMb = mb
+                streamCacheMb = streamMb
+            }
         }
     }
 
