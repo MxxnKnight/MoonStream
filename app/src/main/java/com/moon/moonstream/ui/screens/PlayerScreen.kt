@@ -152,9 +152,12 @@ fun PlayerScreen(
     val ioScope = rememberCoroutineScope()
 
     // moon's rule: video plays in landscape + true fullscreen (like video players).
-    DisposableEffect(Unit) {
-        val prevOrientation =
-            activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    // Orientation: landscape while playing. Keyed on streamFileId so it
+    // re-applies when switching episodes (moon's bug 2026-11-02: Next
+    // episode opened in portrait). On dispose, always restore portrait —
+    // not the captured value, which could be landscape from a previous
+    // player instance (moon's bug: closing left the app in landscape).
+    DisposableEffect(streamFileId) {
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         val window = activity?.window
         val insets = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
@@ -162,7 +165,7 @@ fun PlayerScreen(
         insets?.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         onDispose {
-            activity?.requestedOrientation = prevOrientation
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insets?.show(WindowInsetsCompat.Type.systemBars())
             // Restore system brightness (gestures override it while playing).
             try {
@@ -953,12 +956,14 @@ fun PlayerScreen(
             }
         }
 
-        // Center transport: -10s / play-pause / +10s (mpvex-style: 64dp play).
+        // Center transport: -10s / play-pause / +10s spread across the width
+        // (moon's request 2026-11-02: -10s left edge, +10s right edge).
         if (controlsVisible && !controlsLocked) {
-            Row(
-                modifier = Modifier.align(Alignment.Center),
-                horizontalArrangement = Arrangement.spacedBy(64.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp),
             ) {
                 PlayerIconButton(
                     icon = Icons.Filled.Replay10,
@@ -968,13 +973,16 @@ fun PlayerScreen(
                     },
                     size = 52.dp,
                     iconSize = 24.dp,
+                    modifier = Modifier.align(Alignment.CenterStart),
                 )
-                // Big play/pause: 64dp circle, no border (mpvex-style).
+                // Big play/pause: 76dp circle, no border (mpvex-style).
                 Surface(
                     onClick = { if (isPlaying) player.pause() else player.play() },
                     shape = CircleShape,
                     color = Color.White.copy(alpha = 0.14f),
-                    modifier = Modifier.size(76.dp),
+                    modifier = Modifier
+                        .size(76.dp)
+                        .align(Alignment.Center),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -996,6 +1004,7 @@ fun PlayerScreen(
                     },
                     size = 52.dp,
                     iconSize = 24.dp,
+                    modifier = Modifier.align(Alignment.CenterEnd),
                 )
             }
         }
@@ -1914,13 +1923,14 @@ private fun PlayerIconButton(
     size: Dp = 45.dp,
     iconSize: Dp = 20.dp,
     active: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = onClick,
         shape = CircleShape,
         color = Color.White.copy(alpha = 0.12f),
+        modifier = modifier.size(size),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-        modifier = Modifier.size(size),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
