@@ -329,8 +329,14 @@ fun DetailScreen(
     fun applyFixTitle(picked: MetaPick) {
         scope.launch(Dispatchers.IO) {
             val key = ScanPrefs.getTmdbKey(context)
-            val full = MetadataMatcher.match(picked.title, picked.year, m.type, isAnime, key)
-                ?.let { MetadataMatcher.enrichFromCinemeta(it, m.type) }
+            // Use the PICKED type (the tab the result came from), not the
+            // entry's old type — fixing a wrongly-typed entry (e.g. a series
+            // indexed as a movie) must re-match as the correct type,
+            // otherwise the matcher finds the old wrong title again and the
+            // update appears to do nothing (moon's #Love case 2026-11-02).
+            val targetType = picked.type ?: m.type
+            val full = MetadataMatcher.match(picked.title, picked.year, targetType, isAnime, key)
+                ?.let { MetadataMatcher.enrichFromCinemeta(it, targetType) }
             db.mediaDao().updateMetadata(
                 id = m.id,
                 title = full?.title ?: picked.title,
@@ -347,10 +353,14 @@ fun DetailScreen(
                     normalizeTitle(full?.title ?: picked.title),
                     full?.imdbId ?: picked.imdbId,
                 ),
+                type = targetType,
                 now = System.currentTimeMillis(),
             )
             withContext(Dispatchers.Main) {
-                MsToast.show("Metadata updated")
+                MsToast.show(
+                    if (targetType != m.type) "Metadata updated — now listed as ${targetType.replaceFirstChar { it.uppercase() }}"
+                    else "Metadata updated"
+                )
             }
         }
     }
@@ -360,18 +370,21 @@ fun DetailScreen(
         scope.launch(Dispatchers.IO) {
             val norm = normalizeTitle(picked.title)
             val now = System.currentTimeMillis()
+            // Use the picked type, not the source entry's type (same fix as
+            // applyFixTitle — a file moved to a series must match as series).
+            val targetType = picked.type ?: m.type
             var target = db.mediaDao().findByTitle(m.channelId, norm)
             if (target == null) {
                 val key = ScanPrefs.getTmdbKey(context)
-                val full = MetadataMatcher.match(picked.title, picked.year, m.type, isAnime, key)
-                    ?.let { MetadataMatcher.enrichFromCinemeta(it, m.type) }
+                val full = MetadataMatcher.match(picked.title, picked.year, targetType, isAnime, key)
+                    ?.let { MetadataMatcher.enrichFromCinemeta(it, targetType) }
                 val newId = db.mediaDao().upsert(
                     MediaItemEntity(
                         channelId = m.channelId,
                         title = full?.title ?: picked.title,
                         normalizedTitle = norm,
                         year = full?.year ?: picked.year,
-                        type = m.type,
+                        type = targetType,
                         imdbId = full?.imdbId ?: picked.imdbId,
                         tmdbId = full?.tmdbId ?: picked.tmdbId,
                         stremioId = StremioIds.forNewItem(

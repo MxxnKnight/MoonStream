@@ -145,10 +145,13 @@ fun SettingsGroup(title: String, content: @Composable () -> Unit) {
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 16.dp),
                 ) {
-                    androidx.compose.material3.HorizontalDivider(
-                        color = MsColors.TextSecondary.copy(alpha = 0.15f),
-                        modifier = Modifier.padding(bottom = 10.dp),
+                    androidx.compose.foundation.layout.Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MsColors.TextSecondary.copy(alpha = 0.15f)),
                     )
+                    Spacer(Modifier.height(10.dp))
                     content()
                 }
             }

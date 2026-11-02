@@ -80,7 +80,8 @@ interface MediaDao {
         """UPDATE media_items SET
                title = :title, normalizedTitle = :norm, year = :year,
                imdbId = :imdbId, tmdbId = :tmdbId, posterUrl = :posterUrl,
-               overview = :overview, stremioId = :stremioId, updatedAt = :now
+               overview = :overview, stremioId = :stremioId, type = :type,
+               updatedAt = :now
            WHERE id = :id""",
     )
     suspend fun updateMetadata(
@@ -93,6 +94,7 @@ interface MediaDao {
         posterUrl: String?,
         overview: String?,
         stremioId: String?,
+        type: String,
         now: Long,
     )
 

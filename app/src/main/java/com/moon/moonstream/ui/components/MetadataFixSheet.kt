@@ -69,6 +69,8 @@ data class MetaPick(
     val posterUrl: String?,
     val overview: String?,
     val action: String = "pick",
+    /** "movie" or "series" — the tab the result was picked from. Null = keep current. */
+    val type: String? = null,
 )
 
 /**
@@ -169,6 +171,19 @@ fun MetadataFixSheet(
                 onValueChange = { query = it },
                 hint = "Search title or IMDb ID (e.g. tt0320661)",
                 modifier = Modifier.fillMaxWidth(),
+                trailingIcon = {
+                    // Paste button (moon's report 2026-11-02): long-press
+                    // paste is unreliable inside the bottom sheet, so offer
+                    // an explicit paste action for IMDb IDs.
+                    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                    androidx.compose.material3.TextButton(
+                        onClick = {
+                            clipboard.getText()?.text?.let { query = it.trim() }
+                        }
+                    ) {
+                        Text("Paste", color = MsColors.Accent)
+                    }
+                },
             )
             // Movie / Series search toggle (anime always searches Kitsu).
             if (!isAnime) {
@@ -284,6 +299,7 @@ fun MetadataFixSheet(
                                     posterUrl = selected?.posterUrl,
                                     overview = selected?.overview,
                                     action = "new-episode",
+                                    type = searchType,
                                 ),
                             )
                         },
@@ -302,6 +318,7 @@ fun MetadataFixSheet(
                                     posterUrl = selected?.posterUrl,
                                     overview = selected?.overview,
                                     action = "new-entry",
+                                    type = searchType,
                                 ),
                             )
                         },
@@ -322,6 +339,7 @@ fun MetadataFixSheet(
                                 tmdbId = it.tmdbId,
                                 posterUrl = it.posterUrl,
                                 overview = it.overview,
+                                type = searchType,
                             ),
                         )
                     }
