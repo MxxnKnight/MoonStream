@@ -17,7 +17,9 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -1299,6 +1301,7 @@ fun PlayerScreen(
                                 ),
                         )
                     }
+                    } // end if (!isDrawer) — drag handle only for bottom sheets
                     Text(
                         when (mode) {
                             PlayerSheet.SUBS -> "Subtitles"
