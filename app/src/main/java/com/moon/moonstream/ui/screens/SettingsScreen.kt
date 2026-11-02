@@ -101,6 +101,7 @@ import com.moon.moonstream.update.ApkInstaller
 import com.moon.moonstream.update.UpdateChecker
 import com.moon.moonstream.update.UpdateInfo
 import com.moon.moonstream.cache.CacheManager
+import com.moon.moonstream.cache.TdStreamCache
 
 /**
  * Phase 1: settings with fake data. Every setting has an info tooltip.
@@ -1519,6 +1520,9 @@ private fun CacheStorageBlock() {
                     scope.launch(Dispatchers.IO) {
                         // 1. App cache (works now).
                         val freed = CacheManager.clear(context)
+                        // 1b. In-app player byte window (tdfile:// chunks).
+                        // Ours to delete, unlike Telegram's own download dir.
+                        val chunksFreed = TdStreamCache.clear(context)
                         AppUiState.refreshCacheUsed(context)
                         // 2. Stream cache via the backend contract (moon's pick
                         // 2026-11-02). Currently a no-op until the Telegram
@@ -1543,6 +1547,9 @@ private fun CacheStorageBlock() {
                         withContext(Dispatchers.Main) {
                             val msg = buildString {
                                 append(if (freed > 0) "Cache cleared" else "Cache is already empty")
+                                if (chunksFreed > 0) {
+                                    append(" + ${chunksFreed / (1024 * 1024)} MB player chunks")
+                                }
                                 if (streamTotal > 0) {
                                     if (streamCleared > 0) {
                                         append(" + $streamCleared stream file(s) cleared")
@@ -1566,10 +1573,10 @@ private fun CacheStorageBlock() {
             color = MsColors.Accent,
             trackColor = MsColors.TrackOff,
         )
-        // Stream cache (moon's request 2026-11-02): bytes Telegram
-        // downloaded while playing video inside the app. Measured read-only;
-        // only Telegram itself can safely delete these, so there is no Clear
-        // button here yet — that needs the small Telegram-module update.
+        // Stream cache (moon's request 2026-11-02): everything the in-app
+        // player leaves behind — Telegram's own download dir plus our
+        // low-storage byte window (filesDir/tdstream). "Clear Cache" above
+        // empties the window and asks the Telegram module to drop its copy.
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1588,7 +1595,7 @@ private fun CacheStorageBlock() {
             )
         }
         Text(
-            text = "Video you play in the app is downloaded by Telegram and kept on your phone. A Clear button for this is coming with the Telegram-module update.",
+            text = "Video and subtitles you play in the app stream straight from Telegram — no addon server needed. Only the part you're watching is kept, watched parts are deleted as you go, and the rest goes when you close the player. Clear Cache above wipes whatever is left.",
             style = MaterialTheme.typography.bodySmall,
             color = MsColors.TextSecondary,
         )

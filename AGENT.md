@@ -270,6 +270,38 @@ Once the above lands, I will:
   `tdfile://<fileId>`.
 - Add the Settings toggle "Low storage mode" (default ON, like TMPlayer).
 
+### Status (2026-11-02): implemented app-side, contract untouched
+
+This landed without waiting on new TdApi surface: the DataSource drives
+`readFileRange` (which already maps to DownloadFile/ReadFilePart with an
+offset), so nothing in `backend/` or `tdlib/` changed and no new contract
+methods were needed.
+
+- `ui/player/TdDataSource.kt` — `tdfile://stream/<channelId>/<messageId>/<file>?size=…`
+  DataSource + factory; non-tdfile URIs fall through to Media3 defaults.
+- `ui/player/TdByteWindow.kt` — 8 MB chunk fetch via the backend, blocking
+  reads for Media3, eviction of watched chunks, best-effort prefetch.
+- `ui/player/LowStorageWindow.kt` — window constants + policy (progress
+  counts as "watched", so it is deleted).
+- `ui/player/TdSubDataSource.kt` + `util/SubtitleTiming.kt` — `tdsub://`
+  subtitles: read through the contract, cue shift applied on-device, so
+  subtitles also work with the server off (ASS/SSA passed through).
+- `cache/TdStreamCache.kt` — filesDir/tdstream owner: size + clear (never
+  clears a folder an active playback holds).
+
+Lessons taken from TMPlayer's engine (read, rewritten fresh): Content-Type
+on the open so Media3 picks the right extractor first; a 64 KB read-ahead
+for small reads (a Matroska index is walked a byte at a time); eviction
+checked per chunk crossed rather than per read.
+- `PlayerScreen` now builds the player with this factory and plays
+  `tdfile://` whenever the DB knows the file size; HTTP stays as fallback
+  and for external players. Settings' Clear Cache also wipes the window.
+
+Still open: `deleteCachedFile` override in the TDLib module (see the
+section above) — that is the only part that needs moon's lane. The window
+now asks for it every ~96 MB of deletions, so the moment it exists TDLib's
+own copy stops growing to the full film; today that call is a no-op.
+
 ### Rules
 
 - Patterns only from TMPlayer — fresh code, never copy-paste (GPL-3.0).

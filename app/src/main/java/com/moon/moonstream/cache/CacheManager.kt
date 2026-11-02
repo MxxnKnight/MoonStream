@@ -27,12 +27,13 @@ object CacheManager {
     }
 
     /**
-     * Total bytes under filesDir/tdlib_files — Telegram's download dir,
-     * where bytes fetched while playing video inside the app accumulate.
+     * Everything the in-app player leaves on the phone: Telegram's own
+     * download dir (filesDir/tdlib_files, measured only) plus our sliding
+     * byte window (filesDir/tdstream, ours to delete — see [TdStreamCache]).
      * Read-only measurement; safe to call any time.
      */
     suspend fun streamCacheBytes(context: Context): Long = withContext(Dispatchers.IO) {
-        dirSize(java.io.File(context.filesDir, "tdlib_files"))
+        dirSize(java.io.File(context.filesDir, "tdlib_files")) + TdStreamCache.bytes(context)
     }
 
     /** Deletes everything under the cache dir. Returns bytes freed. */

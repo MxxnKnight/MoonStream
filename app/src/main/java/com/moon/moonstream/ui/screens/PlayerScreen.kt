@@ -73,6 +73,7 @@ import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
@@ -81,8 +82,11 @@ import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.ui.components.MsToast
+import com.moon.moonstream.ui.player.MsDataSourceFactory
 import com.moon.moonstream.ui.player.PlayerUrls
 import com.moon.moonstream.ui.player.SubDelayPrefs
+import com.moon.moonstream.ui.player.TdStreamUri
+import com.moon.moonstream.ui.player.TdSubUri
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.util.AppLog
 import kotlinx.coroutines.Dispatchers
@@ -172,11 +176,16 @@ fun PlayerScreen(
     // Build the ExoPlayer instance (media item is set by the load effect below,
     // so subtitle changes / delay can rebuild it while preserving position).
     var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
+    // tdfile:// streams come straight from Telegram through our own
+    // DataSource (no addon server needed); http/file URIs still work through
+    // Media3's defaults. See ui/player/TdDataSource.kt.
     val player = remember {
-        ExoPlayer.Builder(context).build().apply {
-            // Never autoplay before the load effect below decides (resume check).
-            playWhenReady = false
-        }
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(MsDataSourceFactory(context)))
+            .build().apply {
+                // Never autoplay before the load effect below decides (resume check).
+                playWhenReady = false
+            }
     }
 
     // Subtitle delay (moon's pick 2026-11-02): per-entry ms, server shifts
@@ -282,6 +291,19 @@ fun PlayerScreen(
             compareBy({ it.season ?: 0 }, { it.episode ?: Int.MAX_VALUE }, { it.id })
         )
     }
+
+    // In-app playback goes straight to Telegram (low-storage byte window)
+    // when we know the file's size; otherwise fall back to the addon server
+    // URL exactly as before.
+    val filesLoaded = files.isNotEmpty()
+    val playUri = remember(orderedFiles, streamFileId, videoUri) {
+        val f = orderedFiles.firstOrNull { it.id == streamFileId }
+        if (f != null && f.fileSize > 0L) {
+            TdStreamUri.build(f.channelId, f.messageId, f.fileSize, f.fileName)
+        } else {
+            videoUri
+        }
+    }
     val groups = remember(orderedFiles) {
         orderedFiles.groupBy { Pair(it.season, it.episode) }
             .map { (key, fs) -> EpisodeGroup(key.first, key.second, fs) }
@@ -298,8 +320,20 @@ fun PlayerScreen(
     val showPlaylistBtn = playlistFiles.size > 1
 
     // Subtitle (uri, fileName) pairs — mime type comes from the real file name.
+    // Straight from Telegram when we know the size (so subtitles work with the
+    // addon server off, delay applied on-device); the server route stays as a
+    // fallback for odd rows.
     val subPairs = remember(allSubs, delayMs) {
-        allSubs.map { sub -> Uri.parse(PlayerUrls.sub(sub.id, delayMs)) to sub.fileName }
+        allSubs.map { sub ->
+            val uri = if (sub.fileSize in 1..TdSubUri.MAX_BYTES) {
+                TdSubUri.build(
+                    sub.channelId, sub.messageId, sub.fileSize, sub.fileName, delayMs,
+                )
+            } else {
+                Uri.parse(PlayerUrls.sub(sub.id, delayMs))
+            }
+            uri to sub.fileName
+        }
     }
 
     fun episodeLabel(f: StreamFileEntity): String =
@@ -479,11 +513,15 @@ fun PlayerScreen(
     // Load / rebuild the media item. First run: resume check (prompt, or
     // straight to the saved spot for the header Play button). Later runs
     // (subs arrived, delay changed): rebuild keeping position + play state.
-    LaunchedEffect(videoUri, subPairs) {
+    LaunchedEffect(playUri, subPairs, filesLoaded) {
+        // The Room row can land a frame after the screen opens. Wait for it,
+        // otherwise playback would start on the HTTP fallback and swap
+        // sources (and lose the resume choice) mid-load.
+        if (streamFileId != 0L && !filesLoaded) return@LaunchedEffect
         val isFirst = !mediaReady
         val pos = if (isFirst) 0L else player.currentPosition.coerceAtLeast(0L)
         val keepPlaying = if (isFirst) false else player.isPlaying
-        player.setMediaItem(buildMediaItem(videoUri, subPairs), pos)
+        player.setMediaItem(buildMediaItem(playUri, subPairs), pos)
         player.prepare()
         if (isFirst) {
             mediaReady = true
@@ -606,10 +644,15 @@ fun PlayerScreen(
     var isBuffering by remember { mutableStateOf(true) }
     var playerError by remember { mutableStateOf<String?>(null) }
 
-    // Log what we're about to play (host:port + path, no query).
-    LaunchedEffect(videoUri) {
-        val portPart = if (videoUri.port != -1) ":${videoUri.port}" else ""
-        AppLog.i("PLAYER", "Opening \"$title\" — ${videoUri.host}$portPart${videoUri.path}")
+    // Log what we're about to play (source + path, no query).
+    LaunchedEffect(playUri) {
+        val portPart = if (playUri.port != -1) ":${playUri.port}" else ""
+        val where = if (playUri.scheme == TdStreamUri.SCHEME) {
+            "Telegram (direct, low-storage window)"
+        } else {
+            "${playUri.host}$portPart${playUri.path}"
+        }
+        AppLog.i("PLAYER", "Opening \"$title\" — $where")
     }
 
     // Poll position/duration.
