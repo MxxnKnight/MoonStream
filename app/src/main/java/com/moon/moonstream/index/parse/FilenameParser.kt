@@ -229,12 +229,24 @@ object FilenameParser {
         work = groupRe.replace(work, "")
         // Leading uploader tag: "[ToonWorld] Solo Leveling..." -> "Solo Leveling..."
         val leading = Regex("""^(\[[^\]]+\]|\([^)]+\)|【[^】]+】)\s*""").find(work)
+        // S/E carried by a leading tag like "[S01 E01] Seven Deadly Sins":
+        // the title comes AFTER the tag, not before it (moon's case 2026-11-02 —
+        // before() was returning "[" → empty title → unmatched).
+        var leadingSeason: Int? = null
+        var leadingEpisode: Int? = null
         if (leading != null) {
             val tag = leading.groupValues[1]
-            // Don't strip the tag if it carries the season/episode itself
-            // (e.g. "[S01 E24] Seven Deadly Sins ...").
-            val tagHasSeEp = sxxexxRe.containsMatchIn(tag) || nxnRe.containsMatchIn(tag)
-            if (!tagHasSeEp) {
+            sxxexxRe.find(tag)?.let { m ->
+                leadingSeason = m.groupValues[1].toIntOrNull()
+                leadingEpisode = m.groupValues[2].toIntOrNull()
+            } ?: nxnRe.find(tag)?.let { m ->
+                leadingSeason = m.groupValues[1].toIntOrNull()
+                leadingEpisode = m.groupValues[2].toIntOrNull()
+            }
+            if (leadingSeason != null) {
+                // Strip the tag; title is parsed from what follows.
+                work = work.substring(leading.range.last + 1)
+            } else {
                 val rest = work.substring(leading.range.last + 1)
                 if (Regex("[a-zA-Z]{2,}").containsMatchIn(rest)) work = rest
             }
@@ -242,48 +254,56 @@ object FilenameParser {
         // Trailing lone bracket group.
         work = Regex("""\s*[\(\[][A-Za-z0-9_\-\.\s]{1,30}[\)\]]\s*$""").replace(work, "")
 
-        var season: Int? = null
-        var episode: Int? = null
+        var season: Int? = leadingSeason
+        var episode: Int? = leadingEpisode
         var episodeEnd: Int? = null
         var title: String = work
 
         fun before(match: MatchResult): String =
             work.substring(0, match.range.first).trim(' ', '.', '_', '-', '[', ']', '(', ')', '\t')
 
-        sxxexxRe.find(work)?.let { m ->
-            season = m.groupValues[1].toIntOrNull()
-            episode = m.groupValues[2].toIntOrNull()
-            title = before(m)
-        } ?: nxnRe.find(work)?.let { m ->
-            season = m.groupValues[1].toIntOrNull()
-            episode = m.groupValues[2].toIntOrNull()
-            title = before(m)
-        } ?: bracketEpRe.find(work)?.let { m ->
-            season = 1
-            episode = m.groupValues[1].toIntOrNull()
-            title = m.groupValues[2].trim()
-        } ?: hyphenEpRe.find(work)?.let { m ->
-            // Only treat as episode when the tail after the number has no letters
-            // (avoids eating "Movie - The Beginning").
-            val tail = work.substring(m.range.last + 1)
-            if (!Regex("[a-zA-Z]{2,}").containsMatchIn(tail)) {
-                season = 1
+        // If S/E came from a leading tag, the title is the remainder after
+        // stripping episode markers — don't re-search the body for S/E.
+        if (season == null) {
+            sxxexxRe.find(work)?.let { m ->
+                season = m.groupValues[1].toIntOrNull()
                 episode = m.groupValues[2].toIntOrNull()
-                title = m.groupValues[1].trim()
+                title = before(m)
+            } ?: nxnRe.find(work)?.let { m ->
+                season = m.groupValues[1].toIntOrNull()
+                episode = m.groupValues[2].toIntOrNull()
+                title = before(m)
+            } ?: bracketEpRe.find(work)?.let { m ->
+                season = 1
+                episode = m.groupValues[1].toIntOrNull()
+                title = m.groupValues[2].trim()
+            } ?: hyphenEpRe.find(work)?.let { m ->
+                // Only treat as episode when the tail after the number has no letters
+                // (avoids eating "Movie - The Beginning").
+                val tail = work.substring(m.range.last + 1)
+                if (!Regex("[a-zA-Z]{2,}").containsMatchIn(tail)) {
+                    season = 1
+                    episode = m.groupValues[2].toIntOrNull()
+                    title = m.groupValues[1].trim()
+                }
+            } ?: multiEpRe.find(work)?.let { m ->
+                // "Show E7-8" -> title="Show", episode=7, episodeEnd=8.
+                // "Show Ep 1-10" -> episode=1, episodeEnd=10.
+                season = 1
+                episode = m.groupValues[1].toIntOrNull()
+                episodeEnd = m.groupValues[2].toIntOrNull()
+                title = before(m)
+            } ?: standaloneEpRe.find(work)?.let { m ->
+                // "Psycho Pass E22" -> title="Psycho Pass", episode=22.
+                // Don't match if it's part of a word (e.g. "TRUE" ends with E).
+                season = 1
+                episode = m.groupValues[1].toIntOrNull()
+                title = before(m)
             }
-        } ?: multiEpRe.find(work)?.let { m ->
-            // "Show E7-8" -> title="Show", episode=7, episodeEnd=8.
-            // "Show Ep 1-10" -> episode=1, episodeEnd=10.
-            season = 1
-            episode = m.groupValues[1].toIntOrNull()
-            episodeEnd = m.groupValues[2].toIntOrNull()
-            title = before(m)
-        } ?: standaloneEpRe.find(work)?.let { m ->
-            // "Psycho Pass E22" -> title="Psycho Pass", episode=22.
-            // Don't match if it's part of a word (e.g. "TRUE" ends with E).
-            season = 1
-            episode = m.groupValues[1].toIntOrNull()
-            title = before(m)
+        } else {
+            // S/E from leading tag: strip any leftover episode markers from
+            // the title (e.g. trailing "[1080p]" already gone; guard anyway).
+            title = Regex("""(?i)\s+s\d{1,2}\s*(?:e|ep)?\s*\d{0,4}\s*""").replace(work, " ").trim()
         }
 
         // Strip trailing junk: "COMBINED", "TRUE", lone numbers after episode info.
