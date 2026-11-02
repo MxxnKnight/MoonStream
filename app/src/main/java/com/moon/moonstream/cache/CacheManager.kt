@@ -49,7 +49,22 @@ object CacheManager {
 
     private fun dirSize(f: File): Long {
         if (!f.exists()) return 0
-        if (f.isFile) return f.length()
+        if (f.isFile) return realFileSize(f)
         return f.listFiles()?.sumOf { dirSize(it) } ?: 0
+    }
+
+    /**
+     * Actual disk usage, not logical size. TDLib pre-allocates download files
+     * at their full size (sparse files), so File.length() wildly overcounts —
+     * a 2 GB video 10% downloaded reports 2 GB logical but ~200 MB on disk.
+     * st_blocks counts the 512-byte blocks really allocated.
+     */
+    private fun realFileSize(f: File): Long {
+        return try {
+            val stat = android.system.Os.stat(f.absolutePath)
+            stat.st_blocks * 512L
+        } catch (e: Exception) {
+            f.length()
+        }
     }
 }
