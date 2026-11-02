@@ -660,12 +660,7 @@ fun PlayerScreen(
                                     if (deleted) "deleted" else "NOT deleted (backend said no)",
                             )
                         }
-                    } catch (e: Exception) { /* never break close */ } else {
-                        AppLog.i(
-                            "PLAYER",
-                            "not finished — Telegram's copy left for resume, goes at Clear Cache",
-                        )
-                    }
+                    } catch (e: Exception) { /* never break close */ }
                 }
             }
             player.release()
