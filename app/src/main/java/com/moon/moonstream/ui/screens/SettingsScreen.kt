@@ -1517,10 +1517,41 @@ private fun CacheStorageBlock() {
                 fontSize = 13,
                 onClick = {
                     scope.launch(Dispatchers.IO) {
+                        // 1. App cache (works now).
                         val freed = CacheManager.clear(context)
                         AppUiState.refreshCacheUsed(context)
+                        // 2. Stream cache via the backend contract (moon's pick
+                        // 2026-11-02). Currently a no-op until the Telegram
+                        // module implements deleteCachedFile — then this
+                        // clears it safely via TdApi.DeleteFile.
+                        var streamCleared = 0
+                        var streamTotal = 0
+                        try {
+                            val db = MsDatabase.get(context)
+                            val backend = BackendProvider.backend
+                            val files = db.streamDao().getAll()
+                            streamTotal = files.size
+                            for (f in files) {
+                                try {
+                                    if (backend.deleteCachedFile(f.channelId, f.messageId)) {
+                                        streamCleared++
+                                    }
+                                } catch (e: Exception) { /* skip */ }
+                            }
+                            AppUiState.refreshCacheUsed(context)
+                        } catch (e: Exception) { /* skip */ }
                         withContext(Dispatchers.Main) {
-                            MsToast.show(if (freed > 0) "Cache cleared" else "Cache is already empty")
+                            val msg = buildString {
+                                append(if (freed > 0) "Cache cleared" else "Cache is already empty")
+                                if (streamTotal > 0) {
+                                    if (streamCleared > 0) {
+                                        append(" + $streamCleared stream file(s) cleared")
+                                    } else {
+                                        append(" (stream cache needs the Telegram module update)")
+                                    }
+                                }
+                            }
+                            MsToast.show(msg)
                         }
                     }
                 },

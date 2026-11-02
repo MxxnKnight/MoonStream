@@ -1196,8 +1196,19 @@ fun PlayerScreen(
         // Pull down on the sheet (from the top, list at top) to close it.
         if (sheet != null) {
             val mode = sheet!!
+            // Drawers (moon's pick 2026-11-02): EPISODES, PLAYLIST, SUBS open
+            // as a right-side drawer; AUDIO stays a bottom sheet. SUBS uses
+            // low opacity so subtitles stay visible while adjusting.
+            val isDrawer = mode != PlayerSheet.AUDIO
             var sheetOffsetY by remember(mode) { mutableFloatStateOf(0f) }
             val sheetScroll = rememberScrollState()
+            // Season filter for the Episodes drawer.
+            val drawerSeasons = remember(groups) {
+                groups.mapNotNull { it.season }.distinct().sorted()
+            }
+            var drawerSeason by remember(mode, groups) {
+                mutableStateOf(currentGroup?.season ?: drawerSeasons.firstOrNull())
+            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1206,16 +1217,40 @@ fun PlayerScreen(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() },
                     ) { sheet = null },
-                contentAlignment = Alignment.BottomCenter,
+                contentAlignment = if (isDrawer) Alignment.CenterEnd else Alignment.BottomCenter,
             ) {
+                // Slide-in animation for drawers.
+                val drawerSlide by animateFloatAsState(
+                    targetValue = if (sheet != null) 1f else 0f,
+                    animationSpec = tween(280),
+                    label = "drawerSlide",
+                )
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 520.dp)
-                        .offset { IntOffset(0, sheetOffsetY.roundToInt()) }
-                        .background(
-                            MsColors.Surface,
-                            RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                        .then(
+                            if (isDrawer) {
+                                Modifier
+                                    .fillMaxHeight()
+                                    .width(360.dp)
+                                    .offset { IntOffset(((1f - drawerSlide) * 360.dp.toPx()).roundToInt(), 0) }
+                                    .background(
+                                        // Low opacity for SUBS so the video/
+                                        // subtitles show through while editing.
+                                        if (mode == PlayerSheet.SUBS)
+                                            Color.Black.copy(alpha = 0.72f)
+                                        else MsColors.Surface,
+                                        RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp),
+                                    )
+                            } else {
+                                Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 520.dp)
+                                    .offset { IntOffset(0, sheetOffsetY.roundToInt()) }
+                                    .background(
+                                        MsColors.Surface,
+                                        RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                                    )
+                            }
                         )
                         // NOTE: drag-to-close lives ONLY on the drag handle
                         // below (generous touch target). A sheet-wide drag
@@ -1229,6 +1264,9 @@ fun PlayerScreen(
                         .padding(16.dp)
                         .verticalScroll(sheetScroll),
                 ) {
+                    // Drag handle: only for bottom sheets (AUDIO). Drawers
+                    // dismiss via the scrim tap.
+                    if (!isDrawer) {
                     // Drag handle: full-width, 32dp-tall touch target with the
                     // visual bar centered — easy to grab, no precise aiming.
                     // The drag-to-close gesture lives here only.
@@ -1517,7 +1555,48 @@ fun PlayerScreen(
                             }
                         }
                         PlayerSheet.EPISODES -> {
-                            groups.forEach { g ->
+                            // Season pills (moon's pick 2026-11-02).
+                            if (drawerSeasons.size > 1) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(bottom = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    drawerSeasons.forEach { s ->
+                                        val selected = s == drawerSeason
+                                        Surface(
+                                            onClick = { drawerSeason = s },
+                                            shape = RoundedCornerShape(50),
+                                            color = if (selected) MsColors.Accent
+                                            else Color.White.copy(alpha = 0.12f),
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (selected) MsColors.Accent
+                                                else Color.White.copy(alpha = 0.2f),
+                                            ),
+                                            modifier = Modifier.height(36.dp),
+                                        ) {
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier.padding(horizontal = 16.dp),
+                                            ) {
+                                                Text(
+                                                    "Season $s",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (selected) Color.Black else Color.White,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            val visibleGroups = if (drawerSeason != null)
+                                groups.filter { it.season == drawerSeason }
+                            else groups
+                            visibleGroups.forEach { g ->
                                 val isCurrent = g.files.any { it.id == streamFileId }
                                 Row(
                                     modifier = Modifier
