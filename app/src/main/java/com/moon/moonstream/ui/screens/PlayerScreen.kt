@@ -379,16 +379,14 @@ fun PlayerScreen(
     }
 
     // Aspect-ratio cycle (moon's pick 2026-11-02): each tap → next mode.
+    // Essential three only: Fit (letterbox), Fill/Stretch (fill, may distort),
+    // Zoom (crop to fill, no distortion).
     val resizeModes = remember {
         // Triple(resizeMode, fixedAspectRatio or 0f for video's natural, label)
         listOf(
             Triple(AspectRatioFrameLayout.RESIZE_MODE_FIT, 0f, "Fit"),
-            Triple(AspectRatioFrameLayout.RESIZE_MODE_FILL, 0f, "Fill"),
+            Triple(AspectRatioFrameLayout.RESIZE_MODE_FILL, 0f, "Stretch"),
             Triple(AspectRatioFrameLayout.RESIZE_MODE_ZOOM, 0f, "Zoom"),
-            Triple(AspectRatioFrameLayout.RESIZE_MODE_FIT, 16f / 9f, "16:9"),
-            Triple(AspectRatioFrameLayout.RESIZE_MODE_FIT, 4f / 3f, "4:3"),
-            Triple(AspectRatioFrameLayout.RESIZE_MODE_FIT, 1f, "1:1"),
-            Triple(AspectRatioFrameLayout.RESIZE_MODE_FIT, 21f / 9f, "21:9"),
         )
     }
     var resizeIndex by remember { mutableIntStateOf(0) }
@@ -938,7 +936,7 @@ fun PlayerScreen(
         if (controlsVisible && !controlsLocked) {
             Row(
                 modifier = Modifier.align(Alignment.Center),
-                horizontalArrangement = Arrangement.spacedBy(28.dp),
+                horizontalArrangement = Arrangement.spacedBy(48.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PlayerIconButton(
