@@ -473,6 +473,79 @@ fun PlayerScreen(
     var subsOff by remember { mutableStateOf(false) }
     var nextUpDismissed by remember { mutableStateOf(false) }
 
+    /** A raw track label is "clean" if it doesn't look like uploader junk. */
+    fun isCleanLabel(label: String): Boolean {
+        val lower = label.lowercase()
+        return !lower.contains("@") && !lower.contains("~") &&
+            !lower.contains("[") && !lower.contains("http") &&
+            !lower.contains("www.") && label.length < 40
+    }
+
+    /** Human language name from an ISO-639 code ("tam" → "Tamil"). */
+    fun langName(code: String?): String {
+        return when (code?.lowercase()?.take(3)) {
+            "tam" -> "Tamil"
+            "tel" -> "Telugu"
+            "hin" -> "Hindi"
+            "mal" -> "Malayalam"
+            "kan" -> "Kannada"
+            "eng" -> "English"
+            "jpn", "jap" -> "Japanese"
+            "kor" -> "Korean"
+            "spa" -> "Spanish"
+            "fre", "fra" -> "French"
+            "ger", "deu" -> "German"
+            "ita" -> "Italian"
+            "por" -> "Portuguese"
+            "rus" -> "Russian"
+            "ara" -> "Arabic"
+            "und" -> "Unknown"
+            else -> code?.uppercase()?.take(3) ?: "Unknown"
+        }
+    }
+
+    /** Short codec name from a MIME type ("audio/eac3" → "EAC3"). */
+    fun codecName(mime: String?): String {
+        return when {
+            mime == null -> ""
+            mime.contains("eac3") -> "EAC3"
+            mime.contains("ac3") -> "AC3"
+            mime.contains("aac") -> "AAC"
+            mime.contains("mpeg") || mime.contains("mp3") -> "MP3"
+            mime.contains("opus") -> "Opus"
+            mime.contains("vorbis") -> "Vorbis"
+            mime.contains("flac") -> "FLAC"
+            mime.contains("dts") -> "DTS"
+            mime.contains("truehd") -> "TrueHD"
+            mime.contains("srt") || mime.contains("subrip") -> "SRT"
+            mime.contains("vtt") || mime.contains("webvtt") -> "VTT"
+            mime.contains("ass") -> "ASS"
+            mime.contains("ssa") -> "SSA"
+            mime.contains("pgs") -> "PGS"
+            else -> mime.substringAfter("/").uppercase().take(8)
+        }
+    }
+
+    /** "Tamil • EAC3 • 5.1" from a track Format. */
+    fun buildTrackLabel(f: androidx.media3.common.Format, type: Int): String {
+        val parts = mutableListOf<String>()
+        val lang = langName(f.language)
+        if (lang != "Unknown") parts.add(lang)
+        val codec = codecName(f.sampleMimeType)
+        if (codec.isNotEmpty()) parts.add(codec)
+        if (type == C.TRACK_TYPE_AUDIO) {
+            val ch = when (f.channelCount) {
+                1 -> "Mono"
+                2 -> "Stereo"
+                6 -> "5.1"
+                8 -> "7.1"
+                else -> if (f.channelCount > 0) "${f.channelCount}ch" else ""
+            }
+            if (ch.isNotEmpty()) parts.add(ch)
+        }
+        return if (parts.isEmpty()) "Track" else parts.joinToString(" • ")
+    }
+
     /** Snapshot the player's tracks and open the subs/audio sheet. */
     fun openTrackSheet(mode: PlayerSheet) {
         val type = if (mode == PlayerSheet.SUBS) C.TRACK_TYPE_TEXT else C.TRACK_TYPE_AUDIO
@@ -482,9 +555,17 @@ fun PlayerScreen(
             if (g.type != type) continue
             for (i in 0 until g.length) {
                 val f = g.getTrackFormat(i)
-                val label = f.label?.takeIf { it.isNotBlank() }
-                    ?: f.language?.takeIf { it.isNotBlank() }
-                    ?: "Track ${i + 1}"
+                // Clean label (moon's request 2026-11-02): the raw MKV track
+                // title is usually uploader junk ("@MoviezTamizha ~ [DDP5.1]"),
+                // so build "Language • Codec • Channels" from the format
+                // fields instead. Only use the raw label if it looks clean
+                // (no @, ~, [, or http).
+                val rawLabel = f.label?.takeIf { it.isNotBlank() }
+                val label = if (rawLabel != null && isCleanLabel(rawLabel)) {
+                    rawLabel
+                } else {
+                    buildTrackLabel(f, type)
+                }
                 opts.add(TrackOpt(g.mediaTrackGroup, i, label))
             }
         }
