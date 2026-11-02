@@ -217,12 +217,9 @@ fun DetailScreen(
         }
     }
 
-    /** Per-file play: the player shows the Resume prompt when a position is saved. */
+    /** Per-file play: the player shows the Resume prompt when a position is saved.
+     *  0.15.0: plays via tdfile:// when the DB knows the size — no server needed. */
     fun playInApp(file: StreamFileEntity) {
-        if (!AppUiState.serverOn) {
-            MsToast.show("Turn the server on first, then play")
-            return
-        }
         onPlayInApp(
             PlayerUrls.stream(m.id, file.id), playTitle(file), m.title,
             m.id, file.id, false,
@@ -236,10 +233,7 @@ fun DetailScreen(
      * no prompt, the button itself means "continue".
      */
     fun playContinue() {
-        if (!AppUiState.serverOn) {
-            MsToast.show("Turn the server on first, then play")
-            return
-        }
+        // 0.15.0: in-app playback via tdfile:// needs no server.
         scope.launch(Dispatchers.IO) {
             val latest = try {
                 db.watchProgressDao().latestForMedia(m.id)

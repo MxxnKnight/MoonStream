@@ -333,7 +333,10 @@ fun FileRow(
                     color = MsColors.TextSecondary,
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 QualityChip(stream.quality)
                 Spacer(Modifier.width(8.dp))
                 Text(
@@ -341,7 +344,14 @@ fun FileRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MsColors.TextSecondary,
                     modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
                 BareIconButton(
                     icon = Icons.Filled.PlayArrow,
                     contentDescription = "Play",
@@ -440,6 +450,14 @@ fun StreamRow(
                 onClick = onFixFile,
                 fontSize = 13,
             )
+            // Manual episode assignment (moon's pick 2026-11-02).
+            if (onSetEpisode != null) {
+                LimeTextButton(
+                    text = "set episode",
+                    onClick = onSetEpisode,
+                    fontSize = 13,
+                )
+            }
         }
     }
 }
