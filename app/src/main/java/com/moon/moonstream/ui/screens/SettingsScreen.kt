@@ -83,6 +83,8 @@ import com.moon.moonstream.ui.components.MsOutlinePill
 import com.moon.moonstream.ui.components.MsSegmented
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.components.MsToggle
+import com.moon.moonstream.index.tools.LibraryToolsRunner
+import com.moon.moonstream.ui.components.BackgroundToolButton
 import com.moon.moonstream.ui.components.ScanActionButton
 import com.moon.moonstream.ui.components.SettingRow
 import com.moon.moonstream.ui.components.SettingsGroup
@@ -883,92 +885,53 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         SettingsGroup("Library Tools") {
             SettingRow(
                 title = "Dead links",
-                info = "Finds entries whose Telegram message was deleted while the app was off.",
+                info = "Finds entries whose Telegram message was deleted while the app was off. Runs in the background — you can leave this screen.",
             ) {
-                ScanActionButton(
+                BackgroundToolButton(
+                    toolId = LibraryToolsRunner.TOOL_DEAD_LINKS,
                     idleText = "Check now",
-                    scanningText = "Checking",
-                    doneToast = "No dead links found",
-                    onScan = {
-                        val db = MsDatabase.get(context)
-                        val backend = com.moon.moonstream.backend.BackendProvider.backend
-                        val files = db.streamDao().getAll()
-                        var dead = 0
-                        // Check in batches to avoid hammering the API.
-                        for (f in files) {
-                            try {
-                                val msg = backend.fetchMessages(f.channelId, f.messageId, 1)
-                                    .firstOrNull { it.id == f.messageId }
-                                if (msg == null) {
-                                    dead++
-                                    AppLog.w("LIB", "Dead link: ${f.fileName} (${f.channelId}/${f.messageId})")
-                                }
-                            } catch (e: Exception) {
-                                // Network error — skip, don't count as dead.
-                            }
-                            kotlinx.coroutines.delay(100)
-                        }
-                        if (dead == 0) "No dead links found"
-                        else "$dead dead link(s) found — see logs"
+                    onStart = {
+                        LibraryToolsRunner.startDeadLinks(context.applicationContext)
                     },
                 )
             }
             SettingRow(
                 title = "Duplicates",
-                info = "Spots files with similar name and size on one title or episode, so you can clean up doubles.",
+                info = "Spots files with similar name and size on one title or episode, so you can clean up doubles. Runs in the background — you can leave this screen.",
             ) {
-                ScanActionButton(
+                BackgroundToolButton(
+                    toolId = LibraryToolsRunner.TOOL_DUPLICATES,
                     idleText = "Find duplicates",
-                    scanningText = "Scanning",
-                    doneToast = "No duplicates found",
-                    onScan = {
-                        val db = MsDatabase.get(context)
-                        val files = db.streamDao().getAll()
-                        // Group by normalized name + size; >1 in a group = duplicate.
-                        val groups = files.groupBy {
-                            it.fileName.lowercase().replace(Regex("[^a-z0-9]"), "") to it.fileSize
-                        }.filter { it.value.size > 1 }
-                        val count = groups.values.sumOf { it.size - 1 }
-                        for ((_, dupes) in groups) {
-                            AppLog.w("LIB", "Duplicate: ${dupes.first().fileName} ×${dupes.size}")
-                        }
-                        if (count == 0) "No duplicates found"
-                        else "$count duplicate file(s) found — see logs"
+                    onStart = {
+                        LibraryToolsRunner.startDuplicates(context.applicationContext)
                     },
                 )
             }
             SettingRow(
                 title = "Bad mappings",
-                info = "Finds files mapped to the wrong title (e.g. episode files stuck on a movie) and moves them to unmatched for bulk fixing.",
+                info = "Finds files mapped to the wrong title (e.g. episode files stuck on a movie) and moves them to unmatched for bulk fixing. Runs in the background — you can leave this screen.",
             ) {
-                ScanActionButton(
+                BackgroundToolButton(
+                    toolId = LibraryToolsRunner.TOOL_AUDIT,
                     idleText = "Audit now",
-                    scanningText = "Auditing",
-                    doneToast = "Audit complete",
-                    onScan = {
-                        // Fast structural check first (no network).
-                        val report = com.moon.moonstream.index.audit.MetadataAudit.run(
-                            context, structuralOnly = true,
+                    onStart = {
+                        LibraryToolsRunner.startAudit(
+                            context.applicationContext, structuralOnly = true,
                         )
-                        if (report.moved == 0) "No bad mappings found"
-                        else "${report.moved} file(s) moved to unmatched — see logs"
                     },
                 )
             }
             SettingRow(
                 title = "Deep audit (slower)",
-                info = "Re-checks every mapping against the metadata providers. Catches wrong titles the fast check misses. Takes a while on big libraries.",
+                info = "Re-checks every mapping against the metadata providers. Catches wrong titles the fast check misses. Takes a while on big libraries. Runs in the background — you can leave this screen.",
             ) {
-                ScanActionButton(
+                BackgroundToolButton(
+                    toolId = LibraryToolsRunner.TOOL_DEEP_AUDIT,
                     idleText = "Deep audit",
-                    scanningText = "Auditing",
-                    doneToast = "Audit complete",
-                    onScan = {
-                        val report = com.moon.moonstream.index.audit.MetadataAudit.run(
-                            context, structuralOnly = false,
+                    onStart = {
+                        LibraryToolsRunner.startAudit(
+                            context.applicationContext, structuralOnly = false,
                         )
-                        if (report.moved == 0) "No bad mappings found"
-                        else "${report.moved} file(s) moved to unmatched — see logs"
                     },
                 )
             }
