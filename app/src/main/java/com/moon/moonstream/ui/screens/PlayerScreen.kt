@@ -17,6 +17,11 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -189,6 +194,9 @@ fun PlayerScreen(
     var subStrokeColor by remember {
         mutableIntStateOf(SubDelayPrefs.getStrokeColor(context, mediaId))
     }
+    var subPosition by remember {
+        mutableFloatStateOf(SubDelayPrefs.getPosition(context, mediaId))
+    }
 
     /** Push the appearance prefs into the player's SubtitleView. */
     fun applySubtitleStyle() {
@@ -206,11 +214,15 @@ fun PlayerScreen(
             )
         )
         sv.setFractionalTextSize(subTextSize)
+        // Vertical position: bottom-padding fraction (moon's pick 2026-11-02 —
+        // keeps subtitles visible when the video is zoomed).
+        sv.setBottomPaddingFraction(subPosition)
     }
 
     // Re-apply when the view arrives or any appearance pref changes.
     LaunchedEffect(
-        playerViewRef, subTextSize, subStrokeOn, subTextColor, subStrokeColor
+        playerViewRef, subTextSize, subStrokeOn, subTextColor, subStrokeColor,
+        subPosition
     ) {
         applySubtitleStyle()
     }
@@ -222,6 +234,13 @@ fun PlayerScreen(
     }
     val maxVolume = remember {
         audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    }
+    // Float accumulator for smooth volume gestures (see fix below).
+    var volumeFloat by remember {
+        mutableStateOf(
+            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) /
+                maxVolume.coerceAtLeast(1).toFloat()
+        )
     }
     var brightness by remember {
         val cur = try {
@@ -309,18 +328,37 @@ fun PlayerScreen(
 
     // Aspect-ratio cycle (moon's pick 2026-11-02): each tap → next mode.
     val resizeModes = remember {
+        // Triple(resizeMode, fixedAspectRatio or 0f for video's natural, label)
         listOf(
-            AspectRatioFrameLayout.RESIZE_MODE_FIT to "Fit",
-            AspectRatioFrameLayout.RESIZE_MODE_FILL to "Fill",
-            AspectRatioFrameLayout.RESIZE_MODE_ZOOM to "Zoom",
+            Triple(AspectRatioFrameLayout.RESIZE_MODE_FIT, 0f, "Fit"),
+            Triple(AspectRatioFrameLayout.RESIZE_MODE_FILL, 0f, "Fill"),
+            Triple(AspectRatioFrameLayout.RESIZE_MODE_ZOOM, 0f, "Zoom"),
+            Triple(AspectRatioFrameLayout.RESIZE_MODE_FIT, 16f / 9f, "16:9"),
+            Triple(AspectRatioFrameLayout.RESIZE_MODE_FIT, 4f / 3f, "4:3"),
+            Triple(AspectRatioFrameLayout.RESIZE_MODE_FIT, 1f, "1:1"),
+            Triple(AspectRatioFrameLayout.RESIZE_MODE_FIT, 21f / 9f, "21:9"),
         )
     }
     var resizeIndex by remember { mutableIntStateOf(0) }
+    fun findAspectFrame(): AspectRatioFrameLayout? {
+        val pv = playerViewRef ?: return null
+        for (i in 0 until pv.childCount) {
+            val child = pv.getChildAt(i)
+            if (child is AspectRatioFrameLayout) return child
+        }
+        return null
+    }
     fun cycleResize() {
         resizeIndex = (resizeIndex + 1) % resizeModes.size
-        playerViewRef?.resizeMode = resizeModes[resizeIndex].first
-        MsToast.show(resizeModes[resizeIndex].second)
-        AppLog.i("PLAYER", "Resize mode: ${resizeModes[resizeIndex].second}")
+        val (mode, ratio, label) = resizeModes[resizeIndex]
+        playerViewRef?.let { pv ->
+            pv.resizeMode = mode
+            // Fixed ratio (16:9 etc.): set on the content frame; 0f clears
+            // back to the video's natural ratio.
+            findAspectFrame()?.setAspectRatio(ratio)
+        }
+        MsToast.show(label)
+        AppLog.i("PLAYER", "Resize mode: $label")
     }
 
     /** Capture the current video frame into Pictures/MoonStream. */
@@ -539,6 +577,20 @@ fun PlayerScreen(
         }
     }
 
+    // Double-tap seek feedback (moon's pick 2026-11-02): shows +10s/-10s
+    // with animation; consecutive double-taps accumulate (+20s, +30s...).
+    var seekFeedback by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
+    var lastSeekTapTime by remember { mutableStateOf(0L) }
+    var seekTapCount by remember { mutableStateOf(0) }
+    // Auto-hide the feedback after 1s.
+    LaunchedEffect(seekFeedback) {
+        if (seekFeedback != null) {
+            delay(1000)
+            seekFeedback = null
+            seekTapCount = 0
+        }
+    }
+
     // Controls visibility state.
     var controlsVisible by remember { mutableStateOf(true) }
     // Lock state (mpvex-style, moon's pick 2026-11-02): when locked, all
@@ -608,6 +660,9 @@ fun PlayerScreen(
         }
     }
 
+    // Tap the right timer to toggle total ↔ remaining (mpvex pattern).
+    var showRemaining by remember { mutableStateOf(false) }
+
     // Saved resume position for the Resume button (moon's pick 2026-11-02).
     var savedResumePos by remember { mutableStateOf(0L) }
     LaunchedEffect(mediaId, streamFileId) {
@@ -641,13 +696,21 @@ fun PlayerScreen(
                         }
                     },
                     onDoubleTap = { offset ->
-                        // Double-tap left/right: ∓10s (TMPlayer pattern).
+                        // Double-tap left/right: ∓10s with animated feedback.
+                        // Consecutive double-taps accumulate (+20s, +30s...).
                         // Disabled while locked.
                         if (!controlsLocked) {
                             val forward = offset.x > size.width / 2
-                            val newPos = (player.currentPosition + if (forward) 10_000 else -10_000)
+                            val now = System.currentTimeMillis()
+                            seekTapCount =
+                                if (now - lastSeekTapTime < 900) seekTapCount + 1 else 1
+                            lastSeekTapTime = now
+                            val secs = seekTapCount * 10
+                            val newPos = (player.currentPosition +
+                                if (forward) secs * 1000L else -secs * 1000L)
                                 .coerceIn(0L, player.duration.coerceAtLeast(0L))
                             player.seekTo(newPos)
+                            seekFeedback = forward to secs
                         }
                     },
                 )
@@ -667,17 +730,21 @@ fun PlayerScreen(
                             setBrightness(brightness + delta)
                             gestureHud = GestureHud.Brightness(brightness)
                         } else {
+                            // Volume fix (moon's report 2026-11-02): the old
+                            // code did (delta * maxVolume).toInt(), so small
+                            // swipes truncated to 0 and did nothing. Use a
+                            // float accumulator for smooth steps.
+                            volumeFloat = (volumeFloat + delta).coerceIn(0f, 1f)
+                            val newVol = (volumeFloat * maxVolume).roundToInt()
+                                .coerceIn(0, maxVolume)
                             val cur =
                                 audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                            val newVol = (cur + (delta * maxVolume).toInt())
-                                .coerceIn(0, maxVolume)
                             if (newVol != cur) {
                                 audioManager.setStreamVolume(
                                     AudioManager.STREAM_MUSIC, newVol, 0
                                 )
                             }
-                            gestureHud =
-                                GestureHud.Volume(newVol / maxVolume.toFloat())
+                            gestureHud = GestureHud.Volume(volumeFloat)
                         }
                     }
                 }
@@ -899,7 +966,7 @@ fun PlayerScreen(
                                 )
                                 Spacer(Modifier.width(6.dp))
                                 Text(
-                                    resizeModes[resizeIndex].second,
+                                    resizeModes[resizeIndex].third,
                                     color = Color.White,
                                     style = MaterialTheme.typography.labelMedium.copy(
                                         fontFamily = FontFamily.Monospace
@@ -943,12 +1010,18 @@ fun PlayerScreen(
                             )
                         }
                         Text(
-                            formatTime(duration),
+                            if (showRemaining) {
+                                "-${formatTime((duration - currentPosition).coerceAtLeast(0L))}"
+                            } else {
+                                formatTime(duration)
+                            },
                             color = Color.White.copy(alpha = 0.9f),
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontFamily = FontFamily.Monospace
                             ),
-                            modifier = Modifier.width(64.dp),
+                            modifier = Modifier
+                                .width(64.dp)
+                                .clickable { showRemaining = !showRemaining },
                             textAlign = TextAlign.End,
                         )
                     }
@@ -1029,6 +1102,47 @@ fun PlayerScreen(
                     },
                     modifier = Modifier.padding(bottom = 64.dp),
                 )
+            }
+        }
+
+        // Double-tap seek feedback: animated +10s/-10s pill on the tapped side.
+        AnimatedVisibility(
+            visible = seekFeedback != null,
+            enter = fadeIn(animationSpec = tween(150)) +
+                scaleIn(initialScale = 0.85f, animationSpec = tween(150)),
+            exit = fadeOut(animationSpec = tween(300)),
+        ) {
+            seekFeedback?.let { (forward, secs) ->
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment =
+                        if (forward) Alignment.CenterEnd else Alignment.CenterStart,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 56.dp)
+                            .background(
+                                Color.Black.copy(alpha = 0.62f),
+                                CircleShape,
+                            )
+                            .border(
+                                1.dp,
+                                Color.White.copy(alpha = 0.2f),
+                                CircleShape,
+                            )
+                            .padding(horizontal = 22.dp, vertical = 14.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "${if (forward) "+" else "-"}${secs}s",
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        )
+                    }
+                }
             }
         }
 
@@ -1330,6 +1444,35 @@ fun PlayerScreen(
                                         applySubtitleStyle()
                                     }
                                 }
+                                // Position: vertical placement (moon's pick 2026-11-02 —
+                                // raise subtitles when the video is zoomed).
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        "Position",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MsColors.TextPrimary,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Slider(
+                                        value = subPosition,
+                                        onValueChange = {
+                                            subPosition = it
+                                            SubDelayPrefs.setPosition(context, mediaId, it)
+                                            applySubtitleStyle()
+                                        },
+                                        valueRange = 0f..0.4f,
+                                        modifier = Modifier.weight(1.6f),
+                                        colors = SliderDefaults.colors(
+                                            thumbColor = MsColors.Accent,
+                                            activeTrackColor = MsColors.Accent,
+                                        ),
+                                    )
+                                }
                             }
                         }
                         PlayerSheet.PLAYLIST -> {
@@ -1620,13 +1763,13 @@ private fun UnlockSlider(
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragEnd = {
-                        val maxSlide = (widthPx - thumbPx - 8.dp.toPx(density)).coerceAtLeast(0f)
+                        val maxSlide = (widthPx - thumbPx - 8.dp.toPx()).coerceAtLeast(0f)
                         if (maxSlide > 0 && offsetX >= maxSlide * 0.75f) onUnlock()
                         offsetX = 0f
                     },
                     onDragCancel = { offsetX = 0f },
                 ) { change, dragAmount ->
-                    val maxSlide = (widthPx - thumbPx - 8.dp.toPx(density)).coerceAtLeast(0f)
+                    val maxSlide = (widthPx - thumbPx - 8.dp.toPx()).coerceAtLeast(0f)
                     offsetX = (offsetX + dragAmount).coerceIn(0f, maxSlide)
                     change.consume()
                 }

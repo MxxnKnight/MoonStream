@@ -47,4 +47,16 @@ object SubDelayPrefs {
     fun setStrokeColor(ctx: Context, mediaId: Long, color: Int) {
         prefs(ctx).edit().putInt("sub_stroke_color_$mediaId", color).apply()
     }
+
+    /**
+     * Subtitle vertical position as bottom-padding fraction (0f = at the
+     * very bottom, 0.4f = 40% up). Fixes subtitles being cropped when the
+     * video is zoomed (moon's pick 2026-11-02).
+     */
+    fun getPosition(ctx: Context, mediaId: Long): Float =
+        prefs(ctx).getFloat("sub_pos_$mediaId", 0.08f)
+
+    fun setPosition(ctx: Context, mediaId: Long, v: Float) {
+        prefs(ctx).edit().putFloat("sub_pos_$mediaId", v).apply()
+    }
 }
