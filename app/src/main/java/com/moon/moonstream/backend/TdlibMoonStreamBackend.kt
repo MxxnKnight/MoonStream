@@ -190,26 +190,38 @@ class TdlibMoonStreamBackend(
      * TdByteWindow under its download mutex, and only after the chunks it
      * holds are complete — a later read simply re-downloads its range.
      *
-     * Returning true on a cache miss is deliberate: no fileId means this
-     * process never fetched the file, so there is nothing to clean.
+     * [messageFileIdCache] only knows files this process has read, so after a
+     * restart (exactly when Clear Cache runs) the id has to be looked up with
+     * `GetMessage` first. Returning true on an unknown message would make
+     * Clear Cache report success without deleting anything — that was the
+     * leak. True now means either "deleted" or "the message holds no file";
+     * a failed lookup or delete returns false so the caller can say so.
      */
     override suspend fun deleteCachedFile(channelId: Long, messageId: Long): Boolean {
+        val key = channelId to messageId
         return try {
-            val fileId = messageFileIdCache[channelId to messageId]
+            var fileId = messageFileIdCache[key]
             if (fileId == null) {
-                // Nothing was resolved for this message in this process, so
-                // TDLib has nothing of ours to drop. Logged because after an
-                // app restart this is exactly what Clear Cache hits.
-                AppLog.w(
-                    "TDSTREAM",
-                    "no fileId known for msg=$messageId — nothing to delete " +
-                        "(it was never read since the app started)",
-                )
-                return true // never downloaded → nothing to clean
+                val lookup = lookupFileId(channelId, messageId)
+                if (lookup.isFailure) {
+                    AppLog.w(
+                        "TDSTREAM",
+                        "could not look up msg=$messageId: " +
+                            "${lookup.exceptionOrNull()?.message}",
+                    )
+                    return false
+                }
+                fileId = lookup.getOrThrow()
+                if (fileId == 0) {
+                    AppLog.i("TDSTREAM", "msg=$messageId holds no video/file — nothing to delete")
+                    return true
+                }
+                messageFileIdCache[key] = fileId
+                AppLog.i("TDSTREAM", "resolved fileId=$fileId for msg=$messageId via GetMessage")
             }
             val res = telegramManager.send(TdApi.DeleteFile(fileId))
             if (!res.isSuccess) {
-                AppLog.w("TDSTREAM", "DeleteFile failed for msg=$messageId")
+                AppLog.w("TDSTREAM", "DeleteFile failed for msg=$messageId: ${res.exceptionOrNull()?.message}")
             }
             res.isSuccess
         } catch (e: Exception) {
@@ -217,6 +229,24 @@ class TdlibMoonStreamBackend(
             false
         }
     }
+
+    /**
+     * Asks Telegram for one message and pulls out its file id.
+     *
+     * `Result.success(0)` means the message really has no downloadable file
+     * (text, sticker, poll…); a `Result.failure` means the lookup itself did
+     * not happen, which is a different answer and must not be read as "clean".
+     * Content types match [readFileRange] on purpose: if streaming can use a
+     * file here, this can delete it, and nothing else is touched.
+     */
+    private suspend fun lookupFileId(channelId: Long, messageId: Long): Result<Int> =
+        telegramManager.send(TdApi.GetMessage(channelId, messageId)).map { msg ->
+            when (val c = msg.content) {
+                is TdApi.MessageDocument -> c.document.document?.id ?: 0
+                is TdApi.MessageVideo -> c.video.video?.id ?: 0
+                else -> 0
+            }
+        }
 
     override suspend fun getMe(): MsProfile {
         return try {

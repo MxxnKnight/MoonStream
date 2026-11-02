@@ -1607,7 +1607,7 @@ private fun CacheStorageBlock() {
                             val backend = BackendProvider.backend
                             val files = db.streamDao().getAll()
                             streamTotal = files.size
-                            for (f in files) {
+                            for ((i, f) in files.withIndex()) {
                                 try {
                                     if (backend.deleteCachedFile(f.channelId, f.messageId)) {
                                         streamCleared++
@@ -1616,6 +1616,11 @@ private fun CacheStorageBlock() {
                                     }
                                 } catch (e: Exception) {
                                     streamFailed++
+                                }
+                                // Each file may need a Telegram lookup now, so
+                                // show that the loop is alive.
+                                if ((i + 1) % 25 == 0) {
+                                    AppLog.i("CACHE", "stream cache: ${i + 1}/$streamTotal files checked")
                                 }
                             }
                             AppUiState.refreshCacheUsed(context)

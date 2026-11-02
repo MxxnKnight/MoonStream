@@ -69,9 +69,19 @@ Stremio/external players exactly as before.
   file's chunks deleted on close, app-cache MB freed, and a full Clear Cache
   summary — including the stream cache measured before and after, so it is
   visible whether Telegram's own folder actually shrank.
-- **Backend (`TDSTREAM`):** `DeleteFile` failures, and the case where no
-  fileId is known for a message (after a restart nothing is known, so Clear
-  Cache cannot delete Telegram's copy yet).
+- **Backend (`TDSTREAM`):** ids resolved through `GetMessage`, `DeleteFile`
+  failures with their reason, and messages that hold no file at all.
+
+### Fixed — Clear Cache after an app restart
+
+Clear Cache asked Telegram to delete the copies of every file in the stream
+list, but the file id was only known for files read since the app started —
+so after a restart it "succeeded" without deleting anything and the folder
+kept its size. `deleteCachedFile` now looks the id up with
+`TdApi.GetMessage(channelId, messageId)` when it isn't cached, remembers it,
+and only answers "nothing to clean" when the message genuinely has no
+video/document. A lookup that fails (offline) answers false, so Clear Cache
+reports a count of what it could not do instead of a fake success.
 - **Player (`PLAYER`):** close position and percentage, whether the file was
   watched to the end, and whether Telegram's copy was deleted or kept for
   resume.
