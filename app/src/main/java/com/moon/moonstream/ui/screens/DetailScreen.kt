@@ -723,7 +723,7 @@ fun DetailScreen(
                         MsTextField(
                             value = seasonText,
                             onValueChange = { seasonText = it.filter { c -> c.isDigit() } },
-                            label = "Season",
+                            hint = "Season",
                             modifier = Modifier.weight(1f),
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Number
@@ -732,7 +732,7 @@ fun DetailScreen(
                         MsTextField(
                             value = episodeText,
                             onValueChange = { episodeText = it.filter { c -> c.isDigit() } },
-                            label = "Episode",
+                            hint = "Episode",
                             modifier = Modifier.weight(1f),
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Number
