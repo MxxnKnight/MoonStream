@@ -1273,7 +1273,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         Text(
                             "Download failed: ${(updateState as UpdateState.Failed).message}",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MsColors.Error,
+                            color = Color(0xFFF44336),
                         )
                     } else {
                         Text(
@@ -1298,7 +1298,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 MsOutlinePill(
                     text = "Later",
                     fontSize = 14,
-                    enabled = downloadProgress == null,
+                    enabled = updateState !is UpdateState.Downloading,
                     onClick = { updateInfo = null },
                 )
             },
