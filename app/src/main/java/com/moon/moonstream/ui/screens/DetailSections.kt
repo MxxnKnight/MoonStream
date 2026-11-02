@@ -371,14 +371,6 @@ fun FileRow(
                     fontSize = 12,
                 )
             }
-            // Manual episode assignment (moon's pick 2026-11-02).
-            if (onSetEpisode != null) {
-                LimeTextButton(
-                    text = "set episode",
-                    onClick = onSetEpisode,
-                    fontSize = 12,
-                )
-            }
         }
     }
 }
