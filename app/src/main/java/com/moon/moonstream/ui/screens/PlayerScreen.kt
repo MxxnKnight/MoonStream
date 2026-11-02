@@ -402,10 +402,14 @@ fun PlayerScreen(
         resizeIndex = (resizeIndex + 1) % resizeModes.size
         val (mode, ratio, label) = resizeModes[resizeIndex]
         playerViewRef?.let { pv ->
+            // Set the resize mode on the PlayerView (it forwards to its
+            // internal AspectRatioFrameLayout). Only call setAspectRatio()
+            // for fixed ratios; 0f means "use the video's natural ratio"
+            // and calling it can interfere with the mode change.
             pv.resizeMode = mode
-            // Fixed ratio (16:9 etc.): set on the content frame; 0f clears
-            // back to the video's natural ratio.
-            findAspectFrame()?.setAspectRatio(ratio)
+            if (ratio != 0f) {
+                findAspectFrame()?.setAspectRatio(ratio)
+            }
         }
         MsToast.show(label)
         AppLog.i("PLAYER", "Resize mode: $label")
@@ -551,6 +555,14 @@ fun PlayerScreen(
                 // No matching subtitle language → stay off instead of guessing.
                 setSelectUndeterminedTextLanguage(false)
                 if (subsOff) setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                // Prefer phone-decodable audio (AAC/MP3/Opus/Vorbis) over
+                // EAC3/AC3/DTS, which the Helio G96 can't decode in hardware.
+                // If the only track is EAC3, it still gets picked (better than
+                // silence) and the error screen explains why it fails.
+                setPreferredAudioMimeTypes(
+                    "audio/aac", "audio/mpeg", "audio/opus", "audio/vorbis",
+                    "audio/eac3", "audio/ac3",
+                )
             }
             .build()
         player.prepare()
@@ -714,9 +726,18 @@ fun PlayerScreen(
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
-                val msg = "${error.errorCodeName}: ${error.message}"
-                AppLog.e("PLAYER", "Playback failed — $msg")
-                playerError = msg
+                val raw = "${error.errorCodeName}: ${error.message}"
+                AppLog.e("PLAYER", "Playback failed — $raw")
+                // Friendly message for unsupported audio codecs (EAC3/Dolby).
+                // The phone can't decode these in hardware; suggest switching
+                // audio tracks if the file has more than one.
+                playerError = if (raw.contains("audio/eac3", ignoreCase = true) ||
+                    raw.contains("audio/ac3", ignoreCase = true)) {
+                    "This audio format (Dolby EAC3) isn't supported by your phone. " +
+                    "Try a different audio track from the Audio button — look for AAC or MP3."
+                } else {
+                    raw
+                }
                 isBuffering = false
             }
         }
@@ -936,7 +957,7 @@ fun PlayerScreen(
         if (controlsVisible && !controlsLocked) {
             Row(
                 modifier = Modifier.align(Alignment.Center),
-                horizontalArrangement = Arrangement.spacedBy(48.dp),
+                horizontalArrangement = Arrangement.spacedBy(64.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PlayerIconButton(
