@@ -16,7 +16,7 @@ The user connects their own Telegram account; the app scans their channels
 for movies and TV shows, builds a personal library, and serves it to the
 Stremio video player as a local streaming addon running on the phone.
 
-Package: `com.moon.moonstream`. Repo: `MxxnKnight/MoonStream` (private).
+Package: `com.moon.moonstream`. Repo: `MxxnKnight/MoonStream` (public — matters for OTA update checks).
 
 ## The ownership split — IMPORTANT, do not cross it
 
@@ -42,17 +42,20 @@ yours. When in doubt, update this file instead of guessing.
   including on cold start when a saved session restores silently.
 - `FakeMoonStreamBackend` is kept for previews/tests only.
 
-## Current status (2026-10-31)
+## Current status (2026-11-02) — v0.15.0
 
-- Phase 1 — UI shell: DONE (all screens per the approved mockup).
+- Phase 1 — UI shell: DONE.
 - Phase 2 — Telegram login (TDLib): DONE by moon.
-- Phase 3 — Scan/index/library: NEXT, assistant's work, built against the
-  contract (`listChannels` / `fetchMessages`).
-- Phase 4 — In-phone Stremio server: basic version DONE by moon's AI
-  (`server/MoonStreamServer.kt` + foreground service); needs review and
-  hardening (separate addon/stream ports, rebind on network change).
-- Phase 5 — Streaming extras (range seeking, split joining, ZIP entries,
-  per-stream Copy Link, subtitles, cache limits, backup, OTA): pending.
+- Phase 3 — Scan/index/library: DONE (caption-first parser, TMDB/Cinemeta/Kitsu
+  matching with ≥0.75 confidence rule, episode grouping, library tools,
+  manual set-episode, Fix Metadata).
+- Phase 4 — In-phone Stremio server: DONE (ports 8080/8081, Range 206/416,
+  foreground service).
+- Phase 5 — Streaming extras: DONE. In-app player (ExoPlayer/media3) with
+  TMPlayer-style UI, resume positions, subtitle delay/appearance/position,
+  audio switch, gestures, lock, screenshot, NextUp — plus the custom
+  `tdfile://` streaming engine (see below) so the player works with the
+  addon server OFF. OTA updates, Tier 1 backup, Clear Cache all live.
 
 ## Build
 
@@ -150,38 +153,25 @@ Then implement all three in `backend/TdlibMoonStreamBackend.kt`.
 - Compile via the normal CI workflow after implementing; the assistant
   reviews before merge.
 
-## Stream cache auto-delete — instructions for moon's AI (Antigravity)
+## Stream cache auto-delete — DONE (2026-11-02)
 
 moon picked (2026-11-02): after he finishes watching a video in the in-app
 player, the app auto-deletes the locally downloaded bytes so storage
-doesn't grow. The app side is done (0.13.0): when the player closes a
-finished video (>=90% watched), it calls the new contract method below.
-The contract method has a no-op default (`false`), so nothing breaks
-until you implement it — the feature just silently does nothing.
+doesn't grow. Implemented by moon's AI (freebuff) in
+`backend/TdlibMoonStreamBackend.kt`:
 
-### What to add to `backend/TdlibMoonStreamBackend.kt`
-
-Override the contract default:
-
-```kotlin
-override suspend fun deleteCachedFile(channelId: Long, messageId: Long): Boolean {
-    return try {
-        val fileId = messageFileIdCache[channelId to messageId]
-            ?: return true // never downloaded → nothing to clean
-        val res = telegramManager.send(TdApi.DeleteFile(fileId))
-        res.isSuccess
-    } catch (e: Exception) {
-        false
-    }
-}
-```
+- `deleteCachedFile(channelId, messageId)` override: looks up the TDLib
+  fileId from `messageFileIdCache`, falling back to `TdApi.GetMessage` when
+  unknown (e.g. after app restart — this was the Clear Cache leak, now
+  fixed). Calls `TdApi.DeleteFile(fileId)`. Returns false (not fake true)
+  on lookup/delete failure so callers can report honestly.
+- Called by the player on close of a finished video (>=90% watched), by the
+  streaming window every ~96 MB of evicted chunks during playback, and by
+  Settings → Clear Cache for every stream file in the DB.
 
 ### Rules
 
-- This ONE override is the whole backend change. Don't touch anything else.
 - Never log file paths or contents — a success/failure boolean is enough.
-- Compile via the normal CI workflow after implementing; the assistant
-  reviews before merge.
 
 ---
 
@@ -270,12 +260,14 @@ Once the above lands, I will:
   `tdfile://<fileId>`.
 - Add the Settings toggle "Low storage mode" (default ON, like TMPlayer).
 
-### Status (2026-11-02): implemented app-side, contract untouched
+### Status (2026-11-02): fully implemented and merged (v0.15.0)
 
-This landed without waiting on new TdApi surface: the DataSource drives
-`readFileRange` (which already maps to DownloadFile/ReadFilePart with an
-offset), so nothing in `backend/` or `tdlib/` changed and no new contract
-methods were needed.
+Implemented by moon's AI (freebuff), reviewed and merged. No new TdApi
+surface was needed: the DataSource drives `readFileRange` (which already
+maps to DownloadFile/ReadFilePart with an offset), so nothing in `tdlib/`
+changed and no new contract methods were needed. The `deleteCachedFile`
+override (section above) is also done, so the window's ~96 MB purges
+actually delete TDLib's copy now.
 
 - `ui/player/TdDataSource.kt` — `tdfile://stream/<channelId>/<messageId>/<file>?size=…`
   DataSource + factory; non-tdfile URIs fall through to Media3 defaults.
@@ -296,11 +288,10 @@ checked per chunk crossed rather than per read.
 - `PlayerScreen` now builds the player with this factory and plays
   `tdfile://` whenever the DB knows the file size; HTTP stays as fallback
   and for external players. Settings' Clear Cache also wipes the window.
-
-Still open: `deleteCachedFile` override in the TDLib module (see the
-section above) — that is the only part that needs moon's lane. The window
-now asks for it every ~96 MB of deletions, so the moment it exists TDLib's
-own copy stops growing to the full film; today that call is a no-op.
+- Follow-ups in the same branch: `deleteCachedFile` with GetMessage
+  fallback (fixes Clear Cache after restart), detailed stream-engine
+  logging, Settings → Languages (subtitle/audio first+second preference,
+  defaults Mal → Eng), Telegram rate limiting for the chunk fetcher.
 
 ### Rules
 
