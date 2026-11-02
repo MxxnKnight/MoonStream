@@ -90,6 +90,16 @@ internal class TdByteWindow(
     @Volatile
     private var closed = false
 
+    init {
+        AppLog.i(
+            "TDLOCAL",
+            "window open msg=$messageId: ${fileSize / (1024 * 1024)} MB in " +
+                "${LowStorageWindow.chunkCount(fileSize)} chunks of " +
+                "${LowStorageWindow.CHUNK_BYTES / (1024 * 1024)} MB, keeping " +
+                "${LowStorageWindow.WINDOW_BYTES / (1024 * 1024)} MB around the playhead",
+        )
+    }
+
     fun chunkFile(index: Long): File = File(dir, "chunk_$index.bin")
 
     private fun have(index: Long): Boolean {
@@ -179,10 +189,13 @@ internal class TdByteWindow(
         partial.delete()
         var got = 0L
         var emptyReplies = 0
+        var requests = 0
+        val startedAt = SystemClock.elapsedRealtime()
 
         while (got < want) {
             if (closed) return
             awaitRateLimit()
+            requests++
             val bytes = try {
                 BackendProvider.backend.readFileRange(
                     channelId = channelId,
@@ -216,6 +229,12 @@ internal class TdByteWindow(
                 partial.delete()
             }
         }
+        AppLog.d(
+            "TDLOCAL",
+            "chunk $index/${LowStorageWindow.chunkCount(fileSize)} stored: " +
+                "${want / 1024} KB in ${SystemClock.elapsedRealtime() - startedAt} ms " +
+                "($requests request${if (requests == 1) "" else "s"})",
+        )
     }
 
     /**
@@ -290,27 +309,38 @@ internal class TdByteWindow(
     private fun evictBefore(keepFrom: Long, current: Long) {
         try {
             var freed = 0L
+            var removed = 0
             dir.listFiles()?.forEach { f ->
                 val idx = f.name.removePrefix("chunk_").substringBefore('.').toLongOrNull()
                 if (idx != null && idx < keepFrom && idx != openIndex) {
                     freed += f.length()
-                    f.delete()
+                    if (f.delete()) removed++
                 }
             }
             val held = dir.listFiles()?.filter { it.name.startsWith("chunk_") } ?: return
-            val heldBytes = held.sumOf { it.length() }
+            var heldBytes = held.sumOf { it.length() }
             if (heldBytes > LowStorageWindow.WINDOW_BYTES + LowStorageWindow.SLACK_BYTES) {
                 val indexes = held.mapNotNull {
                     it.name.removePrefix("chunk_").substringBefore('.').toLongOrNull()
                 }
                 LowStorageWindow.chunksToEvict(heldBytes, indexes, current).forEach { idx ->
                     if (idx != openIndex && idx != current) {
-                        freed += chunkFile(idx).length()
-                        chunkFile(idx).delete()
+                        val f = chunkFile(idx)
+                        freed += f.length()
+                        if (f.delete()) removed++
                     }
                 }
+                heldBytes -= freed
             }
             deletedSincePurge += freed
+            if (removed > 0) {
+                AppLog.d(
+                    "TDLOCAL",
+                    "deleted $removed watched chunk(s) at chunk $current: " +
+                        "${freed / 1024} KB freed, window now ${heldBytes / 1024} KB " +
+                        "(${deletedSincePurge / (1024 * 1024)} MB deleted since Telegram purge)",
+                )
+            }
         } catch (e: Exception) {
             // Eviction is best effort; never break playback over a delete.
         }
@@ -329,17 +359,27 @@ internal class TdByteWindow(
     private fun purgeTelegramCopy() {
         if (closed || purgeRunning) return
         purgeRunning = true
+        val watchedMb = deletedSincePurge / (1024 * 1024)
         deletedSincePurge = 0L
+        AppLog.i("TDLOCAL", "purging Telegram's copy of msg=$messageId after ${watchedMb} MB watched")
         prefetchScope.launch {
             try {
                 mutex.withLock {
                     if (!closed) {
                         val ok = BackendProvider.backend.deleteCachedFile(channelId, messageId)
-                        if (ok) AppLog.i("TDLOCAL", "Telegram copy purged for msg=$messageId")
+                        if (ok) {
+                            AppLog.i("TDLOCAL", "Telegram copy deleted for msg=$messageId")
+                        } else {
+                            AppLog.w(
+                                "TDLOCAL",
+                                "Telegram copy NOT deleted for msg=$messageId " +
+                                    "(backend said no — it will try again at the next window)",
+                            )
+                        }
                     }
                 }
             } catch (e: Exception) {
-                AppLog.i("TDLOCAL", "purge skipped: ${e.message}")
+                AppLog.w("TDLOCAL", "purge failed for msg=$messageId: ${e.message}")
             } finally {
                 purgeRunning = false
             }
@@ -358,6 +398,7 @@ internal class TdByteWindow(
         openIndex = -1L
         TdStreamCache.markInactive(channelId, messageId)
         TdStreamCache.clearFile(context, channelId, messageId)
+        AppLog.i("TDLOCAL", "window closed for msg=$messageId")
     }
 
     private companion object {

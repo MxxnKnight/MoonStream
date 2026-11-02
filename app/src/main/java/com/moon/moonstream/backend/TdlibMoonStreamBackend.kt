@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.moon.moonstream.tdlib.AuthState
 import com.moon.moonstream.tdlib.TelegramManager
+import com.moon.moonstream.util.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -195,10 +196,24 @@ class TdlibMoonStreamBackend(
     override suspend fun deleteCachedFile(channelId: Long, messageId: Long): Boolean {
         return try {
             val fileId = messageFileIdCache[channelId to messageId]
-                ?: return true // never downloaded → nothing to clean
+            if (fileId == null) {
+                // Nothing was resolved for this message in this process, so
+                // TDLib has nothing of ours to drop. Logged because after an
+                // app restart this is exactly what Clear Cache hits.
+                AppLog.w(
+                    "TDSTREAM",
+                    "no fileId known for msg=$messageId — nothing to delete " +
+                        "(it was never read since the app started)",
+                )
+                return true // never downloaded → nothing to clean
+            }
             val res = telegramManager.send(TdApi.DeleteFile(fileId))
+            if (!res.isSuccess) {
+                AppLog.w("TDSTREAM", "DeleteFile failed for msg=$messageId")
+            }
             res.isSuccess
         } catch (e: Exception) {
+            AppLog.w("TDSTREAM", "DeleteFile threw for msg=$messageId: ${e.message}")
             false
         }
     }

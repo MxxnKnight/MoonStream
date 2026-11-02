@@ -58,6 +58,28 @@ Stremio/external players exactly as before.
   threshold rose to 6 empty replies, which spends roughly 20 s waiting —
   enough for a Telegram flood-wait to pass without showing an error.
 
+### Added — logs detailed enough to diagnose storage
+
+- **Engine (`TDLOCAL`):** window open (file size, chunk count, window cap),
+  every chunk stored with KB + elapsed ms + request count, every eviction
+  (chunks deleted, KB freed, window size, MB since the last Telegram purge),
+  every purge attempt and its result, empty replies with the backoff chosen,
+  and window close.
+- **Deletes (`CACHE`):** leftover chunk folders removed by Clear Cache, one
+  file's chunks deleted on close, app-cache MB freed, and a full Clear Cache
+  summary — including the stream cache measured before and after, so it is
+  visible whether Telegram's own folder actually shrank.
+- **Backend (`TDSTREAM`):** `DeleteFile` failures, and the case where no
+  fileId is known for a message (after a restart nothing is known, so Clear
+  Cache cannot delete Telegram's copy yet).
+- **Player (`PLAYER`):** close position and percentage, whether the file was
+  watched to the end, and whether Telegram's copy was deleted or kept for
+  resume.
+- **`APP` boundary lines:** one at launch and one when you press Clear, so it
+  is always clear where the current log starts. Clear now also empties the
+  on-disk mirror (`filesDir/logs/app.log`) — before this it only emptied the
+  screen and the old lines came back on the next launch.
+
 ### Changed
 
 - **`ui/screens/PlayerScreen.kt`** — the `ExoPlayer` is built with

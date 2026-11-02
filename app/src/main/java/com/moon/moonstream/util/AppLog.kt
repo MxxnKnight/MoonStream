@@ -41,6 +41,7 @@ data class LogLine(
 object AppLog {
     private const val MAX = 200 // reduced from 500: fewer items = less memory, faster render
     private const val MAX_FILE_BYTES = 512 * 1024L
+    private const val TAG_APP = "APP"
     val lines = mutableStateListOf<LogLine>()
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -73,6 +74,9 @@ object AppLog {
                 }
             } catch (e: Exception) { /* logging must never crash the app */ }
         }
+        // Boundary marker: makes it obvious where this launch begins when the
+        // older lines are still on screen (they are, until Clear or 200 lines).
+        i(TAG_APP, "app launched — older lines kept from previous run")
     }
 
     private fun formatLine(line: LogLine): String =
@@ -131,11 +135,26 @@ object AppLog {
     fun w(tag: String, msg: String) = add("W", tag, msg)
     fun e(tag: String, msg: String) = add("E", tag, msg)
 
+    /**
+     * Empties the screen AND the on-disk mirror.
+     *
+     * The file half used to be skipped, so "Clear" looked like it worked and
+     * then init() seeded the same old lines straight back on the next launch.
+     * The truncate is queued on the single I/O executor before the marker line
+     * is appended, so ordering is guaranteed and the marker survives.
+     */
     fun clear() {
+        val file = logFile
+        io.execute {
+            try {
+                file?.writeText("")
+            } catch (e: Exception) { /* never break the app for logging */ }
+        }
         if (Looper.myLooper() == Looper.getMainLooper()) {
             lines.clear()
         } else {
             mainHandler.post { lines.clear() }
         }
+        i(TAG_APP, "logs cleared by user")
     }
 }

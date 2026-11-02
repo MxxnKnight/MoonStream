@@ -1,6 +1,7 @@
 package com.moon.moonstream.cache
 
 import android.content.Context
+import com.moon.moonstream.util.AppLog
 import java.io.File
 
 /**
@@ -59,10 +60,22 @@ object TdStreamCache {
         val root = root(context)
         val before = dirSize(root)
         val inUse = synchronized(active) { active.toSet() }
+        var folders = 0
         root.listFiles()?.forEach { dir ->
-            if (!inUse.contains(dir.name)) dir.deleteRecursively()
+            if (!inUse.contains(dir.name)) {
+                dir.deleteRecursively()
+                folders++
+            }
         }
-        return (before - dirSize(root)).coerceAtLeast(0L)
+        val freed = (before - dirSize(root)).coerceAtLeast(0L)
+        if (folders > 0) {
+            AppLog.i(
+                "CACHE",
+                "player chunks: deleted $folders leftover folder(s), ${freed / (1024 * 1024)} MB freed" +
+                    if (inUse.isEmpty()) "" else " (${inUse.size} playback folder(s) kept)",
+            )
+        }
+        return freed
     }
 
     /** Deletes one file's chunks (called when its playback closes). */
@@ -70,6 +83,12 @@ object TdStreamCache {
         val dir = File(root(context), key(channelId, messageId))
         val before = dirSize(dir)
         dir.deleteRecursively()
+        if (before > 0) {
+            AppLog.i(
+                "CACHE",
+                "player chunks: deleted msg=$messageId, ${before / (1024 * 1024)} MB freed",
+            )
+        }
         return before
     }
 

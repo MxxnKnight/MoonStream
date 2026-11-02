@@ -622,7 +622,13 @@ fun PlayerScreen(
             val finished = dur > 0 && pos >= dur * 9 / 10
             val finalPos = if (pos < 10_000L || finished) 0L else pos
             if (streamFileId != 0L) {
+                val pct = if (dur > 0) (pos * 100 / dur).toInt() else 0
                 ioScope.launch(Dispatchers.IO) {
+                    AppLog.i(
+                        "PLAYER",
+                        "closed at ${pos / 1000}s of ${dur / 1000}s ($pct%) — " +
+                            if (finished) "watched to the end" else "resume position saved",
+                    )
                     try {
                         db.watchProgressDao().updatePosition(
                             streamFileId, finalPos, System.currentTimeMillis(),
@@ -639,10 +645,16 @@ fun PlayerScreen(
                                     .deleteCachedFile(f.channelId, f.messageId)
                                 AppLog.i(
                                     "PLAYER",
-                                    "Auto-delete stream cache for '${f.fileName}': $deleted",
+                                    "finished — Telegram copy of '${f.fileName}' " +
+                                        if (deleted) "deleted" else "NOT deleted (backend said no)",
                                 )
                             }
                         } catch (e: Exception) { /* never break close */ }
+                    } else {
+                        AppLog.i(
+                            "PLAYER",
+                            "not finished — Telegram's copy left for resume, goes at Clear Cache",
+                        )
                     }
                 }
             }

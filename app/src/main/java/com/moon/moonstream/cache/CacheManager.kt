@@ -1,6 +1,7 @@
 package com.moon.moonstream.cache
 
 import android.content.Context
+import com.moon.moonstream.util.AppLog
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -41,7 +42,9 @@ object CacheManager {
         val dir = context.cacheDir
         val before = dirSize(dir)
         dir.listFiles()?.forEach { it.deleteRecursively() }
-        before - dirSize(dir)
+        val freed = before - dirSize(dir)
+        AppLog.i("CACHE", "app cache: ${freed / (1024 * 1024)} MB freed")
+        freed
     }
 
     private fun dirSize(f: File): Long {

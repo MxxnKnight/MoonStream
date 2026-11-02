@@ -1600,6 +1600,8 @@ private fun CacheStorageBlock() {
                         // clears it safely via TdApi.DeleteFile.
                         var streamCleared = 0
                         var streamTotal = 0
+                        var streamFailed = 0
+                        val beforeStream = CacheManager.streamCacheBytes(context)
                         try {
                             val db = MsDatabase.get(context)
                             val backend = BackendProvider.backend
@@ -1609,11 +1611,26 @@ private fun CacheStorageBlock() {
                                 try {
                                     if (backend.deleteCachedFile(f.channelId, f.messageId)) {
                                         streamCleared++
+                                    } else {
+                                        streamFailed++
                                     }
-                                } catch (e: Exception) { /* skip */ }
+                                } catch (e: Exception) {
+                                    streamFailed++
+                                }
                             }
                             AppUiState.refreshCacheUsed(context)
-                        } catch (e: Exception) { /* skip */ }
+                        } catch (e: Exception) {
+                            AppLog.w("CACHE", "stream cache clear failed: ${e.message}")
+                        }
+                        val afterStream = CacheManager.streamCacheBytes(context)
+                        AppLog.i(
+                            "CACHE",
+                            "Clear Cache: app ${freed / (1024 * 1024)} MB, player chunks " +
+                                "${chunksFreed / (1024 * 1024)} MB, Telegram copies " +
+                                "$streamCleared/$streamTotal deleted ($streamFailed failed) — " +
+                                "stream cache ${beforeStream / (1024 * 1024)} → " +
+                                "${afterStream / (1024 * 1024)} MB",
+                        )
                         withContext(Dispatchers.Main) {
                             val msg = buildString {
                                 append(if (freed > 0) "Cache cleared" else "Cache is already empty")
