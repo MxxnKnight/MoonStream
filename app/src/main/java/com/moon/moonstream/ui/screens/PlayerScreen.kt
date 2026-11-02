@@ -1473,8 +1473,6 @@ private fun buildMediaItem(video: Uri, subs: List<Pair<Uri, String>>): MediaItem
         )
         .build()
 
-/** Small labeled button for the player's bottom action row. */
-@Composable
 /**
  * mpvex-style player button: 45dp circle, subtle white background +
  * 1dp border, 20dp glyph. No heavy backgrounds, no labels.

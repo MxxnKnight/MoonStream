@@ -95,46 +95,64 @@ fun SettingsGroup(title: String, content: @Composable () -> Unit) {
             )
         )
     }
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .clickable {
-                    expanded = !expanded
-                    com.moon.moonstream.ui.state.SettingsPrefs.setBool(
-                        context, "grp_$title", expanded
+    // Card-style section (moon's pick 2026-11-02): the whole section is a
+    // div-like card — header and content live inside it, expanding in place.
+    MsCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        expanded = !expanded
+                        com.moon.moonstream.ui.state.SettingsPrefs.setBool(
+                            context, "grp_$title", expanded
+                        )
+                    }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    color = MsColors.Accent,
+                    modifier = Modifier.weight(1f),
+                )
+                androidx.compose.animation.core.animateFloatAsState(
+                    targetValue = if (expanded) 180f else 0f,
+                    label = "grpChevron"
+                ).value.let { rot ->
+                    Icon(
+                        imageVector = Icons.Filled.ExpandMore,
+                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        tint = MsColors.TextSecondary,
+                        modifier = Modifier
+                            .size(22.dp)
+                            .graphicsLayer { rotationZ = rot },
                     )
                 }
-                .padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            MsGroupHeader(title, modifier = Modifier.weight(1f))
-            androidx.compose.animation.core.animateFloatAsState(
-                targetValue = if (expanded) 180f else 0f,
-                label = "grpChevron"
-            ).value.let { rot ->
-                Icon(
-                    imageVector = Icons.Filled.ExpandMore,
-                    contentDescription = if (expanded) "Collapse" else "Expand",
-                    tint = MsColors.TextSecondary,
-                    modifier = Modifier
-                        .size(22.dp)
-                        .graphicsLayer { rotationZ = rot },
-                )
             }
-        }
-        if (expanded) {
-            MsCard(modifier = Modifier.fillMaxWidth()) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = androidx.compose.animation.expandVertically() +
+                    androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.shrinkVertically() +
+                    androidx.compose.animation.fadeOut(),
+            ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 16.dp),
                 ) {
+                    androidx.compose.material3.HorizontalDivider(
+                        color = MsColors.TextSecondary.copy(alpha = 0.15f),
+                        modifier = Modifier.padding(bottom = 10.dp),
+                    )
                     content()
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
     }
+    Spacer(Modifier.height(10.dp))
 }
