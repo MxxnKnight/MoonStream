@@ -182,3 +182,98 @@ override suspend fun deleteCachedFile(channelId: Long, messageId: Long): Boolean
 - Never log file paths or contents — a success/failure boolean is enough.
 - Compile via the normal CI workflow after implementing; the assistant
   reviews before merge.
+
+---
+
+## Custom TDLib DataSource + sliding-window cache — for moon's AI
+
+moon picked (2026-11-02): TMPlayer-style low-storage streaming for the
+in-app player. Instead of the current HTTP-server path
+(`http://127.0.0.1:8081/stream/...` → `readFileRange`), the player should
+stream **directly from TDLib** via a custom Media3 `DataSource`, with a
+sliding download window so a 2 GB video never holds more than ~200 MB on
+disk. Reference: TMPlayer repo (GPL-3.0) — study the *patterns*, do not
+copy-paste code.
+
+### Why
+
+The HTTP path forces TDLib to accumulate chunks in `tdlib_files` with no
+way to evict old ones (TDLib has no partial-file delete). A custom
+`DataSource` controls downloads directly: when playback moves past the
+window, delete the whole file via `TdApi.DeleteFile` and re-download only
+the new window. moon's phone is low-storage; this is the fix.
+
+### What to build
+
+**1. `tdfile://` DataSource** (`player/TdDataSource.kt`, new file)
+
+- A Media3 `DataSource` (extend `BaseDataSource`) that understands
+  `tdfile://<fileId>?type=<mime>` URIs.
+- `open(DataSpec)`: resolve the TDLib fileId from the URI, ask TDLib for
+  the file (`TdApi.GetFile` / download), block until bytes are available.
+- `read(byte[], offset, length)`: read from the partial file on disk as
+  TDLib fills it; block (with timeout) while waiting for bytes.
+- `close()`: release.
+- MIME type: infer from the `type` query param, else from file extension
+  (`mkv` → `video/x-matroska`, `mp4` → `video/mp4`, etc.). Media3 picks
+  extractors by Content-Type first — wrong/missing type causes slow
+  extractor probing.
+
+**2. Byte-window manager** (`player/TdByteWindow.kt`, new file)
+
+- One instance per playing file. Holds: fileId, file size, local path,
+  the confirmed-downloaded byte range.
+- `watch(fileId)`: point TDLib at the file (`TdApi.DownloadFile` with
+  offset/limit).
+- Reads come off the partial file on disk as bytes land; no full download
+  before playback starts. Seeking = re-open at new offset = re-point
+  TDLib (no re-download of the whole file).
+
+**3. Sliding-window cache** (`player/LowStorageWindow.kt`, new file)
+
+Constants (from TMPlayer, tune as needed):
+- `WINDOW_BYTES = 200 MB` — max held on disk per video.
+- `MIN_WINDOW_BYTES = 32 MB` — below this, don't bother rolling.
+- `BACK_BYTES = 2 MB` — kept behind the read position (small rewinds free).
+- `ROLL_MARGIN_BYTES = 4 MB` — roll the window when reads get this close
+  to the window end.
+- `SLACK_BYTES = 16 MB` — headroom so extractor index reads at file end
+  don't evict the start.
+
+Logic:
+- Track downloaded ranges per fileId.
+- Before each download request: if `ranges.total + newBytes > WINDOW + SLACK`,
+  set `deleteFirst = true` → call `TdApi.DeleteFile(fileId)`, then
+  re-request only `[readPosition - BACK_BYTES, readPosition + WINDOW]`
+  (aligned to 1 MB part boundaries).
+- Never evict a file the user explicitly downloaded (check download state).
+
+**4. Backend contract additions** (`MoonStreamBackend`, additive only)
+
+```kotlin
+/** TDLib fileId for a channel message, or null if unknown. */
+suspend fun getFileId(channelId: Long, messageId: Int): Int?
+
+/** Low-level TDLib send for the DataSource (or expose what's needed). */
+suspend fun tdSend(query: TdApi.Function<*>): TdApi.Object
+```
+
+The app side will construct `tdfile://` URIs from `getFileId()` and pass
+a `DataSource.Factory` into ExoPlayer. Keep the HTTP server path working
+as fallback (external players still use it).
+
+### Integration (app side, my lane — do NOT touch)
+
+Once the above lands, I will:
+- Add `TdDataSource.Factory` to the ExoPlayer builder in `PlayerScreen`.
+- Switch `PlayerUrls` in-app playback from `http://127.0.0.1:8081/...` to
+  `tdfile://<fileId>`.
+- Add the Settings toggle "Low storage mode" (default ON, like TMPlayer).
+
+### Rules
+
+- Patterns only from TMPlayer — fresh code, never copy-paste (GPL-3.0).
+- Do NOT touch `ui/`, `server/`, `index/`, or the HTTP server. Backend
+  contract additions must be additive with safe defaults.
+- The `deleteCachedFile` override from the section above stays as the
+  manual/auto clear path; the window is the *streaming* path.
