@@ -1410,20 +1410,16 @@ fun PlayerScreen(
 
         val opEndMs = skipTimes?.opEnd?.let { (it * 1000).toLong() }
         val opStartMs = skipTimes?.opStart?.let { (it * 1000).toLong() } ?: 0L
-        // Show during OP range (API) or first 3 min (manual fallback).
-        val showSkipIntro = if (opEndMs != null) {
-            currentPosition in opStartMs until opEndMs && !controlsLocked
-        } else {
-            currentPosition < 180_000L && currentPosition > 5_000L && !controlsLocked
-        }
+        // Show ONLY during the actual OP from AniSkip. No manual fallback —
+        // if the API has no data, no button (moon's call 2026-11-03).
+        val showSkipIntro = opEndMs != null &&
+            currentPosition in opStartMs until opEndMs &&
+            !controlsLocked
         if (showSkipIntro) {
-            val skipTarget = opEndMs ?: (currentPosition + 85_000L)
-                .coerceAtMost(duration.coerceAtLeast(0L))
             Button(
                 onClick = {
-                    player.seekTo(skipTarget)
-                    AppLog.i("PLAYER", "Skip intro: ${currentPosition/1000}s → ${skipTarget/1000}s" +
-                        if (opEndMs != null) " (AniSkip)" else " (manual)")
+                    player.seekTo(opEndMs)
+                    AppLog.i("PLAYER", "Skip intro: ${currentPosition/1000}s → ${opEndMs/1000}s (AniSkip)")
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
