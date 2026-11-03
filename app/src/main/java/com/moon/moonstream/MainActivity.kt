@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -32,6 +33,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -337,6 +339,17 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         .clip(RoundedCornerShape(30.dp))
                         .background(MsColors.Surface)
                         .border(1.dp, MsColors.Divider, RoundedCornerShape(30.dp))
+                        // Swipe to switch tabs (moon's request 2026-11-04, Nuvio-style).
+                        .pointerInput(selectedTab) {
+                            detectHorizontalDragGestures { _, dragAmount ->
+                                val idx = tabs.indexOfFirst { it.screen == selectedTab }
+                                if (dragAmount < -50 && idx < tabs.size - 1) {
+                                    goTab(tabs[idx + 1].screen)
+                                } else if (dragAmount > 50 && idx > 0) {
+                                    goTab(tabs[idx - 1].screen)
+                                }
+                            }
+                        }
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {

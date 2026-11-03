@@ -15,6 +15,7 @@ import android.view.SurfaceView
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -190,6 +191,10 @@ fun PlayerScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val db = remember { MsDatabase.get(context) }
     val ioScope = rememberCoroutineScope()
+
+    // System back gesture/button closes the player (moon's bug 2026-11-04:
+    // only the in-player back button worked).
+    BackHandler(onBack = onClose)
 
     // moon's rule: video plays in landscape + true fullscreen (like video players).
     // Orientation: landscape while playing. Keyed on streamFileId so it
