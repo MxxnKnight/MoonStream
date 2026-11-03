@@ -20,8 +20,12 @@ object ApkInstaller {
     private const val TAG = "ApkInstaller"
 
     /**
-     * Downloads [info]'s APK, reporting 0..100 progress. Returns the APK
-     * file. Throws on failure.
+     * Downloads [info]'s APK with parallel chunks for speed, reporting 0..100
+     * progress. Returns the APK file. Throws on failure.
+     *
+     * Uses HTTP Range requests (4 parallel connections). GitHub's CDN
+     * supports Range, and this is 2-4x faster than single-stream on
+     * good connections.
      */
     suspend fun download(
         context: Context,
@@ -32,11 +36,121 @@ object ApkInstaller {
         // Clear stale downloads first.
         dir.listFiles()?.forEach { it.delete() }
         val out = File(dir, info.apkName)
+
+        // Get total size first.
+        val total = getContentLength(info.apkUrl)
+            ?: throw Exception("Could not get file size")
+
+        // If server doesn't support Range or file is small, fall back to single.
+        if (total < 5 * 1024 * 1024 || !supportsRange(info.apkUrl)) {
+            return@withContext downloadSingle(context, info, onProgress)
+        }
+
+        val chunks = 4
+        val chunkSize = total / chunks
+        val parts = (0 until chunks).map { i ->
+            val start = i * chunkSize
+            val end = if (i == chunks - 1) total - 1 else start + chunkSize - 1
+            File(dir, "${info.apkName}.part$i") to (start to end)
+        }
+
+        val done = java.util.concurrent.atomic.AtomicLong(0)
+        try {
+            kotlinx.coroutines.async {
+                parts.map { (file, range) ->
+                    kotlinx.coroutines.async(Dispatchers.IO) {
+                        downloadRange(info.apkUrl, file, range.first, range.second) { n ->
+                            val d = done.addAndGet(n.toLong())
+                            onProgress(((d * 100) / total).toInt().coerceIn(0, 100))
+                        }
+                    }
+                }.forEach { it.await() }
+            }.await()
+
+            // Combine parts.
+            FileOutputStream(out).use { output ->
+                parts.forEach { (file, _) ->
+                    file.inputStream().use { it.copyTo(output) }
+                    file.delete()
+                }
+            }
+            onProgress(100)
+            out
+        } catch (e: Exception) {
+            parts.forEach { (file, _) -> file.delete() }
+            throw e
+        }
+    }
+
+    private fun getContentLength(url: String): Long? {
+        return try {
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "HEAD"
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                instanceFollowRedirects = true
+            }
+            val len = conn.contentLengthLong
+            conn.disconnect()
+            if (len > 0) len else null
+        } catch (e: Exception) { null }
+    }
+
+    private fun supportsRange(url: String): Boolean {
+        return try {
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                setRequestProperty("Range", "bytes=0-0")
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                instanceFollowRedirects = true
+            }
+            val code = conn.responseCode
+            conn.disconnect()
+            code == 206
+        } catch (e: Exception) { false }
+    }
+
+    private fun downloadRange(
+        url: String, out: File, start: Long, end: Long,
+        onBytes: (Int) -> Unit,
+    ) {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            setRequestProperty("Range", "bytes=$start-$end")
+            setRequestProperty("User-Agent", "MoonStream")
+            connectTimeout = 20_000
+            readTimeout = 30_000
+            instanceFollowRedirects = true
+        }
+        try {
+            if (conn.responseCode != 206) throw Exception("Range not supported (HTTP ${conn.responseCode})")
+            conn.inputStream.use { input ->
+                FileOutputStream(out).use { output ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        output.write(buf, 0, n)
+                        onBytes(n)
+                    }
+                }
+            }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** Fallback single-stream download (original implementation). */
+    private suspend fun downloadSingle(
+        context: Context,
+        info: UpdateInfo,
+        onProgress: (Int) -> Unit,
+    ): File = withContext(Dispatchers.IO) {
+        val dir = File(context.cacheDir, "updates").apply { mkdirs() }
+        val out = File(dir, info.apkName)
         val conn = (URL(info.apkUrl).openConnection() as HttpURLConnection).apply {
             connectTimeout = 20_000
             readTimeout = 30_000
             setRequestProperty("User-Agent", "MoonStream")
-            // GitHub release assets redirect to a CDN — follow them.
             instanceFollowRedirects = true
         }
         try {
