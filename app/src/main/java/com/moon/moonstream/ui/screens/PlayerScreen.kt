@@ -72,6 +72,8 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.decoder.ffmpeg.FfmpegLibrary
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -131,6 +133,42 @@ private data class EpisodeGroup(
  * moon's rules: landscape + true fullscreen, no PiP ever.
  * Streams from MoonStream's localhost HTTP server via plain MediaItem.fromUri().
  */
+/**
+ * Audio renderers for the in-app player.
+ *
+ * moon's phone has no hardware decoder for Dolby/DTS, so ExoPlayer's
+ * MediaCodec path dies with DECODER_INIT_FAILED on EAC3 files. The bundled
+ * tiny FFmpeg (docs/FFMPEG.md) decodes exactly eac3, ac3, dca and truehd;
+ * nothing else was compiled into it, so every other codec (AAC, Opus, MP3…)
+ * keeps using the hardware path and its battery saving.
+ *
+ * PREFER is safe because FfmpegAudioRenderer only claims a format when the
+ * .so really has that decoder — for AAC it declines and MediaCodec wins.
+ * If the .so is missing we fall back to hardware-only instead of crashing.
+ */
+@OptIn(UnstableApi::class)
+private fun buildRenderersFactory(context: android.content.Context): DefaultRenderersFactory {
+    val ffmpegAvailable = try {
+        FfmpegLibrary.isAvailable()
+    } catch (t: Throwable) {
+        AppLog.w("PLAYER", "FFmpeg extension failed to load: ${t.message}")
+        false
+    }
+    if (ffmpegAvailable) {
+        AppLog.i(
+            "PLAYER",
+            "FFmpeg audio decoders ready (${FfmpegLibrary.getVersion()}) — " +
+                "eac3/ac3/dca/truehd in software",
+        )
+    } else {
+        AppLog.w("PLAYER", "FFmpeg extension not available — hardware decoders only")
+    }
+    return DefaultRenderersFactory(context).setExtensionRendererMode(
+        if (ffmpegAvailable) DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+        else DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF,
+    )
+}
+
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(
@@ -186,7 +224,7 @@ fun PlayerScreen(
     // DataSource (no addon server needed); http/file URIs still work through
     // Media3's defaults. See ui/player/TdDataSource.kt.
     val player = remember {
-        ExoPlayer.Builder(context)
+        ExoPlayer.Builder(context, buildRenderersFactory(context))
             .setMediaSourceFactory(DefaultMediaSourceFactory(MsDataSourceFactory(context)))
             .build().apply {
                 // Never autoplay before the load effect below decides (resume check).
