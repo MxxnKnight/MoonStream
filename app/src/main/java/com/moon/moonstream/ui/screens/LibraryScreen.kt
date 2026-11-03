@@ -118,6 +118,10 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     // Multi-select state — Select button or long-press; bottom action bar.
     var selectMode by remember { mutableStateOf(false) }
     val selectedIds = remember { mutableStateListOf<Long>() }
+    /** Two-phase merge (moon's design 2026-11-04): phase 1 = pick sources,
+     *  tap "Merge to" → sources locked in (red outline = will be deleted),
+     *  phase 2 = pick the target. Empty = not in merge mode. */
+    val mergeSources = remember { mutableStateListOf<Long>() }
 
     // Real filter id-sets, loaded when the filter changes.
     var qualityIds by remember { mutableStateOf<Set<Long>?>(null) }
@@ -177,6 +181,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     fun exitSelectMode() {
         selectMode = false
         selectedIds.clear()
+        mergeSources.clear()
     }
 
     fun setHidden(ids: List<Long>, hidden: Boolean) {
@@ -187,15 +192,24 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
         }
     }
 
-    /** Merge selected entries: move all streams/subs to the first one,
-     *  delete the rest. (moon's idea 2026-11-01) */
-    fun mergeSelected() {
-        val ids = selectedIds.toList()
-        if (ids.size < 2) return
+    /** Phase 1 → 2: lock selected as merge sources (red outline = will be deleted),
+     *  then pick the target. (moon's two-phase design 2026-11-04) */
+    fun startMergeTo() {
+        if (selectedIds.isEmpty()) return
+        mergeSources.clear()
+        mergeSources.addAll(selectedIds)
+        selectedIds.clear()
+        // selectMode stays on — user now picks the target (can switch tabs).
+    }
+
+    /** Phase 2: merge the locked sources into the selected target. */
+    fun confirmMerge() {
+        val targetId = selectedIds.firstOrNull() ?: return
+        val sources = mergeSources.toList().filter { it != targetId }
+        if (sources.isEmpty()) return
         scope.launch {
-            val targetId = ids.first()
             withContext(Dispatchers.IO) {
-                for (id in ids.drop(1)) {
+                for (id in sources) {
                     db.streamDao().moveAllToMedia(id, targetId)
                     db.subtitleDao().moveAllToMedia(id, targetId)
                     db.mediaDao().deleteById(id)
@@ -204,11 +218,14 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 // Safety net: delete any entries left empty (moon's 2026-11-04).
                 db.mediaDao().deleteEmpty()
             }
-            val n = ids.size - 1
-            MsToast.show("Merged $n ${if (n == 1) "entry" else "entries"}")
+            MsToast.show("Merged ${sources.size} ${if (sources.size == 1) "entry" else "entries"}")
             exitSelectMode()
         }
     }
+
+    /** Merge selected entries: move all streams/subs to the first one,
+     *  delete the rest. (moon's idea 2026-11-01) */
+    // (old mergeSelected removed — replaced by two-phase startMergeTo/confirmMerge above)
 
     /** Delete selected entries and their streams/subs. */
     fun deleteSelected() {
@@ -266,7 +283,8 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 selected = segment,
                 onSelect = {
                     segment = it
-                    exitSelectMode()
+                    // Don't exit select mode on tab switch (moon's bug 2026-11-04:
+                    // selection must survive to allow cross-tab merge).
                 },
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
@@ -344,11 +362,19 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                             item = item,
                             selectMode = selectMode,
                             isSelected = isSelected,
+                            isMergeSource = mergeSources.contains(item.id),
                             inHiddenTab = inHiddenTab,
                             onClick = {
                                 if (selectMode) {
-                                    if (isSelected) selectedIds.remove(item.id)
-                                    else selectedIds.add(item.id)
+                                    // In phase 2 (mergeSources locked), can't pick a source as target.
+                                    if (mergeSources.isNotEmpty() && mergeSources.contains(item.id)) {
+                                        MsToast.show("This entry is marked for merge")
+                                    } else if (isSelected) selectedIds.remove(item.id)
+                                    else {
+                                        // Phase 2: single target only.
+                                        if (mergeSources.isNotEmpty()) selectedIds.clear()
+                                        selectedIds.add(item.id)
+                                    }
                                 } else {
                                     onOpenDetail(item.id)
                                 }
@@ -441,22 +467,42 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                         )
                     }
                 }
-                // Merge: needs 2+ selected (moon's idea 2026-11-01).
+                // Two-phase merge (moon's design 2026-11-04):
+                // Phase 1: "Merge to" (1+ selected) → locks sources, pick target next.
+                // Phase 2: "Merge" (target picked) → completes.
                 Spacer(Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(if (selectedIds.size >= 2) Color(0xFF7C3AED) else MsColors.TrackOff)
-                        .clickable(enabled = selectedIds.size >= 2) { mergeSelected() }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "Merge (${selectedIds.size})",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                    )
+                if (mergeSources.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(if (selectedIds.isNotEmpty()) Color(0xFF7C3AED) else MsColors.TrackOff)
+                            .clickable(enabled = selectedIds.isNotEmpty()) { startMergeTo() }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "Merge to (${selectedIds.size})",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(if (selectedIds.isNotEmpty()) Color(0xFF7C3AED) else MsColors.TrackOff)
+                            .clickable(enabled = selectedIds.isNotEmpty()) { confirmMerge() }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "Merge (${mergeSources.size} → 1)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                        )
+                    }
                 }
                 // Delete: needs 1+ selected.
                 Spacer(Modifier.width(8.dp))
@@ -553,6 +599,8 @@ private fun PosterCell(
     item: MediaItemEntity,
     selectMode: Boolean,
     isSelected: Boolean,
+    /** Red outline = marked as merge source, will be deleted (moon's 2026-11-04). */
+    isMergeSource: Boolean = false,
     inHiddenTab: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
@@ -571,8 +619,12 @@ private fun PosterCell(
                     .aspectRatio(2f / 3f)
                     .clip(RoundedCornerShape(14.dp))
                     .border(
-                        width = if (isSelected) 2.dp else 0.dp,
-                        color = if (isSelected) MsColors.Accent else Color.Transparent,
+                        width = if (isSelected || isMergeSource) 2.dp else 0.dp,
+                        color = when {
+                            isMergeSource -> Color(0xFFF44336)
+                            isSelected -> MsColors.Accent
+                            else -> Color.Transparent
+                        },
                         shape = RoundedCornerShape(14.dp),
                     )
                     .background(MsColors.SurfaceAlt),
