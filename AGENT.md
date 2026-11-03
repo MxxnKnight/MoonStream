@@ -75,6 +75,17 @@ yours. When in doubt, update this file instead of guessing.
 - Design system: bg `#0E1116`, cards `#161B24`, lime `#7DD956` pills with
   dark text, floating pill bottom nav. Generous spacing, professional
   polish — never cramped.
+- **UI plan: `docs/UI_PLAN.md`** (2026-11-03). The app has colours + fonts
+  but no shape/size scale: `MsRadii` is used by only 3 of 12 UI files and 15
+  different literal corner radii are scattered across the screens, and
+  `MaterialTheme.shapes` is unset so sheets/menus/sliders use Material
+  defaults. Read that file before changing any spacing, radius, gradient or
+  player control. Rules that follow from it: corner radii only from
+  `MsShapes` (6 / 10 / 14 / 20 / 28 / pill), spacing only from
+  4/8/12/16/20/24/32, no drop shadows (hairline border + sheen instead),
+  gradients only from `Bg`/`Surface`/`Glow*` so the AMOLED toggle keeps
+  working, and control heights 48 (field/primary button) / 44 (secondary,
+  icon) / 36 (chip).
 - No `Canvas` / `Stroke` / `nativeCanvas` in UI code (the offline build
   mirror's Compose AAR lacks them).
 - Never deliver APKs as chat attachments (the user's phone saves them as
