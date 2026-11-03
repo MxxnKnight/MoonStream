@@ -110,22 +110,23 @@ fun LimePillButton(
     enabled: Boolean = true,
     fontSize: Int = 15,
 ) {
-    val bg = if (enabled) MsColors.Accent else MsColors.TrackOff
-    val fg = if (enabled) MsColors.OnAccent else MsColors.TextSecondary
-    Box(
-        modifier = modifier
-            .clip(CircleShape)
-            .background(bg)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 13.dp),
-        contentAlignment = Alignment.Center,
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MsColors.Accent,
+            contentColor = MsColors.OnAccent,
+            disabledContainerColor = MsColors.TrackOff,
+            disabledContentColor = MsColors.TextSecondary,
+        ),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 13.dp),
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
             fontSize = fontSize.sp,
-            color = fg,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -141,20 +142,22 @@ fun MsOutlinePill(
     enabled: Boolean = true,
     fontSize: Int = 14,
 ) {
-    Box(
-        modifier = modifier
-            .clip(CircleShape)
-            .border(1.dp, MsColors.TextSecondary.copy(alpha = 0.55f), CircleShape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        contentAlignment = Alignment.Center,
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = MsColors.Accent,
+            disabledContentColor = MsColors.TextSecondary,
+        ),
+        border = BorderStroke(1.dp, MsColors.TextSecondary.copy(alpha = 0.55f)),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
             fontSize = fontSize.sp,
-            color = if (enabled) MsColors.Accent else MsColors.TextSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
