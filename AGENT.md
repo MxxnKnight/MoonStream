@@ -84,7 +84,20 @@ yours. When in doubt, update this file instead of guessing.
 - Commits: short imperative summary; push after committing (token is in
   the git credential store).
 
-## Cloud backup (Tier 2) — instructions for moon's AI (Antigravity)
+## Cloud backup (Tier 2) — DONE (verified on main, 2026-11-03)
+
+**Status: implemented, nothing left to build.** The three contract methods
+(`uploadBackup`, `findLatestBackup`, `downloadBackup`, `BackupRef`) exist in
+`backend/MoonStreamBackend.kt`, `TdlibMoonStreamBackend` implements them via
+Saved Messages (`CreatePrivateChat(me)` → `SendMessage` with a document and
+the `#MoonStreamBackup` caption → `SearchChatMessages` newest-first →
+`DownloadFile`), `FakeMoonStreamBackend` stubs them, and the app side is
+complete: `backup/BackupManager.kt` (build/gzip/parse/restore, 6 Room tables
++ settings), Settings → "Push to / Pull from Saved Messages", plus an
+automatic push after each scan when `auto_backup_sync` and
+`backup_to_telegram` are on (`ScanService`). `docs/BUG_CHECKLIST.md` still
+lists it as deferred — it is not; it just needs a device test. The spec below
+is kept as the record of what those methods must do.
 
 Local file backup (Tier 1) is already in the app. This is the spec for the
 cloud tier: push/pull the backup through the user's Telegram Saved Messages.
@@ -303,12 +316,38 @@ checked per chunk crossed rather than per read.
 
 ---
 
-## FFmpeg audio decoders (tiny build) — for moon's AI
+## FFmpeg audio decoders (tiny build) — DONE (2026-11-03)
 
 moon wants (2026-11-03): the in-app player should decode EAC3/AC3/DTS
 in software, like mpvRx does. His phone (Helio G96) has no hardware
 decoder for these, so ExoPlayer fails with `ERROR_CODE_DECODER_INIT_FAILED`
 (`format_supported=NO_UNSUPPORTED_TYPE`).
+
+### Status: built and wired (assistant)
+
+Full write-up: `docs/FFMPEG.md`; rebuild script: `tools/ffmpeg/build_ffmpeg.sh`.
+
+- FFmpeg **6.1**, audio only: `eac3`, `ac3`, `dca`, `truehd`. Verified in the
+  linked `.so` with `llvm-nm` (`ff_ac3_decoder`, `ff_eac3_decoder`,
+  `ff_dca_decoder`, `ff_truehd_decoder`; no `ff_aac_decoder`).
+- `libffmpegJNI.so` is **1.3 MB arm64-v8a / 1.1 MB armeabi-v7a**, in
+  `app/src/main/jniLibs/<abi>/`. x86/x86_64 have none and fall back cleanly.
+- The Java side is **vendored** in
+  `app/src/main/java/androidx/media3/decoder/ffmpeg/` (Apache-2.0) — the
+  Gradle coordinate in the spec below **does not exist on Maven**; Google
+  never published the FFmpeg extension, so it has to be compiled and
+  vendored. The file id loads as `ffmpegJNI`.
+- `PlayerScreen` uses `DefaultRenderersFactory` with
+  `EXTENSION_RENDERER_MODE_PREFER` when `FfmpegLibrary.isAvailable()`, else
+  `OFF`. PREFER is safe: the renderer only claims formats whose decoder is
+  really compiled in, so AAC/Opus/MP3 still go to MediaCodec.
+- Not device-verified yet: needs moon to play an EAC3 episode and confirm
+  audio with the `PLAYER` log line "FFmpeg audio decoders ready".
+
+**Correction to the spec below:** step 1's `media3-exoplayer-ffmpeg`
+dependency returns 404 on both google() and mavenCentral(); ignore it and use
+`tools/ffmpeg/build_ffmpeg.sh` instead. Steps 2–3 (renderers factory +
+`isAvailable()` guard) are exactly what was implemented.
 
 ### What to build
 
@@ -351,9 +390,11 @@ in — check with `nm -D libffmpeg.so | grep -i decoder`.
 
 ### How to wire it in the app
 
-1. Add the Gradle dependency (same media3 version as the app uses):
+1. ~~Add the Gradle dependency~~ — **this artifact does not exist** (404 on
+   google() and mavenCentral()). The extension is built locally and vendored;
+   see `docs/FFMPEG.md` and `tools/ffmpeg/build_ffmpeg.sh`.
    ```gradle
-   implementation "androidx.media3:media3-exoplayer-ffmpeg:1.4.1"
+   // NOT valid: implementation "androidx.media3:media3-exoplayer-ffmpeg:1.4.1"
    ```
 
 2. In `PlayerScreen.kt`, where the ExoPlayer is built, use a

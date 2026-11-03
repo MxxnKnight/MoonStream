@@ -17,3 +17,8 @@ secrets.properties
 # Release signing (never commit)
 keystore/*.jks
 keystore.properties
+
+# FFmpeg build scratch (source checkouts + intermediates, see docs/FFMPEG.md)
+/ffbuild/
+/.ffmpeg/
+/.media3/

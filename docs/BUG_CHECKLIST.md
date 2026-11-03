@@ -46,3 +46,7 @@ Every bug you report goes here. I check them off only when the fix is built, pus
 ## ❓ Needs your device test
 
 - [ ] Build the new APK from the workflow (you're still on 0.8.0 — everything above needs the new build)
+
+## 🔨 Done in this build (FFmpeg audio decoders)
+
+- [x] EAC3/AC3/DTS/TrueHD audio failed with `DECODER_INIT_FAILED` on phones without a Dolby/DTS hardware decoder → a tiny audio-only FFmpeg (1.3 MB) now decodes exactly those four in software; every other codec still uses hardware

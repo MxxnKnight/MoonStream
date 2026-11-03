@@ -9,6 +9,8 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
 /**
@@ -56,16 +58,16 @@ object ApkInstaller {
 
         val done = java.util.concurrent.atomic.AtomicLong(0)
         try {
-            kotlinx.coroutines.async {
+            coroutineScope {
                 parts.map { (file, range) ->
-                    kotlinx.coroutines.async(Dispatchers.IO) {
+                    async(Dispatchers.IO) {
                         downloadRange(info.apkUrl, file, range.first, range.second) { n ->
                             val d = done.addAndGet(n.toLong())
                             onProgress(((d * 100) / total).toInt().coerceIn(0, 100))
                         }
                     }
                 }.forEach { it.await() }
-            }.await()
+            }
 
             // Combine parts.
             FileOutputStream(out).use { output ->

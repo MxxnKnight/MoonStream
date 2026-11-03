@@ -3,7 +3,45 @@
 All notable changes to MoonStream, newest first. Versions follow the tags
 the CI build stamps onto the APK.
 
-## Unreleased — 0.15.0: in-app streaming engine (no addon server needed)
+## Unreleased — FFmpeg audio decoders (EAC3/AC3/DTS/TrueHD)
+
+Phones without a Dolby/DTS hardware decoder (moon's POCO M4 Pro is one) made
+the in-app player fail on EAC3 audio with
+`ERROR_CODE_DECODER_INIT_FAILED / format_supported=NO_UNSUPPORTED_TYPE`. The
+app now bundles a **tiny, audio-only FFmpeg** and gives it priority for those
+exactly four codecs; everything else still decodes in hardware.
+
+### Added
+
+- `app/src/main/jniLibs/arm64-v8a/libffmpegJNI.so` and
+  `.../armeabi-v7a/libffmpegJNI.so` — FFmpeg 6.1 built with **only**
+  `eac3`, `ac3`, `dca` (DTS) and `truehd`; no video, no demuxers, no
+  network, no AAC/MP3/Opus/FLAC. 1.3 MB arm64 / 1.1 MB armv7, so the APK
+  grows by about a megabyte per ABI.
+- `app/src/main/java/androidx/media3/decoder/ffmpeg/` — media3 1.4.1's
+  `decoder_ffmpeg` classes, vendored (Apache-2.0, headers kept). Media3
+  does **not** publish the FFmpeg extension to Maven — the coordinate in
+  the old AGENT.md note does not exist — so this is the only way to ship it.
+  `FfmpegLibrary` uses `@Nullable` instead of `@MonotonicNonNull` because
+  checker-qual is not on the app's javac classpath.
+- `PlayerScreen` builds the player with a `DefaultRenderersFactory` in
+  `EXTENSION_RENDERER_MODE_PREFER` when `FfmpegLibrary.isAvailable()`, and
+  `OFF` when the `.so` is missing (x86 emulators), so a missing library can
+  never break playback. The path taken and the FFmpeg version are logged as
+  `PLAYER` lines on the Logs screen.
+- `tools/ffmpeg/build_ffmpeg.sh` + `docs/FFMPEG.md` — the exact reproducible
+  build, plus the two traps hit while making it: `--disable-everything` must
+  precede the `--enable-decoder` flags, and 32-bit ARM needs
+  `--disable-vulkan`.
+
+### Fixed
+
+- `update/ApkInstaller.kt` did not compile on `main` (`kotlinx.coroutines.async
+  / await` unresolved in the 4-way parallel APK download). It now uses
+  `coroutineScope { async(...) }` with the imports, so `assemblePerf` builds
+  again.
+
+## 0.15.0: in-app streaming engine (no addon server needed)
 
 Watching a video inside MoonStream used to require the addon server
 (`MoonStreamServerService`) to be running, because the player was fed
