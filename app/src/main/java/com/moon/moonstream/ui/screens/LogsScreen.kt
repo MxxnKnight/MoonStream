@@ -18,11 +18,24 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -59,10 +72,14 @@ fun LogsScreen(onBack: () -> Unit) {
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MsColors.Bg),
+    ) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize(),
     ) {
         Row(
             modifier = Modifier
@@ -155,6 +172,39 @@ fun LogsScreen(onBack: () -> Unit) {
                     }
                 }
             }
+            }
+        }
+    }
+
+        // Scroll-to-bottom FAB (moon's request 2026-11-03): appears when
+        // scrolled up, jumps to the latest logs.
+        val scope = rememberCoroutineScope()
+        val showScrollDown by remember {
+            derivedStateOf {
+                val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                lines.isNotEmpty() && lastVisible < lines.size - 6
+            }
+        }
+        AnimatedVisibility(
+            visible = showScrollDown,
+            modifier = Modifier.align(Alignment.BottomEnd),
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut() + scaleOut(),
+        ) {
+            FloatingActionButton(
+                onClick = {
+                    scope.launch {
+                        if (lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1)
+                    }
+                },
+                modifier = Modifier.padding(16.dp),
+                containerColor = MsColors.Accent,
+                contentColor = MsColors.OnAccent,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ArrowDownward,
+                    contentDescription = "Scroll to bottom",
+                )
             }
         }
     }
