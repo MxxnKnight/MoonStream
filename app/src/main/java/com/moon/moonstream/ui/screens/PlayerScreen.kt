@@ -1383,6 +1383,33 @@ fun PlayerScreen(
             }
         }
 
+        // Skip Intro button (moon's request 2026-11-02): Netflix-style pill
+        // at bottom-right during the first 3 minutes. Taps seek +85s.
+        // v1 is manual (no API); AniSkip integration needs Kitsu IDs in DB.
+        val showSkipIntro = currentPosition < 180_000L &&
+            currentPosition > 5_000L &&
+            !controlsLocked
+        if (showSkipIntro) {
+            Button(
+                onClick = {
+                    val target = (currentPosition + 85_000L)
+                        .coerceAtMost(duration.coerceAtLeast(0L))
+                    player.seekTo(target)
+                    AppLog.i("PLAYER", "Skip intro: ${currentPosition/1000}s → ${target/1000}s")
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 100.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MsColors.Accent,
+                    contentColor = MsColors.OnAccent,
+                ),
+            ) {
+                Text("Skip Intro", fontWeight = FontWeight.Bold)
+            }
+        }
+
         // Bottom sheets: subs / audio / playlist / episodes.
         // Pull down on the sheet (from the top, list at top) to close it.
         if (sheet != null) {
