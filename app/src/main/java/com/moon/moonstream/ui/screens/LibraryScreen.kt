@@ -201,6 +201,8 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     db.mediaDao().deleteById(id)
                 }
                 db.mediaDao().refreshAggregates(targetId, System.currentTimeMillis())
+                // Safety net: delete any entries left empty (moon's 2026-11-04).
+                db.mediaDao().deleteEmpty()
             }
             val n = ids.size - 1
             MsToast.show("Merged $n ${if (n == 1) "entry" else "entries"}")

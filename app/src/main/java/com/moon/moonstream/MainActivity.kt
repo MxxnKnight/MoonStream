@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -118,6 +119,19 @@ class MainActivity : ComponentActivity() {
     AppUiState.init(this)
     BackendProvider.init(this)
     com.moon.moonstream.server.ServerTelemetry.load(this)
+
+    // One-time cleanup: delete library entries with no streams and no subtitles
+    // (moon's request 2026-11-04: "we don't need a entry without any streams").
+    // Runs in background on every start; only touches truly empty entries.
+    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        try {
+            val db = com.moon.moonstream.index.db.MsDatabase.get(this@MainActivity)
+            val n = db.mediaDao().deleteEmpty()
+            if (n > 0) com.moon.moonstream.util.AppLog.i("LIB", "deleted $n empty entries")
+        } catch (e: Exception) {
+            com.moon.moonstream.util.AppLog.w("LIB", "empty-entry cleanup failed: ${e.message}")
+        }
+    }
 
     // Start TelegramManager early so it can restore the saved session
     val telegramManager = com.moon.moonstream.tdlib.TelegramManager.getInstance(this)

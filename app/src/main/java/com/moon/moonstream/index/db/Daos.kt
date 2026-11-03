@@ -11,6 +11,16 @@ interface MediaDao {
     @Query("SELECT * FROM media_items ORDER BY updatedAt DESC")
     fun observeAll(): Flow<List<MediaItemEntity>>
 
+    /** Delete entries with no streams AND no subtitles (moon's request 2026-11-04:
+     *  "really we don't need a entry without any streams right!").
+     *  Returns the number of deleted entries. */
+    @Query(
+        """DELETE FROM media_items
+           WHERE id NOT IN (SELECT DISTINCT mediaId FROM stream_files WHERE mediaId IS NOT NULL)
+           AND id NOT IN (SELECT DISTINCT mediaId FROM subtitle_files WHERE mediaId IS NOT NULL)"""
+    )
+    suspend fun deleteEmpty(): Int
+
     @Query("SELECT * FROM media_items")
     suspend fun getAll(): List<MediaItemEntity>
 

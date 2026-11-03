@@ -242,21 +242,26 @@ fun MetadataFixSheet(
                     )
                 }
                 results.isNotEmpty() -> {
-                    // Check which results already have a library entry.
+                    // Check which results already have a library entry WITH streams.
+                    // (moon's request: show "already indexed" icon in all modes, not just LINK)
                     LaunchedEffect(results) {
-                        if (mode == FixMode.LINK && results.isNotEmpty()) {
+                        if (results.isNotEmpty()) {
                             libraryKeys = withContext(Dispatchers.IO) {
                                 val db = MsDatabase.get(context)
                                 val keys = mutableSetOf<String>()
                                 for (r in results) {
-                                    val exists = if (!r.imdbId.isNullOrBlank()) {
-                                        db.mediaDao().findByImdb(r.imdbId) != null
+                                    val media = if (!r.imdbId.isNullOrBlank()) {
+                                        db.mediaDao().findByImdb(r.imdbId)
                                     } else {
                                         db.mediaDao().findByNormAnyChannel(
                                             normalizeTitle(r.title),
-                                        ) != null
+                                        )
                                     }
-                                    if (exists) {
+                                    // Only mark if the entry has actual streams
+                                    // (moon's 2026-11-04: "already indexed with streams").
+                                    if (media != null &&
+                                        db.streamDao().listByMedia(media.id).isNotEmpty()
+                                    ) {
                                         r.imdbId?.let { keys.add(it) }
                                         keys.add(normalizeTitle(r.title))
                                     }
