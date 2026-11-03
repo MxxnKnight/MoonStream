@@ -56,7 +56,7 @@ object ApkInstaller {
 
         val done = java.util.concurrent.atomic.AtomicLong(0)
         try {
-            kotlinx.coroutines.async {
+            kotlinx.coroutines.coroutineScope {
                 parts.map { (file, range) ->
                     kotlinx.coroutines.async(Dispatchers.IO) {
                         downloadRange(info.apkUrl, file, range.first, range.second) { n ->
@@ -65,7 +65,7 @@ object ApkInstaller {
                         }
                     }
                 }.forEach { it.await() }
-            }.await()
+            }
 
             // Combine parts.
             FileOutputStream(out).use { output ->

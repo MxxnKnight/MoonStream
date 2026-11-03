@@ -1433,10 +1433,12 @@ fun PlayerScreen(
             currentPosition in apiStartMs until apiEndMs &&
             !controlsLocked
         if (showSkipIntro) {
+            // apiEndMs is non-null here (showSkipIntro requires it).
+            val endMs = apiEndMs!!
             Button(
                 onClick = {
-                    player.seekTo(apiEndMs)
-                    AppLog.i("PLAYER", "Skip intro: ${currentPosition/1000}s → ${apiEndMs/1000}s ($apiSource)")
+                    player.seekTo(endMs)
+                    AppLog.i("PLAYER", "Skip intro: ${currentPosition/1000}s → ${endMs/1000}s ($apiSource)")
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
