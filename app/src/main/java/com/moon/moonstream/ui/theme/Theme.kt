@@ -58,6 +58,13 @@ object MsColors {
         get() = if (AppUiState.amoled) Color(0xFF2A2A2A) else Color(0xFF3A4356)
     val Divider: Color
         get() = if (AppUiState.amoled) Color(0xFF1C1C1C) else Color(0xFF232A38)
+    /** Hairline card border for AMOLED (moon's request 2026-11-03):
+     *  pure black melts cards together, so a 1dp white-at-8% outline
+     *  defines boundaries without killing the AMOLED look.
+     *  Transparent when AMOLED is off (normal mode has enough contrast). */
+    val CardBorder: Color
+        get() = if (AppUiState.amoled) Color.White.copy(alpha = 0.08f)
+                else Color.Transparent
 }
 
 object MsRadii {

@@ -195,6 +195,7 @@ fun MsCard(
         color = MsColors.Surface,
         shadowElevation = 0.dp,
         tonalElevation = 0.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MsColors.CardBorder),
         content = content,
     )
 }
