@@ -29,6 +29,8 @@ data class EnrichedMeta(
     val tmdbId: Int?,
     /** Kitsu anime ID, for AniSkip intro lookup. Null for non-anime. */
     val kitsuId: String? = null,
+    /** AniList anime ID, for AniSkip API (it needs AniList, not Kitsu). */
+    val anilistId: String? = null,
     /** 0.0–1.0 match confidence. Below 0.75 the file goes to unmatched. */
     val confidence: Double = 1.0,
 )
@@ -304,6 +306,8 @@ object MetadataMatcher {
         return (0 until minOf(data.length(), limit)).mapNotNull { i ->
             val item = data.optJSONObject(i) ?: return@mapNotNull null
             val kitsuId = item.optString("id").takeIf { it.isNotBlank() }
+            // Map Kitsu → AniList (AniSkip needs AniList IDs).
+            val anilistId = kitsuId?.let { lookupAnilistId(it) }
             val attr = item.optJSONObject("attributes")
                 ?: return@mapNotNull null
             val name = attr.optString("canonicalTitle").ifBlank { return@mapNotNull null }
@@ -318,7 +322,28 @@ object MetadataMatcher {
                 imdbId = null,
                 tmdbId = null,
                 kitsuId = kitsuId,
+                anilistId = anilistId,
             )
+        }
+    }
+
+    /** Maps a Kitsu anime ID → AniList ID via Kitsu's mappings endpoint. */
+    private fun lookupAnilistId(kitsuId: String): String? {
+        return try {
+            val root = getJson(
+                "https://kitsu.io/api/edge/anime/$kitsuId/mappings?filter[externalSite]=anilist/anime",
+                mapOf("Accept" to "application/vnd.api+json"),
+            ) ?: return null
+            val data = root.optJSONArray("data") ?: return null
+            for (i in 0 until data.length()) {
+                val extId = data.optJSONObject(i)?.optString("externalId")
+                    ?.takeIf { it.isNotBlank() }
+                if (extId != null) return extId
+            }
+            null
+        } catch (e: Exception) {
+            com.moon.moonstream.util.AppLog.w("MATCH", "Kitsu→AniList failed: ${e.message}")
+            null
         }
     }
 

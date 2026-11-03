@@ -1401,10 +1401,10 @@ fun PlayerScreen(
                 withContext(Dispatchers.IO) { db.mediaDao().getById(mediaId) }
             } catch (e: Exception) { null }
             val isAnime = media?.type == "anime"
-            // Anime → AniSkip via Kitsu ID.
-            if (isAnime && ep != null && !media?.kitsuId.isNullOrBlank()) {
+            // Anime → AniSkip via AniList ID (mapped from Kitsu at index).
+            if (isAnime && ep != null && !media?.anilistId.isNullOrBlank()) {
                 val durSecs = duration.coerceAtLeast(1L) / 1000
-                skipTimes = AniSkip.getSkipTimes(media!!.kitsuId!!, ep, durSecs)
+                skipTimes = AniSkip.getSkipTimes(media!!.anilistId!!, ep, durSecs)
                 return@LaunchedEffect
             }
             // Series/movies → IntroDB via IMDb ID.
@@ -1416,7 +1416,7 @@ fun PlayerScreen(
                     episode = ep,
                 )
             } else {
-                AppLog.i("PLAYER", "Skip: no kitsuId/imdbId, no button")
+                AppLog.i("PLAYER", "Skip: no anilistId/imdbId, no button")
             }
         }
 
