@@ -26,6 +26,8 @@ data class MediaItemEntity(
     val type: String,
     val imdbId: String?,
     val tmdbId: Int?,
+    /** Kitsu anime ID for AniSkip intro lookup. Set at index time for anime. */
+    val kitsuId: String? = null,
     /**
      * Stremio-facing ID: real `tt...` when matched, else synthetic `tg...`
      * (see StremioIds). Set at index time; backfilled for older rows.

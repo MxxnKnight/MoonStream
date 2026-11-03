@@ -21,7 +21,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ChannelConfigEntity::class,
         WatchProgressEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class MsDatabase : RoomDatabase() {
@@ -97,6 +97,12 @@ abstract class MsDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE media_items ADD COLUMN kitsuId TEXT")
+            }
+        }
+
         fun get(context: Context): MsDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -104,7 +110,7 @@ abstract class MsDatabase : RoomDatabase() {
                     MsDatabase::class.java,
                     "moonstream.db",
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     // Pre-release app: unknown schema jumps still wipe and
                     // rescan. Never ship a destructive migration past v1.0
                     // without a real one.

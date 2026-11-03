@@ -27,6 +27,8 @@ data class EnrichedMeta(
     val posterUrl: String?,
     val imdbId: String?,
     val tmdbId: Int?,
+    /** Kitsu anime ID, for AniSkip intro lookup. Null for non-anime. */
+    val kitsuId: String? = null,
     /** 0.0–1.0 match confidence. Below 0.75 the file goes to unmatched. */
     val confidence: Double = 1.0,
 )
@@ -300,7 +302,9 @@ object MetadataMatcher {
         ) ?: return emptyList()
         val data = root.optJSONArray("data") ?: return emptyList()
         return (0 until minOf(data.length(), limit)).mapNotNull { i ->
-            val attr = data.optJSONObject(i)?.optJSONObject("attributes")
+            val item = data.optJSONObject(i) ?: return@mapNotNull null
+            val kitsuId = item.optString("id").takeIf { it.isNotBlank() }
+            val attr = item.optJSONObject("attributes")
                 ?: return@mapNotNull null
             val name = attr.optString("canonicalTitle").ifBlank { return@mapNotNull null }
             val poster = attr.optJSONObject("posterImage")?.optString("large")
@@ -313,6 +317,7 @@ object MetadataMatcher {
                 posterUrl = poster,
                 imdbId = null,
                 tmdbId = null,
+                kitsuId = kitsuId,
             )
         }
     }

@@ -90,6 +90,7 @@ import com.moon.moonstream.ui.player.TdSubUri
 import com.moon.moonstream.ui.state.LanguagePrefs
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.util.AppLog
+import com.moon.moonstream.util.AniSkip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1384,18 +1385,45 @@ fun PlayerScreen(
         }
 
         // Skip Intro button (moon's request 2026-11-02): Netflix-style pill
-        // at bottom-right during the first 3 minutes. Taps seek +85s.
-        // v1 is manual (no API); AniSkip integration needs Kitsu IDs in DB.
-        val showSkipIntro = currentPosition < 180_000L &&
-            currentPosition > 5_000L &&
-            !controlsLocked
+        // at bottom-right. Uses AniSkip API for anime (exact timestamps),
+        // falls back to manual +85s.
+        var skipTimes by remember { mutableStateOf<AniSkip.SkipTimes?>(null) }
+        var skipFetched by remember { mutableStateOf(false) }
+
+        // Fetch AniSkip data once per episode.
+        LaunchedEffect(mediaId, currentGroup?.episode) {
+            if (skipFetched) return@LaunchedEffect
+            skipFetched = true
+            val ep = currentGroup?.episode ?: return@LaunchedEffect
+            val kitsuId = try {
+                withContext(Dispatchers.IO) {
+                    db.mediaDao().getById(mediaId)?.kitsuId
+                }
+            } catch (e: Exception) { null }
+            if (kitsuId.isNullOrBlank()) {
+                AppLog.i("PLAYER", "Skip: no kitsuId, using manual +85s")
+                return@LaunchedEffect
+            }
+            val durSecs = duration.coerceAtLeast(1L) / 1000
+            skipTimes = AniSkip.getSkipTimes(kitsuId, ep, durSecs)
+        }
+
+        val opEndMs = skipTimes?.opEnd?.let { (it * 1000).toLong() }
+        val opStartMs = skipTimes?.opStart?.let { (it * 1000).toLong() } ?: 0L
+        // Show during OP range (API) or first 3 min (manual fallback).
+        val showSkipIntro = if (opEndMs != null) {
+            currentPosition in opStartMs until opEndMs && !controlsLocked
+        } else {
+            currentPosition < 180_000L && currentPosition > 5_000L && !controlsLocked
+        }
         if (showSkipIntro) {
+            val skipTarget = opEndMs ?: (currentPosition + 85_000L)
+                .coerceAtMost(duration.coerceAtLeast(0L))
             Button(
                 onClick = {
-                    val target = (currentPosition + 85_000L)
-                        .coerceAtMost(duration.coerceAtLeast(0L))
-                    player.seekTo(target)
-                    AppLog.i("PLAYER", "Skip intro: ${currentPosition/1000}s → ${target/1000}s")
+                    player.seekTo(skipTarget)
+                    AppLog.i("PLAYER", "Skip intro: ${currentPosition/1000}s → ${skipTarget/1000}s" +
+                        if (opEndMs != null) " (AniSkip)" else " (manual)")
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)

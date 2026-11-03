@@ -279,6 +279,7 @@ object ScanManager {
                     type = type,
                     imdbId = meta?.imdbId,
                     tmdbId = meta?.tmdbId,
+                    kitsuId = meta?.kitsuId,
                     // Real tt ID when matched, else a stable synthetic tg ID —
                     // this is what Stremio clients (e.g. Nuvio) key on.
                     stremioId = StremioIds.forNewItem(target.channelId, norm, meta?.imdbId),
