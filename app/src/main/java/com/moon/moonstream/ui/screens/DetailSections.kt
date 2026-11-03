@@ -51,7 +51,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
@@ -363,7 +363,7 @@ fun FileRow(
                     onClick = onCopy,
                 )
                 BareIconButton(
-                    icon = Icons.Filled.Delete,
+                    icon = Icons.Outlined.Delete,
                     contentDescription = "Delete",
                     onClick = onDelete,
                 )
@@ -445,7 +445,7 @@ fun StreamRow(
                     onClick = onCopy,
                 )
                 BareIconButton(
-                    icon = Icons.Filled.Delete,
+                    icon = Icons.Outlined.Delete,
                     contentDescription = "Delete",
                     onClick = onDelete,
                 )
@@ -537,7 +537,7 @@ fun SubtitleRow(
         }
         if (onDelete != null) {
             BareIconButton(
-                icon = Icons.Filled.Delete,
+                icon = Icons.Outlined.Delete,
                 contentDescription = "Remove subtitle",
                 onClick = onDelete,
             )

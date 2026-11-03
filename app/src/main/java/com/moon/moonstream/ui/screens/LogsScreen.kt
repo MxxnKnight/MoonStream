@@ -191,7 +191,6 @@ fun LogsScreen(onBack: () -> Unit) {
             contentAlignment = Alignment.BottomEnd,
         ) {
             FloatingActionButton(
-            FloatingActionButton(
                 onClick = {
                     scope.launch {
                         if (lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1)
