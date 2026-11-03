@@ -7,7 +7,9 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -346,6 +348,10 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             ),
                         ),
                 )
+                // Swipeable pill container (moon's request 2026-11-04):
+                // draggable on the wrapper cooperates with inner clickables,
+                // unlike pointerInput which gets consumed by them.
+                var dragAccum by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -353,17 +359,21 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         .clip(RoundedCornerShape(30.dp))
                         .background(MsColors.Surface)
                         .border(1.dp, MsColors.Divider, RoundedCornerShape(30.dp))
-                        // Swipe to switch tabs (moon's request 2026-11-04, Nuvio-style).
-                        .pointerInput(selectedTab) {
-                            detectHorizontalDragGestures { _, dragAmount ->
+                        .draggable(
+                            state = rememberDraggableState { delta ->
+                                dragAccum += delta
+                            },
+                            orientation = Orientation.Horizontal,
+                            onDragStopped = {
                                 val idx = tabs.indexOfFirst { it.screen == selectedTab }
-                                if (dragAmount < -50 && idx < tabs.size - 1) {
+                                if (dragAccum < -80 && idx < tabs.size - 1) {
                                     goTab(tabs[idx + 1].screen)
-                                } else if (dragAmount > 50 && idx > 0) {
+                                } else if (dragAccum > 80 && idx > 0) {
                                     goTab(tabs[idx - 1].screen)
                                 }
-                            }
-                        }
+                                dragAccum = 0f
+                            },
+                        )
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {

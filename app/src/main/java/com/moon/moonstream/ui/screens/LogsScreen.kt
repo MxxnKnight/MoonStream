@@ -122,6 +122,9 @@ fun LogsScreen(onBack: () -> Unit) {
 
         Spacer(Modifier.height(4.dp))
 
+        // Box wraps list + FAB so the FAB can align to BottomEnd
+        // (crash fix 2026-11-04: align() doesn't work directly in Column).
+        Box(modifier = Modifier.weight(1f)) {
         if (lines.isEmpty()) {
             Column(
                 modifier = Modifier
@@ -208,5 +211,6 @@ fun LogsScreen(onBack: () -> Unit) {
                 )
             }
         }
+        } // Box
     }
 }

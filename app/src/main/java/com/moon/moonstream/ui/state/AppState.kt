@@ -93,6 +93,9 @@ object AppUiState {
     var amoled by mutableStateOf(false)
     /** AMOLED hairline card borders (moon's request 2026-11-03). Default on. */
     var amoledCardBorders by mutableStateOf(true)
+    /** Settings sub-screen route (moon's bug 2026-11-04: preserve across tab switches).
+     *  Null = main settings list, otherwise the section name. */
+    var settingsRoute by mutableStateOf<String?>(null)
 
     // Telegram login state is driven by the real backend's authState;
     // loggedIn here mirrors it for the splash router.

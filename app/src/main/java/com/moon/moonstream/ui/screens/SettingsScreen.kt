@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.moon.moonstream.ui.components.MsToast
@@ -458,7 +459,14 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     // --- Sub-screen navigation (moon's request 2026-11-03): each settings
     // --- section opens as its own screen with a back button, instead of
     // --- collapsing groups in one long list. Null = main list.
-    var settingsRoute by remember { mutableStateOf<String?>(null) }
+    // AppUiState.settingsRoute lives in AppUiState so it survives tab switches
+    // (moon's bug 2026-11-04: back from Library returned to main settings).
+
+    // System back gesture in a sub-screen returns to main settings
+    // (moon's bug 2026-11-04: only the arrow button worked).
+    BackHandler(enabled = AppUiState.settingsRoute != null) {
+        AppUiState.settingsRoute = null
+    }
 
     // Tappable row for the main settings list.
     @Composable
@@ -1270,7 +1278,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         }
     }
 
-    if (settingsRoute == null) {
+    if (AppUiState.settingsRoute == null) {
         // Main settings list: one tappable row per section.
         Column(
             modifier = Modifier
@@ -1290,19 +1298,19 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
 
             AccountCard(onLoggedOut = onLoggedOut)
 
-            SettingsNavRow("Server") { settingsRoute = "Server" }
-            SettingsNavRow("Scanning & Matching") { settingsRoute = "Scanning & Matching" }
-            SettingsNavRow("Metadata") { settingsRoute = "Metadata" }
-            SettingsNavRow("Streaming & Storage") { settingsRoute = "Streaming & Storage" }
-            SettingsNavRow("Playback") { settingsRoute = "Playback" }
-            SettingsNavRow("Languages") { settingsRoute = "Languages" }
-            SettingsNavRow("Appearance & Library") { settingsRoute = "Appearance & Library" }
-            SettingsNavRow("Library Tools") { settingsRoute = "Library Tools" }
-            SettingsNavRow("Cloud Backup") { settingsRoute = "Cloud Backup" }
-            SettingsNavRow("Update") { settingsRoute = "Update" }
+            SettingsNavRow("Server") { AppUiState.settingsRoute = "Server" }
+            SettingsNavRow("Scanning & Matching") { AppUiState.settingsRoute = "Scanning & Matching" }
+            SettingsNavRow("Metadata") { AppUiState.settingsRoute = "Metadata" }
+            SettingsNavRow("Streaming & Storage") { AppUiState.settingsRoute = "Streaming & Storage" }
+            SettingsNavRow("Playback") { AppUiState.settingsRoute = "Playback" }
+            SettingsNavRow("Languages") { AppUiState.settingsRoute = "Languages" }
+            SettingsNavRow("Appearance & Library") { AppUiState.settingsRoute = "Appearance & Library" }
+            SettingsNavRow("Library Tools") { AppUiState.settingsRoute = "Library Tools" }
+            SettingsNavRow("Cloud Backup") { AppUiState.settingsRoute = "Cloud Backup" }
+            SettingsNavRow("Update") { AppUiState.settingsRoute = "Update" }
             SettingsNavRow("Logs") { onOpenLogs() }
-            SettingsNavRow("App") { settingsRoute = "App" }
-            SettingsNavRow("Support") { settingsRoute = "Support" }
+            SettingsNavRow("App") { AppUiState.settingsRoute = "App" }
+            SettingsNavRow("Support") { AppUiState.settingsRoute = "Support" }
 
             // Version footer (moon's request 2026-11-03): small, one line at bottom.
             Text(
@@ -1331,16 +1339,16 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 BareIconButton(
                     icon = Icons.Filled.ArrowBack,
                     contentDescription = "Back",
-                    onClick = { settingsRoute = null },
+                    onClick = { AppUiState.settingsRoute = null },
                 )
                 Text(
-                    settingsRoute!!,
+                    AppUiState.settingsRoute!!,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MsColors.TextPrimary,
                 )
             }
-            when (settingsRoute) {
+            when (AppUiState.settingsRoute) {
                 "Server" -> ServerSection()
                 "Scanning & Matching" -> ScanningSection()
                 "Metadata" -> MetadataSection()
