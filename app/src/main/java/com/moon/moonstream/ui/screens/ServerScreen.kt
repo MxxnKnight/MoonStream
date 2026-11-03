@@ -69,6 +69,7 @@ import com.moon.moonstream.ui.components.MsCard
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.Doto
 import com.moon.moonstream.ui.theme.MsColors
+import com.moon.moonstream.ui.theme.doto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
