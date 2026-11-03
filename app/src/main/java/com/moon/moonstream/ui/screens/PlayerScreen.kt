@@ -91,6 +91,7 @@ import com.moon.moonstream.ui.state.LanguagePrefs
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.util.AppLog
 import com.moon.moonstream.util.AniSkip
+import com.moon.moonstream.util.IntroDb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1385,41 +1386,57 @@ fun PlayerScreen(
         }
 
         // Skip Intro button (moon's request 2026-11-02): Netflix-style pill
-        // at bottom-right. Uses AniSkip API for anime (exact timestamps),
-        // falls back to manual +85s.
+        // at bottom-right. Anime → AniSkip (Kitsu ID), series/movies → IntroDB
+        // (IMDb ID). No manual fallback — no API data = no button.
         var skipTimes by remember { mutableStateOf<AniSkip.SkipTimes?>(null) }
+        var introSegs by remember { mutableStateOf<IntroDb.Segments?>(null) }
         var skipFetched by remember { mutableStateOf(false) }
 
-        // Fetch AniSkip data once per episode.
+        // Fetch skip data once per episode.
         LaunchedEffect(mediaId, currentGroup?.episode) {
             if (skipFetched) return@LaunchedEffect
             skipFetched = true
-            val ep = currentGroup?.episode ?: return@LaunchedEffect
-            val kitsuId = try {
-                withContext(Dispatchers.IO) {
-                    db.mediaDao().getById(mediaId)?.kitsuId
-                }
+            val ep = currentGroup?.episode
+            val media = try {
+                withContext(Dispatchers.IO) { db.mediaDao().getById(mediaId) }
             } catch (e: Exception) { null }
-            if (kitsuId.isNullOrBlank()) {
-                AppLog.i("PLAYER", "Skip: no kitsuId, using manual +85s")
+            val isAnime = media?.type == "anime"
+            // Anime → AniSkip via Kitsu ID.
+            if (isAnime && ep != null && !media?.kitsuId.isNullOrBlank()) {
+                val durSecs = duration.coerceAtLeast(1L) / 1000
+                skipTimes = AniSkip.getSkipTimes(media!!.kitsuId!!, ep, durSecs)
                 return@LaunchedEffect
             }
-            val durSecs = duration.coerceAtLeast(1L) / 1000
-            skipTimes = AniSkip.getSkipTimes(kitsuId, ep, durSecs)
+            // Series/movies → IntroDB via IMDb ID.
+            val imdb = media?.imdbId
+            if (!imdb.isNullOrBlank()) {
+                introSegs = IntroDb.getSegments(
+                    imdbId = imdb,
+                    season = currentGroup?.season,
+                    episode = ep,
+                )
+            } else {
+                AppLog.i("PLAYER", "Skip: no kitsuId/imdbId, no button")
+            }
         }
 
-        val opEndMs = skipTimes?.opEnd?.let { (it * 1000).toLong() }
-        val opStartMs = skipTimes?.opStart?.let { (it * 1000).toLong() } ?: 0L
-        // Show ONLY during the actual OP from AniSkip. No manual fallback —
-        // if the API has no data, no button (moon's call 2026-11-03).
-        val showSkipIntro = opEndMs != null &&
-            currentPosition in opStartMs until opEndMs &&
+        // Resolve the intro window from whichever API answered.
+        val apiEndMs: Long? = skipTimes?.opEnd?.let { (it * 1000).toLong() }
+            ?: introSegs?.introEndSec?.let { (it * 1000).toLong() }
+        val apiStartMs: Long = skipTimes?.opStart?.let { (it * 1000).toLong() }
+            ?: introSegs?.introStartSec?.let { (it * 1000).toLong() }
+            ?: 0L
+        val apiSource = if (skipTimes?.opEnd != null) "AniSkip"
+            else if (introSegs?.introEndSec != null) "IntroDB" else null
+        // Show ONLY during the actual intro from the API. No data = no button.
+        val showSkipIntro = apiEndMs != null &&
+            currentPosition in apiStartMs until apiEndMs &&
             !controlsLocked
         if (showSkipIntro) {
             Button(
                 onClick = {
-                    player.seekTo(opEndMs)
-                    AppLog.i("PLAYER", "Skip intro: ${currentPosition/1000}s → ${opEndMs/1000}s (AniSkip)")
+                    player.seekTo(apiEndMs)
+                    AppLog.i("PLAYER", "Skip intro: ${currentPosition/1000}s → ${apiEndMs/1000}s ($apiSource)")
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
