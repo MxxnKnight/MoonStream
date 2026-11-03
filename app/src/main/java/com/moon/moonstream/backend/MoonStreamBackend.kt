@@ -6,10 +6,9 @@ import kotlinx.coroutines.flow.StateFlow
  * The socket between MoonStream's screens and Telegram.
  *
  * Plain-words version: the app never talks to Telegram directly. It only
- * talks to THIS contract. Today the [FakeMoonStreamBackend] is plugged in
- * (pretend data, everything works, nothing is real). One day the real
- * Telegram implementation gets plugged in via [BackendProvider.install],
- * and every screen keeps working without changing a single line — because
+ * talks to THIS contract. The real [TdlibMoonStreamBackend] is plugged in
+ * via [BackendProvider], and every screen keeps working without changing
+ * a single line — because
  * they only ever spoke to this contract.
  *
  * The contract is deliberately Telegram-agnostic: no TDLib types, no

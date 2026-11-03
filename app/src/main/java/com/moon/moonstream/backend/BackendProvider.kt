@@ -9,8 +9,6 @@ import com.moon.moonstream.tdlib.TelegramManager
  * Starts with [TdlibMoonStreamBackend] backed by the real TelegramManager.
  * Auth state is observed from TelegramManager — if not logged in the app
  * shows the login screen; if logged in it shows the main screens.
- *
- * [FakeMoonStreamBackend] is still available for UI testing/preview.
  */
 object BackendProvider {
 
