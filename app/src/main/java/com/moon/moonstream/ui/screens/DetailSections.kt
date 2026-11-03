@@ -368,18 +368,23 @@ fun FileRow(
                     onClick = onDelete,
                 )
             }
-            LimeTextButton(
-                text = "wrong title?",
-                onClick = onFixFile,
-                fontSize = 12,
-            )
-            // Manual episode assignment (moon's pick 2026-11-02).
-            if (onSetEpisode != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 LimeTextButton(
-                    text = "set episode",
-                    onClick = onSetEpisode,
+                    text = "wrong title?",
+                    onClick = onFixFile,
                     fontSize = 12,
                 )
+                // Manual episode assignment (moon's pick 2026-11-02).
+                if (onSetEpisode != null) {
+                    LimeTextButton(
+                        text = "set SxxExx",
+                        onClick = onSetEpisode,
+                        fontSize = 12,
+                    )
+                }
             }
         }
     }
@@ -445,18 +450,23 @@ fun StreamRow(
                     onClick = onDelete,
                 )
             }
-            LimeTextButton(
-                text = "wrong title?",
-                onClick = onFixFile,
-                fontSize = 13,
-            )
-            // Manual episode assignment (moon's pick 2026-11-02).
-            if (onSetEpisode != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 LimeTextButton(
-                    text = "set episode",
-                    onClick = onSetEpisode,
+                    text = "wrong title?",
+                    onClick = onFixFile,
                     fontSize = 13,
                 )
+                // Manual episode assignment (moon's pick 2026-11-02).
+                if (onSetEpisode != null) {
+                    LimeTextButton(
+                        text = "set SxxExx",
+                        onClick = onSetEpisode,
+                        fontSize = 13,
+                    )
+                }
             }
         }
     }
