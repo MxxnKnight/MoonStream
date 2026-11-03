@@ -241,7 +241,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
         } catch (e: Exception) {
             // Only toast if we have nothing to show (moon's bug 2026-11-04:
             // transient failure toasted even though retry succeeded seconds later).
-            if (channels.isNullOrEmpty() && ChannelRowCache.rows.isEmpty()) {
+            if (channels.isNullOrEmpty() && ChannelRowCache.rows.isNullOrEmpty()) {
                 MsToast.show("Couldn't load channels")
             }
         } finally {

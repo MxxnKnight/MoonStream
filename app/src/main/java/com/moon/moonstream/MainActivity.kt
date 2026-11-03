@@ -21,14 +21,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Tv
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.List
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Dns
+import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.ripple.LocalRippleTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
@@ -107,9 +107,9 @@ private data class Tab(
 )
 
 private val tabs = listOf(
-    Tab(AppScreen.Server, "Home", Icons.Filled.Home, Icons.Outlined.Home),
-    Tab(AppScreen.Library, "Library", Icons.Filled.List, Icons.Outlined.List),
-    Tab(AppScreen.Channels, "Channels", Icons.Filled.Tv, Icons.Outlined.Tv),
+    Tab(AppScreen.Server, "Home", Icons.Filled.Dns, Icons.Outlined.Dns),
+    Tab(AppScreen.Library, "Library", Icons.Filled.Archive, Icons.Outlined.Archive),
+    Tab(AppScreen.Channels, "Channels", Icons.Filled.RssFeed, Icons.Outlined.RssFeed),
     Tab(AppScreen.Settings, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
 )
 

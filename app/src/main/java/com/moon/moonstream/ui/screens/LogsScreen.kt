@@ -25,11 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -182,6 +177,7 @@ fun LogsScreen(onBack: () -> Unit) {
 
         // Scroll-to-bottom FAB (moon's request 2026-11-03): appears when
         // scrolled up, jumps to the latest logs.
+        // Simple if instead of AnimatedVisibility (scope issues in Box).
         val scope = rememberCoroutineScope()
         val showScrollDown by remember {
             derivedStateOf {
@@ -189,19 +185,12 @@ fun LogsScreen(onBack: () -> Unit) {
                 lines.isNotEmpty() && lastVisible < lines.size - 6
             }
         }
-        // FAB wrapper Box: align() on AnimatedVisibility directly was a
-        // compile error (no BoxScope), so we use a full-size Box with
-        // contentAlignment instead.
+        if (showScrollDown) {
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.BottomEnd,
         ) {
-        AnimatedVisibility(
-            visible = showScrollDown,
-            modifier = Modifier.padding(16.dp),
-            enter = fadeIn() + scaleIn(),
-            exit = fadeOut() + scaleOut(),
-        ) {
+            FloatingActionButton(
             FloatingActionButton(
                 onClick = {
                     scope.launch {
@@ -217,8 +206,8 @@ fun LogsScreen(onBack: () -> Unit) {
                     contentDescription = "Scroll to bottom",
                 )
             }
-        }
         } // FAB wrapper Box
+        } // if showScrollDown
         } // outer Box
     }
 }
