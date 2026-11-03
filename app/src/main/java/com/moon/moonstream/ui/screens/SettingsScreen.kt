@@ -1221,17 +1221,6 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             SettingRow(
-                title = "Installed version",
-                info = "The exact version installed on this phone — handy when reporting a problem.",
-            ) {
-                Text(
-                    BuildConfig.VERSION_NAME,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MsColors.TextPrimary,
-                )
-            }
-            SettingRow(
                 title = "What's New",
                 info = "See what changed in this version.",
             ) {
@@ -1314,6 +1303,17 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             SettingsNavRow("Logs") { onOpenLogs() }
             SettingsNavRow("App") { settingsRoute = "App" }
             SettingsNavRow("Support") { settingsRoute = "Support" }
+
+            // Version footer (moon's request 2026-11-03): small, one line at bottom.
+            Text(
+                "MoonStream v${BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MsColors.TextSecondary.copy(alpha = 0.6f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 24.dp, bottom = 8.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
         }
     } else {
         // Sub-screen: fixed header with back button + section content.
@@ -1405,17 +1405,19 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Changelog (moon's request 2026-11-03): show release notes,
+                    // not install instructions. No separate changelog button needed.
                     if (info.notes.isNotBlank()) {
                         Text(
                             info.notes.take(800),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MsColors.TextSecondary,
+                            color = MsColors.TextPrimary,
                         )
                     }
                     if (updateState is UpdateState.Downloading) {
                         val p = (updateState as UpdateState.Downloading).progress
                         Text(
-                            "Downloading… $p% (continues in background)",
+                            "Downloading… $p%",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MsColors.TextPrimary,
                         )
@@ -1424,30 +1426,51 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                             modifier = Modifier.fillMaxWidth(),
                             color = MsColors.Accent,
                         )
+                    } else if (updateState is UpdateState.Done) {
+                        Text(
+                            "Download complete. Tap Install when ready.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.Accent,
+                        )
                     } else if (updateState is UpdateState.Failed) {
                         Text(
                             "Download failed: ${(updateState as UpdateState.Failed).message}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color(0xFFF44336),
                         )
-                    } else {
-                        Text(
-                            "You'll be asked to allow the install, then the " +
-                                "update installs over your current app — " +
-                                "your login and library stay as they are.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MsColors.TextSecondary,
-                        )
                     }
                 }
             },
             confirmButton = {
-                LimePillButton(
-                    text = "Download & install",
-                    fontSize = 14,
-                    enabled = updateState !is UpdateState.Downloading,
-                    onClick = { downloadAndInstall(info) },
-                )
+                // Two-step: Download → Install (moon's request 2026-11-03).
+                // If user leaves mid-download, they come back to an Install button.
+                when (val s = updateState) {
+                    is UpdateState.Done -> {
+                        LimePillButton(
+                            text = "Install",
+                            fontSize = 14,
+                            onClick = {
+                                ApkInstaller.install(context, s.apk)
+                                updateInfo = null
+                            },
+                        )
+                    }
+                    is UpdateState.Downloading -> {
+                        LimePillButton(
+                            text = "Downloading…",
+                            fontSize = 14,
+                            enabled = false,
+                            onClick = {},
+                        )
+                    }
+                    else -> {
+                        LimePillButton(
+                            text = "Download",
+                            fontSize = 14,
+                            onClick = { downloadAndInstall(info) },
+                        )
+                    }
+                }
             },
             dismissButton = {
                 MsOutlinePill(
