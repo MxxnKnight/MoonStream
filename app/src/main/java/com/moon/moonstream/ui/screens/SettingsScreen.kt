@@ -167,12 +167,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     var dupProtection by remember { mutableStateOf(true) }
 
     // --- Backup state ---
-    var backupToTelegram by remember {
-        mutableStateOf(
-            context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
-                .getBoolean("backup_to_telegram", false)
-        )
-    }
+    // backupToTelegram removed — Telegram is the only destination now.
     var autoBackupSync by remember {
         mutableStateOf(
             context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
@@ -999,19 +994,9 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         }
 
         SettingsGroup("Backup") {
-            SettingRow(
-                title = "Back up to Telegram",
-                info = "Saves a copy of your catalog to your Saved Messages whenever something changes, so you never lose your library.",
-            ) {
-                MsToggle(
-                    checked = backupToTelegram,
-                    onCheckedChange = {
-                        backupToTelegram = it
-                        context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
-                            .edit().putBoolean("backup_to_telegram", it).apply()
-                    }
-                )
-            }
+            // "Back up to Telegram" toggle removed (moon's call 2026-11-03):
+            // Telegram is the only destination now, so the toggle was redundant.
+            // Auto-backup goes to Telegram, period.
             SettingRow(
                 title = "Auto-Backup & Manifest Sync",
                 info = "Backs up automatically and keeps the manifest link in sync after every change, with no taps needed.",
