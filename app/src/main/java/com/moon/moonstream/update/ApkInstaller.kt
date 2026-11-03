@@ -9,6 +9,7 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 
 /**
@@ -58,7 +59,7 @@ object ApkInstaller {
         try {
             kotlinx.coroutines.coroutineScope {
                 parts.map { (file, range) ->
-                    kotlinx.coroutines.async(Dispatchers.IO) {
+                    async(Dispatchers.IO) {
                         downloadRange(info.apkUrl, file, range.first, range.second) { n ->
                             val d = done.addAndGet(n.toLong())
                             onProgress(((d * 100) / total).toInt().coerceIn(0, 100))
