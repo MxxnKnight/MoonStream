@@ -61,9 +61,10 @@ object MsColors {
     /** Hairline card border for AMOLED (moon's request 2026-11-03):
      *  pure black melts cards together, so a 1dp white-at-8% outline
      *  defines boundaries without killing the AMOLED look.
-     *  Transparent when AMOLED is off (normal mode has enough contrast). */
+     *  Off when AMOLED is off, or when the user disables the toggle. */
     val CardBorder: Color
-        get() = if (AppUiState.amoled) Color.White.copy(alpha = 0.08f)
+        get() = if (AppUiState.amoled && AppUiState.amoledCardBorders)
+                    Color.White.copy(alpha = 0.08f)
                 else Color.Transparent
 }
 

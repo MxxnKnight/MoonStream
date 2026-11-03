@@ -36,8 +36,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -87,7 +90,6 @@ import com.moon.moonstream.index.tools.LibraryToolsRunner
 import com.moon.moonstream.ui.components.BackgroundToolButton
 import com.moon.moonstream.ui.components.ScanActionButton
 import com.moon.moonstream.ui.components.SettingRow
-import com.moon.moonstream.ui.components.SettingsGroup
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.state.LanguagePrefs
 import com.moon.moonstream.ui.state.MsAccent
@@ -453,25 +455,47 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     DisposableEffect(Unit) {
         onDispose { AppUiState.saveScroll("settings", settingsScroll.value) }
     }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MsColors.Bg)
-            .verticalScroll(settingsScroll)
-            .padding(16.dp)
-            .padding(bottom = 100.dp), // clear the floating nav pill
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Text(
-            "Settings",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MsColors.TextPrimary,
-        )
+    // --- Sub-screen navigation (moon's request 2026-11-03): each settings
+    // --- section opens as its own screen with a back button, instead of
+    // --- collapsing groups in one long list. Null = main list.
+    var settingsRoute by remember { mutableStateOf<String?>(null) }
 
-        AccountCard(onLoggedOut = onLoggedOut)
+    // Tappable row for the main settings list.
+    @Composable
+    fun SettingsNavRow(title: String, onClick: () -> Unit) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 4.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MsColors.TextPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MsColors.TextSecondary,
+            )
+        }
+    }
 
-        SettingsGroup("Server") {
+    @Composable
+    fun ServerSection() {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             SettingRow(
                 title = "Server port",
                 info = "The port the Stremio addon server listens on. Change it only if another app already uses this port. The manifest link on the Home screen updates automatically.",
@@ -536,8 +560,18 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 )
             }
         }
+    }
 
-        SettingsGroup("Scanning & Matching") {
+    @Composable
+    fun ScanningSection() {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             SettingRow(
                 title = "Auto-scan new content",
                 info = "When on, the app quietly checks your channels for new files in the background and adds them to the library by itself.",
@@ -596,8 +630,18 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             // "Skip exact duplicates" not added: "Duplicate protection" in
             // Appearance & Library already does exactly this.
         }
+    }
 
-        SettingsGroup("Metadata") {
+    @Composable
+    fun MetadataSection() {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             Text(
                 "Movies: TMDB → Cinemeta · Series: TVDB → Cinemeta → TMDB · Anime: Kitsu → TVDB → TMDB → Cinemeta. The app tries each source in order until one knows the title.",
                 style = MaterialTheme.typography.bodySmall,
@@ -713,8 +757,18 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 }
             }
         }
+    }
 
-        SettingsGroup("Streaming & Storage") {
+    @Composable
+    fun StreamingSection() {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             SettingRow(
                 title = "Cache MB",
                 info = "How much phone storage the app may use for its own cache (update downloads, thumbnails). Video you play in the app is downloaded by Telegram and stored separately — see Stream cache below.",
@@ -785,8 +839,18 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             }
             // Dead-link and duplicate scans live in the Library Tools group below.
         }
+    }
 
-        SettingsGroup("Playback") {
+    @Composable
+    fun PlaybackSection() {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             SettingBlock(
                 title = "Preferred quality",
                 info = "When a title has several versions, Stremio lists this quality first. You can still pick any other version.",
@@ -841,8 +905,18 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 MsToggle(checked = filterCamTs, onCheckedChange = { filterCamTs = it; MsToast.show("Saved") })
             }
         }
+    }
 
-        SettingsGroup("Languages") {
+    @Composable
+    fun LanguagesSection() {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             SettingBlock(
                 title = "Subtitle language",
                 info = "The in-app player turns on this subtitle by itself. If the title has no file in the first language, the second one is used. Anything else stays in the player's subtitle menu.",
@@ -904,8 +978,18 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 }
             }
         }
+    }
 
-        SettingsGroup("Appearance & Library") {
+    @Composable
+    fun AppearanceSection() {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             SettingRow(
                 title = "Accent color",
                 info = "The app's highlight color — buttons, switches, progress bars and the selected tab follow it. Applies instantly.",
@@ -931,14 +1015,33 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 )
             }
             SettingRow(
+                title = "AMOLED card borders",
+                info = "Thin outline around cards in AMOLED mode so they don't melt into the black background.",
+            ) {
+                MsToggle(
+                    checked = AppUiState.amoledCardBorders,
+                    onCheckedChange = { AppUiState.setAmoledCardBorders(it, context) },
+                )
+            }
+            SettingRow(
                 title = "Duplicate protection",
                 info = "When on, the app ignores a file it has already indexed, even if it appears again in another channel.",
             ) {
                 MsToggle(checked = dupProtection, onCheckedChange = { dupProtection = it; MsToast.show("Saved") })
             }
         }
+    }
 
-        SettingsGroup("Library Tools") {
+    @Composable
+    fun LibraryToolsSection() {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             SettingRow(
                 title = "Dead links",
                 info = "Finds entries whose Telegram message was deleted while the app was off. Runs in the background — you can leave this screen.",
@@ -992,8 +1095,18 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 )
             }
         }
+    }
 
-        SettingsGroup("Backup") {
+    @Composable
+    fun BackupSection() {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             // "Back up to Telegram" toggle removed (moon's call 2026-11-03):
             // Telegram is the only destination now, so the toggle was redundant.
             // Auto-backup goes to Telegram, period.
@@ -1063,31 +1176,18 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 modifier = Modifier.padding(bottom = 8.dp),
             )
         }
-        SettingsGroup("Diagnostics") {
-            SettingRow(
-                title = "View logs",
-                info = "Opens the app's diagnostic log — useful when something misbehaves and you want to see what the app was doing.",
-            ) {
-                MsOutlinePill(
-                    text = "Open",
-                    fontSize = 13,
-                    onClick = onOpenLogs,
-                )
-            }
-        }
+    }
 
-        SettingsGroup("App") {
-            SettingRow(
-                title = "Installed version",
-                info = "The exact version installed on this phone — handy when reporting a problem.",
-            ) {
-                Text(
-                    BuildConfig.VERSION_NAME,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MsColors.TextPrimary,
-                )
-            }
+    @Composable
+    fun UpdateSection() {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             SettingRow(
                 title = "Check for updates",
                 info = "Looks for a newer MoonStream release on GitHub and offers to install it.",
@@ -1105,6 +1205,30 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MsColors.TextSecondary,
                     modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
+        }
+    }
+
+    @Composable
+    fun AppSection() {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            SettingRow(
+                title = "Installed version",
+                info = "The exact version installed on this phone — handy when reporting a problem.",
+            ) {
+                Text(
+                    BuildConfig.VERSION_NAME,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MsColors.TextPrimary,
                 )
             }
             SettingRow(
@@ -1129,8 +1253,18 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             }
             // v0.5.0: logout moved to the Account group at the top.
         }
+    }
 
-        SettingsGroup("Support") {
+    @Composable
+    fun SupportSection() {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             SettingRow(
                 title = "Support the developer",
                 info = "MoonStream is free. If it saves you time, a small tip keeps it maintained.",
@@ -1143,6 +1277,82 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         MsToast.show("Thank you for the support!")
                     },
                 )
+            }
+        }
+    }
+
+    if (settingsRoute == null) {
+        // Main settings list: one tappable row per section.
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MsColors.Bg)
+                .verticalScroll(settingsScroll)
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                "Settings",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MsColors.TextPrimary,
+            )
+
+            AccountCard(onLoggedOut = onLoggedOut)
+
+            SettingsNavRow("Server") { settingsRoute = "Server" }
+            SettingsNavRow("Scanning & Matching") { settingsRoute = "Scanning & Matching" }
+            SettingsNavRow("Metadata") { settingsRoute = "Metadata" }
+            SettingsNavRow("Streaming & Storage") { settingsRoute = "Streaming & Storage" }
+            SettingsNavRow("Playback") { settingsRoute = "Playback" }
+            SettingsNavRow("Languages") { settingsRoute = "Languages" }
+            SettingsNavRow("Appearance & Library") { settingsRoute = "Appearance & Library" }
+            SettingsNavRow("Library Tools") { settingsRoute = "Library Tools" }
+            SettingsNavRow("Cloud Backup") { settingsRoute = "Cloud Backup" }
+            SettingsNavRow("Update") { settingsRoute = "Update" }
+            SettingsNavRow("Logs") { onOpenLogs() }
+            SettingsNavRow("App") { settingsRoute = "App" }
+            SettingsNavRow("Support") { settingsRoute = "Support" }
+        }
+    } else {
+        // Sub-screen: fixed header with back button + section content.
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MsColors.Bg),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BareIconButton(
+                    icon = Icons.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    onClick = { settingsRoute = null },
+                )
+                Text(
+                    settingsRoute!!,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MsColors.TextPrimary,
+                )
+            }
+            when (settingsRoute) {
+                "Server" -> ServerSection()
+                "Scanning & Matching" -> ScanningSection()
+                "Metadata" -> MetadataSection()
+                "Streaming & Storage" -> StreamingSection()
+                "Playback" -> PlaybackSection()
+                "Languages" -> LanguagesSection()
+                "Appearance & Library" -> AppearanceSection()
+                "Library Tools" -> LibraryToolsSection()
+                "Cloud Backup" -> BackupSection()
+                "Update" -> UpdateSection()
+                "App" -> AppSection()
+                "Support" -> SupportSection()
             }
         }
     }

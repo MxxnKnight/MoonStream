@@ -91,6 +91,8 @@ object AppUiState {
     // Appearance (persisted)
     var accent by mutableStateOf(MsAccent.LIME)
     var amoled by mutableStateOf(false)
+    /** AMOLED hairline card borders (moon's request 2026-11-03). Default on. */
+    var amoledCardBorders by mutableStateOf(true)
 
     // Telegram login state is driven by the real backend's authState;
     // loggedIn here mirrors it for the splash router.
@@ -129,6 +131,7 @@ object AppUiState {
         accent = MsAccent.values().find { it.name == prefs.getString("accent", null) }
             ?: MsAccent.LIME
         amoled = prefs.getBoolean("amoled", false)
+        amoledCardBorders = prefs.getBoolean("amoled_card_borders", true)
         loggedIn = prefs.getBoolean("logged_in", false)
         cacheMaxMb = prefs.getInt("cache_max_mb", 2048).coerceAtLeast(0)
         currentIp = com.moon.moonstream.server.MoonStreamServer.getLocalIpAddress()
@@ -165,6 +168,12 @@ object AppUiState {
         amoled = on
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putBoolean("amoled", on).commit()
+    }
+
+    fun setAmoledCardBorders(on: Boolean, context: Context) {
+        amoledCardBorders = on
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("amoled_card_borders", on).commit()
     }
 
     fun setLoggedIn(context: Context) {
