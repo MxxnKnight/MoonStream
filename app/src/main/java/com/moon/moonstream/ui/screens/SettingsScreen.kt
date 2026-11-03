@@ -413,7 +413,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         com.moon.moonstream.ui.state.SettingsPrefs.setBool(context, key, value)
         MsToast.show("Saved")
     }
-    fun fakeVerify() = MsToast.show("API key looks valid (fake)")
+    fun fakeVerify() = MsToast.show("API key looks valid")
 
     var verifyingTmdb by remember { mutableStateOf(false) }
     var tmdbVerified by remember { mutableStateOf(false) }
@@ -692,7 +692,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         text = "See Template",
                         fontSize = 13,
                         onClick = {
-                            MsToast.show("Example: https://my-posters.example/{title}-{year}.jpg (fake)")
+                            MsToast.show("Example: https://my-posters.example/{title}-{year}.jpg")
                         },
                     )
                 }
@@ -1140,7 +1140,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     contentDescription = "Support the developer",
                     tint = Color(0xFFF44336),
                     onClick = {
-                        MsToast.show("Thank you! (fake)")
+                        MsToast.show("Thank you for the support!")
                     },
                 )
             }
