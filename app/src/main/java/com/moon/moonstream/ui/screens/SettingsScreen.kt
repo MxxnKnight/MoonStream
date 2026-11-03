@@ -1069,48 +1069,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     onClick = { pullBackupFromTelegram() },
                 )
             }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                MsOutlinePill(
-                    text = "Share Backup",
-                    fontSize = 13,
-                    modifier = Modifier.weight(1f),
-                    onClick = { shareBackup() },
-                )
-                MsOutlinePill(
-                    text = "Restore File",
-                    fontSize = 13,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        restorePicker.launch(arrayOf("application/gzip", "application/json", "*/*"))
-                    },
-                )
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                MsOutlinePill(
-                    text = "Export file",
-                    fontSize = 13,
-                    modifier = Modifier.weight(1f),
-                    onClick = { exportBackupToDownloads() },
-                )
-                MsOutlinePill(
-                    text = "Import file",
-                    fontSize = 13,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        restorePicker.launch(arrayOf("application/gzip", "application/json", "*/*"))
-                    },
-                )
-            }
+            // Phone-storage backup removed (moon's call 2026-11-03):
+            // backup/restore is Telegram cloud only now.
             Text(
                 "If you reinstall the app, log in with the same Telegram account and hit Restore — your catalog comes back.",
                 style = MaterialTheme.typography.bodySmall,
