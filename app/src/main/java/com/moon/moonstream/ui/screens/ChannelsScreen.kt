@@ -38,9 +38,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -237,7 +241,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
         } catch (e: Exception) {
             // Only toast if we have nothing to show (moon's bug 2026-11-04:
             // transient failure toasted even though retry succeeded seconds later).
-            if (channels.isEmpty() && ChannelRowCache.rows.isEmpty()) {
+            if (channels.isNullOrEmpty() && ChannelRowCache.rows.isEmpty()) {
                 MsToast.show("Couldn't load channels")
             }
         } finally {
@@ -1112,19 +1116,35 @@ private fun UnmatchedFileRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
             )
-            // FlowRow: buttons wrap to the next line instead of squeezing
-            // "Link to Title" into 3 lines (moon's layout bug).
-            FlowRow(
+            // Icon buttons in moon's order (2026-11-04): Play, Copy Link,
+            // Create entry, Link to Title. Icons instead of text.
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                LimeTextButton(text = "Play", onClick = onPlay)
-                LimeTextButton(text = "Create entry", onClick = { onCreateEntry(file) })
-                LimeTextButton(text = "Copy Link", onClick = onCopyLink)
-                LimeTextButton(text = "Link to Title", onClick = onLinkToTitle)
+                BareIconButton(
+                    icon = Icons.Filled.PlayArrow,
+                    contentDescription = "Play",
+                    onClick = onPlay,
+                )
+                BareIconButton(
+                    icon = Icons.Filled.ContentCopy,
+                    contentDescription = "Copy Link",
+                    onClick = onCopyLink,
+                )
+                BareIconButton(
+                    icon = Icons.Filled.AddCircle,
+                    contentDescription = "Create entry",
+                    onClick = { onCreateEntry(file) },
+                )
+                BareIconButton(
+                    icon = Icons.Filled.Link,
+                    contentDescription = "Link to Title",
+                    onClick = onLinkToTitle,
+                )
             }
         }
     }

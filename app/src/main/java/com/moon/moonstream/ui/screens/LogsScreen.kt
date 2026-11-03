@@ -189,9 +189,16 @@ fun LogsScreen(onBack: () -> Unit) {
                 lines.isNotEmpty() && lastVisible < lines.size - 6
             }
         }
+        // FAB wrapper Box: align() on AnimatedVisibility directly was a
+        // compile error (no BoxScope), so we use a full-size Box with
+        // contentAlignment instead.
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.BottomEnd,
+        ) {
         AnimatedVisibility(
             visible = showScrollDown,
-            modifier = Modifier.align(Alignment.BottomEnd),
+            modifier = Modifier.padding(16.dp),
             enter = fadeIn() + scaleIn(),
             exit = fadeOut() + scaleOut(),
         ) {
@@ -211,6 +218,7 @@ fun LogsScreen(onBack: () -> Unit) {
                 )
             }
         }
-        } // Box
+        } // FAB wrapper Box
+        } // outer Box
     }
 }
