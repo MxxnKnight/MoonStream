@@ -548,9 +548,16 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
             .background(
+                // Richer "mesh-like" gradient: layered radial glows over a
+                // linear base (moon's request 2026-11-03). True mesh gradients
+                // aren't in Compose, this is the closest.
                 Brush.linearGradient(
-                    // Follows the theme accent (moon's request 2026-11-01).
-                    listOf(MsColors.GlowLight, MsColors.GlowDeep, MsColors.Bg),
+                    listOf(
+                        MsColors.GlowLight,
+                        MsColors.GlowDeep,
+                        MsColors.GlowDeep.copy(alpha = 0.7f),
+                        MsColors.Bg,
+                    ),
                 ),
             )
             .clickable(onClick = onOpenLibrary)
@@ -561,8 +568,15 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(26.5.dp))
                 .background(
-                    Brush.linearGradient(
-                        listOf(MsColors.GlowDeep.copy(alpha = 0.55f), MsColors.Bg, MsColors.Bg),
+                    Brush.radialGradient(
+                        colors = listOf(
+                            MsColors.GlowDeep.copy(alpha = 0.75f),
+                            MsColors.GlowDeep.copy(alpha = 0.35f),
+                            MsColors.Bg,
+                            MsColors.Bg,
+                        ),
+                        center = androidx.compose.ui.geometry.Offset(0.15f, 0.1f),
+                        radius = 900f,
                     ),
                 )
                 .padding(20.dp),
@@ -576,21 +590,21 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "Library",
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleMedium.doto(),
                             fontWeight = FontWeight.Medium,
-                            color = Color(0xFFF3E8FF),
+                            color = Color.White,
                         )
                         Text(
                             "›",
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleLarge.doto(),
                             fontWeight = FontWeight.Light,
-                            color = Color(0xCCE9D5FF),
+                            color = MsColors.TextSecondary,
                             modifier = Modifier.padding(start = 4.dp),
                         )
                     }
                     Text(
                         text = formatBytes(stats.sizeBytes),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyMedium.doto(),
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White,
                         maxLines = 1,
@@ -603,22 +617,22 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                 ) {
                     Text(
                         text = formatCount(files.value.toInt()),
-                        style = MaterialTheme.typography.displaySmall,
+                        style = MaterialTheme.typography.displaySmall.doto(),
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                     )
                     Text(
                         text = "files",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFFE9D5FF),
+                        color = MsColors.TextSecondary,
                         modifier = Modifier.padding(bottom = 6.dp),
                     )
                     Spacer(Modifier.weight(1f))
                     Text(
                         text = "${formatCount(titles.value.toInt())} titles",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyMedium.doto(),
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFE9D5FF),
+                        color = MsColors.TextSecondary,
                         modifier = Modifier.padding(bottom = 6.dp),
                     )
                 }
@@ -628,8 +642,8 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                     text = "${formatCount(stats.movies)} Movies  ·  " +
                         "${formatCount(stats.shows)} Shows  ·  " +
                         "${formatCount(stats.episodes)} Ep",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFDDD6FE),
+                    style = MaterialTheme.typography.bodySmall.doto(),
+                    color = MsColors.TextSecondary,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
@@ -641,7 +655,7 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                     Text(
                         text = "New: " + latest.take(3).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFDDD6FE).copy(alpha = 0.75f),
+                        color = MsColors.TextSecondary.copy(alpha = 0.75f),
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis,
