@@ -300,3 +300,79 @@ checked per chunk crossed rather than per read.
   contract additions must be additive with safe defaults.
 - The `deleteCachedFile` override from the section above stays as the
   manual/auto clear path; the window is the *streaming* path.
+
+---
+
+## FFmpeg audio decoders (tiny build) — for moon's AI
+
+moon wants (2026-11-03): the in-app player should decode EAC3/AC3/DTS
+in software, like mpvRx does. His phone (Helio G96) has no hardware
+decoder for these, so ExoPlayer fails with `ERROR_CODE_DECODER_INIT_FAILED`
+(`format_supported=NO_UNSUPPORTED_TYPE`).
+
+### What to build
+
+The **ExoPlayer/Media3 FFmpeg audio extension**, minimal build — audio
+decoders ONLY, no video. This is the "tiny" FFmpeg (3–5 MB per ABI),
+not a full build.
+
+**Decoders to enable** (the ones phones lack):
+- `eac3` (Dolby Digital Plus — moon's files are all EAC3)
+- `ac3` (Dolby Digital)
+- `dca` (DTS)
+- `truehd` (Dolby TrueHD)
+
+**Decoders to SKIP** (phone already does these in hardware):
+- aac, mp3, opus, vorbis, flac, wav — do NOT include, keeps the .so small.
+
+### How to build the native library
+
+From the media3 repo (`libraries/decoder_ffmpeg`):
+
+```sh
+cd decoder_ffmpeg
+./build_ffmpeg.sh \
+  --enable-decoder=eac3 \
+  --enable-decoder=ac3 \
+  --enable-decoder=dca \
+  --enable-decoder=truehd \
+  --disable-everything \
+  --disable-avdevice --disable-avformat --disable-swscale \
+  --disable-swresample --disable-postproc \
+  --disable-network --disable-doc
+```
+
+This produces `libffmpeg.so` per ABI. Copy to
+`app/src/main/jniLibs/<abi>/libffmpeg.so`
+(arm64-v8a is the priority; armeabi-v7a optional).
+
+Target size: **under 5 MB per ABI**. If it's bigger, a decoder slipped
+in — check with `nm -D libffmpeg.so | grep -i decoder`.
+
+### How to wire it in the app
+
+1. Add the Gradle dependency (same media3 version as the app uses):
+   ```gradle
+   implementation "androidx.media3:media3-exoplayer-ffmpeg:1.4.1"
+   ```
+
+2. In `PlayerScreen.kt`, where the ExoPlayer is built, use a
+   `DefaultRenderersFactory` that prefers the FFmpeg extension for audio:
+   ```kotlin
+   val renderersFactory = DefaultRenderersFactory(context).apply {
+       setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+   }
+   val player = ExoPlayer.Builder(context, renderersFactory).build()
+   ```
+
+3. Guard with `FfmpegLibrary.isAvailable()` — if the .so fails to load,
+   fall back to the default factory (hardware only). Log which path was taken.
+
+### Rules
+
+- Audio decoders ONLY. No video decoders in the build.
+- The 4 decoders above, nothing else. Every extra decoder is APK bloat.
+- Test on moon's POCO M4 Pro: play an EAC3 file in-app, confirm audio plays.
+- If the .so exceeds 5 MB per ABI, strip it down before shipping.
+- This touches `ui/player/` (my lane) for the wiring — coordinate the
+  Gradle + jniLibs + PlayerScreen changes as one PR, don't land half.
