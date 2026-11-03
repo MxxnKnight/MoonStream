@@ -1992,10 +1992,24 @@ fun PlayerScreen(
         }
 
         // Loading spinner while the stream buffers (moon's bug 2026-11-02:
-        // black screen with zero feedback).
-        if (isBuffering && playerError == null && !awaitingResumeChoice) {
+        // Full-screen buffering loader (moon's request 2026-11-03):
+        // shows during initial load AND when seeks take time. Uses a small
+        // delay (400ms) so quick seeks don't flicker the loader.
+        var showBufferLoader by remember { mutableStateOf(false) }
+        LaunchedEffect(isBuffering) {
+            if (isBuffering) {
+                kotlinx.coroutines.delay(400)
+                // Re-check: still buffering after the delay?
+                if (isBuffering) showBufferLoader = true
+            } else {
+                showBufferLoader = false
+            }
+        }
+        if (showBufferLoader && playerError == null && !awaitingResumeChoice) {
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f)),
                 contentAlignment = Alignment.Center,
             ) {
                 // Material3 loader, mpvex-style 96dp (replaces the small default).
