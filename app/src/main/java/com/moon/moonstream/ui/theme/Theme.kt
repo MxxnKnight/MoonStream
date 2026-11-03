@@ -102,9 +102,11 @@ val Redaction35 = FontFamily(
     Font(R.font.redaction35_bold, FontWeight.Bold),
 )
 
+/** Public extension: apply Doto display font to any TextStyle. */
+fun TextStyle.doto() = copy(fontFamily = Doto)
+
 private fun Typography.withBrandFonts(): Typography {
     fun TextStyle.inter() = copy(fontFamily = Inter)
-    fun TextStyle.doto() = copy(fontFamily = Doto)
     return copy(
         displayLarge = displayLarge.doto(),
         displayMedium = displayMedium.doto(),
