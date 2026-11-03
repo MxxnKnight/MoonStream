@@ -60,9 +60,11 @@ import com.moon.moonstream.ui.components.MsSectionLabel
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.model.CreatePrefill
 import com.moon.moonstream.ui.model.PrefillFile
-import com.moon.moonstream.ui.model.subtitleLanguages
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.ui.theme.MsRadii
+
+/** Supported subtitle languages (was in FakeData.kt, it's real data). */
+val subtitleLanguages = listOf("English", "Malayalam", "Hindi", "Tamil", "Spanish", "Arabic")
 import java.util.Calendar
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
