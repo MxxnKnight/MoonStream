@@ -16,9 +16,13 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,6 +36,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -48,21 +53,26 @@ import com.moon.moonstream.server.ServerTelemetry
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.moon.moonstream.index.db.MsDatabase
@@ -73,6 +83,7 @@ import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.ui.theme.doto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -217,6 +228,13 @@ private fun MsSectionEyebrow(text: String) {
  * - The manifest drawer slides down inside the same card (separator line +
  *   tap-to-copy row) when the server is on — NoxMedia style.
  */
+/**
+ * Server card v2 — "Swipe to awaken" (moon's design 2026-11-04).
+ * A tall pill on the left is the power button: swipe it right to start the
+ * server, swipe it back left to stop. 70% snap threshold both ways; the left
+ * 20% is a magnetic catch zone. Swipe-only, no tap. Keeps the gradient +
+ * outline + metrics + URL; no session ID, no "sleep" wording.
+ */
 @Composable
 private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
     // Looping sheen — created only to be read when ON.
@@ -226,11 +244,10 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(4200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse, // smooth back-and-forth, no jump
+            repeatMode = RepeatMode.Reverse,
         ),
         label = "sheenX",
     )
-    // Slow drifting background glow.
     val drift = rememberInfiniteTransition(label = "bgDrift")
     val driftY by drift.animateFloat(
         initialValue = 0f,
@@ -243,8 +260,6 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
     )
 
     val borderBrush: Brush = if (on) {
-        // Bright band sweeps 0 -> 1 across the border; stops are clamped so
-        // the gradient stays valid at the sweep edges.
         val c = sheenX
         Brush.linearGradient(
             0.00f to MsColors.GlowDark,
@@ -257,18 +272,38 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
         Brush.linearGradient(listOf(Color(0xFF26262C), Color(0xFF26262C)))
     }
 
+    // Swipe-pill state.
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    var trackWidthPx by remember { mutableIntStateOf(0) }
+    var pillOffsetPx by remember { mutableFloatStateOf(0f) }
+    val pillWidthPx = with(density) { 68.dp.toPx() }
+    val maxOffset = (trackWidthPx - pillWidthPx).coerceAtLeast(0f)
+
+    // If the server flips from outside (e.g. the notification Stop button),
+    // glide the pill to match.
+    LaunchedEffect(on, maxOffset) {
+        if (maxOffset <= 0f) return@LaunchedEffect
+        val target = if (on) maxOffset else 0f
+        if (pillOffsetPx != target) {
+            animate(pillOffsetPx, target, tween(300)) { v, _ -> pillOffsetPx = v }
+        }
+    }
+
+    val dragState = rememberDraggableState { delta ->
+        pillOffsetPx = (pillOffsetPx + delta).coerceIn(0f, maxOffset)
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
             .background(borderBrush)
             .padding(1.5.dp)
-            .clip(RoundedCornerShape(26.5.dp))
-            .clickable(onClick = onToggle),
+            .clip(RoundedCornerShape(26.5.dp)),
+        // No clickable — swipe-only (moon's rule).
     ) {
-        // Premium ambient background: dark base, soft glow washing down from
-        // the top (not a centered ball), plus a thin top-edge highlight.
-        // matchParentSize so the layers cover the content Column exactly.
+        // Ambient background layers (kept from v1).
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -276,8 +311,6 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 .background(Color(0xFF131316)),
         ) {
             if (on) {
-                // Soft top-down ambient wash (vertical gradient fades evenly —
-                // it can't form a concentrated "ball" like a centered radial).
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -290,7 +323,6 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                             ),
                         ),
                 )
-                // Thin top highlight line.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -305,126 +337,197 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 )
             }
         }
-        if (!on) {
-            // NoxMedia-style sleep state: the whole card is the button.
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // The swipe track: pill + content.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 64.dp),
-                contentAlignment = Alignment.Center,
+                    .height(if (on) 210.dp else 150.dp)
+                    .onSizeChanged { trackWidthPx = it.width },
             ) {
-                Text(
-                    "In Sleep mode",
-                    style = MaterialTheme.typography.headlineSmall.copy(fontFamily = Doto),
-                    color = MsColors.TextSecondary,
-                )
-            }
-        } else {
-            // Parent Column so URL sits BELOW content (was Box sibling → overlap).
-            Column(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(22.dp),
-            ) {
-                // Top row: title left, "sleep" (stop) right.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Server Awaked",
-                        style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
-                        color = Color.White,
-                    )
-                    Text(
-                        "sleep",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MsColors.TextSecondary,
+                // Content behind the pill.
+                if (!on) {
+                    Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(onClick = onToggle)
-                            .padding(8.dp),
-                    )
-                }
-                Spacer(Modifier.height(16.dp))
-                // Uptime + speed, NoxMedia-style big Doto numbers.
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                            .fillMaxSize()
+                            .padding(start = 84.dp, end = 16.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            formatUptime(uptimeSecs),
-                            style = MaterialTheme.typography.displaySmall.copy(fontFamily = Doto),
-                            color = Color.White,
-                        )
-                        Text(
-                            "uptime",
-                            style = MaterialTheme.typography.bodySmall,
+                            "Swipe to awaken >>>",
+                            style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
                             color = MsColors.TextSecondary,
                         )
                     }
+                } else {
                     Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(22.dp)
+                            .padding(end = 84.dp),
                     ) {
                         Text(
-                            formatBytes(ServerTelemetry.speedBps()) + "/s",
-                            style = MaterialTheme.typography.displaySmall.copy(fontFamily = Doto),
+                            "Server Awaked",
+                            style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
                             color = Color.White,
                         )
-                        Text(
-                            "speed",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MsColors.TextSecondary,
-                        )
+                        Spacer(Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(
+                                    formatUptime(uptimeSecs),
+                                    style = MaterialTheme.typography.displaySmall.copy(fontFamily = Doto),
+                                    color = Color.White,
+                                )
+                                Text(
+                                    "uptime",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MsColors.TextSecondary,
+                                )
+                            }
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(
+                                    formatBytes(ServerTelemetry.speedBps()) + "/s",
+                                    style = MaterialTheme.typography.displaySmall.copy(fontFamily = Doto),
+                                    color = Color.White,
+                                )
+                                Text(
+                                    "speed",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MsColors.TextSecondary,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color.Black.copy(alpha = 0.35f))
+                                .padding(vertical = 10.dp, horizontal = 16.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    "session ${formatBytes(ServerTelemetry.sessionBytes)}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MsColors.TextSecondary,
+                                )
+                                Text(
+                                    "·",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MsColors.TextSecondary,
+                                )
+                                Text(
+                                    "all-time ${formatBytes(ServerTelemetry.totalBytes)}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MsColors.TextSecondary,
+                                )
+                            }
+                        }
                     }
                 }
-                Spacer(Modifier.height(14.dp))
-                // Session / all-time in a darker inner box.
+
+                // The pill — the power button.
                 Box(
                     modifier = Modifier
+                        .offset { IntOffset(pillOffsetPx.roundToPx(), 0) }
+                        .width(68.dp)
+                        .fillMaxHeight()
+                        .padding(vertical = 10.dp, horizontal = 8.dp)
+                        .clip(RoundedCornerShape(34.dp))
+                        .background(if (on) MsColors.Accent else Color.White.copy(alpha = 0.92f))
+                        .draggable(
+                            state = dragState,
+                            orientation = Orientation.Horizontal,
+                            onDragStopped = {
+                                val fraction = if (maxOffset > 0f) pillOffsetPx / maxOffset else 0f
+                                scope.launch {
+                                    if (!on) {
+                                        // Turning ON: 70% to complete.
+                                        if (fraction >= 0.7f) {
+                                            animate(pillOffsetPx, maxOffset, tween(300)) { v, _ -> pillOffsetPx = v }
+                                            onToggle()
+                                        } else {
+                                            // Snap back; magnetic catch if in the left 20%.
+                                            val duration = if (fraction <= 0.2f) 150 else 300
+                                            animate(pillOffsetPx, 0f, tween(duration)) { v, _ -> pillOffsetPx = v }
+                                        }
+                                    } else {
+                                        // Turning OFF: 70% toward the left (fraction <= 0.3).
+                                        if (fraction <= 0.3f) {
+                                            animate(pillOffsetPx, 0f, tween(300)) { v, _ -> pillOffsetPx = v }
+                                            onToggle()
+                                        } else {
+                                            animate(pillOffsetPx, maxOffset, tween(300)) { v, _ -> pillOffsetPx = v }
+                                        }
+                                    }
+                                }
+                            },
+                        ),
+                )
+            }
+
+            // URL section (when ON), with scramble/decode animation.
+            if (on) {
+                Box(
+                    Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color.Black.copy(alpha = 0.35f))
-                        .padding(vertical = 12.dp, horizontal = 16.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "session ${formatBytes(ServerTelemetry.sessionBytes)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MsColors.TextSecondary,
-                        )
-                        Text(
-                            "·",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MsColors.TextSecondary,
-                        )
-                        Text(
-                            "all-time ${formatBytes(ServerTelemetry.totalBytes)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MsColors.TextSecondary,
-                        )
+                        .height(1.dp)
+                        .background(Color.White.copy(alpha = 0.08f)),
+                )
+                ManifestDrawer()
+            }
+        }
+    }
+}
+
+/**
+ * URL text with a fast scramble/decode animation (moon's request 2026-11-04):
+ * random chars resolve left-to-right into the real URL, ~600ms.
+ */
+@Composable
+private fun ScrambleUrlText(url: String, modifier: Modifier = Modifier) {
+    var display by remember { mutableStateOf(url) }
+    LaunchedEffect(url) {
+        if (url.isEmpty()) { display = ""; return@LaunchedEffect }
+        val pool = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        val structural = setOf(':', '/', '.', '-', '_', '?', '=', '&', '%', '#')
+        val steps = 10
+        repeat(steps) { step ->
+            val progress = (step + 1) / steps.toFloat()
+            val resolved = (url.length * progress).toInt()
+            display = buildString {
+                url.forEachIndexed { i, c ->
+                    when {
+                        i < resolved -> append(c)
+                        c in structural -> append(c)
+                        else -> append(pool.random())
                     }
                 }
             }
-            // URL section: darker, pushed below a separator.
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(Color.White.copy(alpha = 0.08f)),
-            )
-            ManifestDrawer()
-            } // parent Column
+            delay(60)
         }
+        display = url
     }
+    Text(
+        "URL: $display",
+        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Doto),
+        color = MsColors.TextSecondary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.weight(1f),
+    )
 }
 
 /**
@@ -462,14 +565,7 @@ private fun ManifestDrawer() {
             .padding(18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            "URL: $url",
-            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Doto),
-            color = MsColors.TextSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        ScrambleUrlText(url = url)
         // NoxMedia-style "copied" feedback (moon's request 2026-11-01).
         AnimatedVisibility(
             visible = copied,
