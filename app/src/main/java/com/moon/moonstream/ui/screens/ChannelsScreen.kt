@@ -991,23 +991,23 @@ private fun ChannelRow(
                         buttons = listOf(
                             IosSheetButton(
                                 "Rescan from scratch",
-                                icon = androidx.compose.material.icons.Icons.Filled.Refresh,
+                                icon = Icons.Filled.Refresh,
                                 onClick = { onMenuClose(); onRescanScratch() },
                             ),
                             IosSheetButton(
                                 label = if (channel.isAnime) "Unmark as anime channel" else "Mark as anime channel",
-                                icon = androidx.compose.material.icons.Icons.Filled.Star,
+                                icon = Icons.Filled.Star,
                                 onClick = { onMenuClose(); onToggleAnime() },
                             ),
                             IosSheetButton(
                                 "Copy channel ID",
-                                icon = androidx.compose.material.icons.Icons.Filled.ContentCopy,
+                                icon = Icons.Filled.ContentCopy,
                                 onClick = { onMenuClose(); onCopyId() },
                             ),
                             IosSheetButton(
                                 "Remove channel",
                                 isDestructive = true,
-                                icon = androidx.compose.material.icons.Icons.Filled.Delete,
+                                icon = Icons.Filled.Delete,
                                 onClick = { onMenuClose(); onRemove() },
                             ),
                         ),
