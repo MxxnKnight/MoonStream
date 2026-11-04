@@ -95,6 +95,15 @@ object ServerTelemetry {
     // last 3 seconds as B/s.
     private val speedSamples = ArrayDeque<Pair<Long, Long>>()
 
+    /** Session average speed: total session bytes / uptime (moon's request 2026-11-05).
+     *  More useful than instantaneous speed for a single-user server — shows
+     *  the average even when paused/idle (instantaneous would be 0). */
+    fun averageSpeedBps(): Long {
+        val secs = uptimeSecs()
+        if (secs <= 0) return 0
+        return sessionBytes / secs
+    }
+
     /** Approximate current throughput in bytes/second. */
     fun speedBps(): Long {
         val now = System.currentTimeMillis()

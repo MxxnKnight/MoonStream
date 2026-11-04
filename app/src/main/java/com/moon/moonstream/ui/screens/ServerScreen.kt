@@ -456,7 +456,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                 }
                                 Column(horizontalAlignment = Alignment.Start) {
                                     Text(
-                                        formatBytes(ServerTelemetry.speedBps()) + "/s",
+                                        formatBytes(ServerTelemetry.averageSpeedBps()) + "/s",
                                         style = MaterialTheme.typography.headlineMedium.copy(fontFamily = Doto),
                                         color = Color.White,
                                     )

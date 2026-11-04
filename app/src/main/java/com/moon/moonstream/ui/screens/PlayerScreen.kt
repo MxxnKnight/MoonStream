@@ -1294,24 +1294,36 @@ fun PlayerScreen(
                                 .padding(vertical = 2.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Box(modifier = Modifier.fillMaxWidth()) {
-                                // Buffer track (moon's point 3: show buffered amount in gray/white).
-                                // Drawn behind the Slider; Slider's inactive track is transparent.
+                            // Buffer track (moon's request): white/gray behind the blue progress.
+                            // Fixed-height container so the buffer aligns with the Slider's track.
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(24.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
                                 if (duration > 0L) {
                                     val bufferFrac = (bufferedPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+                                    // Background track (dark)
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(4.dp)
-                                            .align(Alignment.Center)
                                             .clip(RoundedCornerShape(2.dp))
                                             .background(Color.White.copy(alpha = 0.25f)),
+                                    )
+                                    // Buffer fill (white/gray, behind the blue progress)
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(4.dp)
+                                            .clip(RoundedCornerShape(2.dp)),
                                     ) {
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxWidth(bufferFrac)
                                                 .fillMaxHeight()
-                                                .background(Color.White.copy(alpha = 0.45f)),
+                                                .background(Color.White.copy(alpha = 0.5f)),
                                         )
                                     }
                                 }
