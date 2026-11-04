@@ -1,3 +1,5 @@
+include ':app'
+
 // Settings for MoonStream.
 // JitPack for BlurView (moon's pill blur 2026-11-05).
 dependencyResolutionManagement {
