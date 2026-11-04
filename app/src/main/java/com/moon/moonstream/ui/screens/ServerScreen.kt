@@ -808,7 +808,8 @@ private fun ContinueWatchingRow(
     var items by remember { mutableStateOf<List<com.moon.moonstream.index.db.WatchProgressEntity>>(emptyList()) }
     var refreshTick by remember { mutableStateOf(0) }
     // Reload on every resume (moon's bug 2026-11-04: row didn't refresh after watching).
-    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    val lifecycle = lifecycleOwner.lifecycle
     androidx.compose.runtime.DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refreshTick++
