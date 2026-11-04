@@ -1429,15 +1429,15 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                             style = MaterialTheme.typography.bodyMedium,
                             color = MsColors.TextPrimary,
                         )
-                        // Thick normal progress bar (moon's pick 2026-11-04 — no waves).
+                        // iOS-style progress bar (moon's pick 2026-11-04): blue, rounded, clean.
                         androidx.compose.material3.LinearProgressIndicator(
                             progress = { p / 100f },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(10.dp)
-                                .clip(RoundedCornerShape(5.dp)),
-                            color = MsColors.Accent,
-                            trackColor = MsColors.TrackOff,
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = Color(0xFF0A84FF),
+                            trackColor = Color(0xFF38383A),
                         )
                     } else if (updateState is UpdateState.Done) {
                         Text(

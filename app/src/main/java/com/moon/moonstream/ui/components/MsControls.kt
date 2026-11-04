@@ -7,6 +7,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -106,26 +108,27 @@ import com.moon.moonstream.ui.theme.MsRadii
 // Inter everywhere via MaterialTheme typography.
 // ---------------------------------------------------------------------------
 
-/** Primary action: lime filled pill, dark semibold text. */
+/** Primary action: iOS-style blue button, rounded 14dp (moon's iOS rebuild 2026-11-04). */
 @Composable
 fun LimePillButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    fontSize: Int = 15,
+    fontSize: Int = 17,
 ) {
     Button(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
         colors = ButtonDefaults.buttonColors(
-            containerColor = MsColors.Accent,
-            contentColor = MsColors.OnAccent,
-            disabledContainerColor = MsColors.TrackOff,
+            containerColor = Color(0xFF0A84FF),
+            contentColor = Color.White,
+            disabledContainerColor = Color(0xFF38383A),
             disabledContentColor = MsColors.TextSecondary,
         ),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 13.dp),
+        shape = RoundedCornerShape(14.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
     ) {
         Text(
             text = text,
@@ -138,30 +141,32 @@ fun LimePillButton(
     }
 }
 
-/** Secondary action: outlined pill, lime text. */
+/** Secondary action: iOS-style gray button, blue text (moon's iOS rebuild 2026-11-04). */
 @Composable
 fun MsOutlinePill(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    fontSize: Int = 14,
+    fontSize: Int = 17,
 ) {
-    OutlinedButton(
+    Button(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
-        colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = MsColors.Accent,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color(0xFF1C1C1E),
+            contentColor = Color(0xFF0A84FF),
+            disabledContainerColor = Color(0xFF1C1C1E),
             disabledContentColor = MsColors.TextSecondary,
         ),
-        border = BorderStroke(1.dp, MsColors.TextSecondary.copy(alpha = 0.55f)),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+        shape = RoundedCornerShape(14.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Normal,
             fontSize = fontSize.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1065,6 +1070,53 @@ fun BackgroundToolButton(
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
+ * iOS-style spinner (UIActivityIndicatorView look) — 12 fading blades.
+ * moon's pick 2026-11-04: replaces the Expressive morphing loader.
+ */
+@Composable
+fun IosSpinner(
+    modifier: Modifier = Modifier,
+    color: Color = Color.White,
+    size: Dp = 44.dp,
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "iosSpinner")
+    val head by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "iosHead",
+    )
+    val radius = size * 0.32f
+    val bladeW = size * 0.09f
+    val bladeH = size * 0.26f
+    Box(
+        modifier = modifier.size(size),
+        contentAlignment = Alignment.Center,
+    ) {
+        for (i in 0 until 12) {
+            val behind = ((head - i) % 12 + 12) % 12 / 12f
+            val alpha = 0.12f + 0.88f * (1f - behind)
+            val angleRad = Math.toRadians((i * 30).toDouble())
+            Box(
+                Modifier
+                    .offset(
+                        x = (kotlin.math.sin(angleRad) * radius.value).dp,
+                        y = (-kotlin.math.cos(angleRad) * radius.value).dp,
+                    )
+                    .rotate(i * 30f)
+                    .width(bladeW)
+                    .height(bladeH)
+                    .clip(RoundedCornerShape(50))
+                    .background(color.copy(alpha = alpha)),
             )
         }
     }
