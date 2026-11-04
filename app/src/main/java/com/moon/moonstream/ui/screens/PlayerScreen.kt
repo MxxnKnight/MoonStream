@@ -1078,7 +1078,7 @@ fun PlayerScreen(
         // Center transport: -10s / play-pause / +10s spread across the width
         // (moon's request 2026-11-02: -10s left edge, +10s right edge).
         // Hidden when buffering so it doesn't clash with the loader (moon's fix 2026-11-04).
-        if (controlsVisible && !controlsLocked && !showBufferLoader) {
+        if (controlsVisible && !controlsLocked && !isBuffering) {
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
