@@ -1149,9 +1149,9 @@ fun IosGroup(
 @Composable
 fun IosNavRow(
     title: String,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
     showDivider: Boolean = true,
+    onClick: () -> Unit,
 ) {
     Column(modifier = modifier) {
         Row(

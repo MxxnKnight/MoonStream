@@ -348,17 +348,16 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             ),
                         ),
                 )
-                // Swipeable pill container (moon's request 2026-11-04):
-                // draggable on the wrapper cooperates with inner clickables,
-                // unlike pointerInput which gets consumed by them.
+                // iOS-style tab bar (moon's iOS rebuild 2026-11-04): icon + label,
+                // blue selected, gray unselected. Keeps floating pill + swipe.
                 var dragAccum by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(start = 32.dp, end = 32.dp, bottom = 22.dp)
-                        .clip(RoundedCornerShape(30.dp))
-                        .background(MsColors.Surface)
-                        .border(1.dp, MsColors.Divider, RoundedCornerShape(30.dp))
+                        .padding(start = 24.dp, end = 24.dp, bottom = 22.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color(0xFF1C1C1E).copy(alpha = 0.94f))
+                        .border(0.5.dp, Color(0xFF38383A), RoundedCornerShape(24.dp))
                         .draggable(
                             state = rememberDraggableState { delta ->
                                 dragAccum += delta
@@ -374,25 +373,29 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                 dragAccum = 0f
                             },
                         )
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     tabs.forEach { tab ->
                         val selected = selectedTab == tab.screen
-                        Box(
+                        Column(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(22.dp))
-                                .background(
-                                    if (selected) MsColors.Accent else MsColors.Accent.copy(alpha = 0f),
-                                )
+                                .clip(RoundedCornerShape(16.dp))
                                 .clickable { goTab(tab.screen) }
-                                .padding(horizontal = 20.dp, vertical = 11.dp),
-                            contentAlignment = Alignment.Center,
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Icon(
                                 if (selected) tab.iconFilled else tab.iconOutlined,
                                 contentDescription = tab.label,
-                                tint = if (selected) MsColors.OnAccent else MsColors.TextSecondary,
+                                tint = if (selected) Color(0xFF0A84FF) else Color(0xFF98989F),
+                                modifier = Modifier.size(24.dp),
+                            )
+                            Text(
+                                text = tab.label,
+                                fontSize = 10.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) Color(0xFF0A84FF) else Color(0xFF98989F),
                             )
                         }
                     }
