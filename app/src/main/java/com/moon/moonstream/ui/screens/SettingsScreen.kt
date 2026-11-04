@@ -1353,19 +1353,25 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     color = MsColors.TextPrimary,
                 )
             }
-            when (AppUiState.settingsRoute) {
-                "Server" -> ServerSection()
-                "Scanning & Matching" -> ScanningSection()
-                "Metadata" -> MetadataSection()
-                "Streaming & Storage" -> StreamingSection()
-                "Playback" -> PlaybackSection()
-                "Languages" -> LanguagesSection()
-                "Appearance & Library" -> AppearanceSection()
-                "Library Tools" -> LibraryToolsSection()
-                "Cloud Backup" -> BackupSection()
-                "Update" -> UpdateSection()
-                "App" -> AppSection()
-                "Support" -> SupportSection()
+            // Section content in a weighted Box so it fills correctly
+            // (fixes sub-screen overlap/ghosting, moon's video 2026-11-04).
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier.weight(1f),
+            ) {
+                when (AppUiState.settingsRoute) {
+                    "Server" -> ServerSection()
+                    "Scanning & Matching" -> ScanningSection()
+                    "Metadata" -> MetadataSection()
+                    "Streaming & Storage" -> StreamingSection()
+                    "Playback" -> PlaybackSection()
+                    "Languages" -> LanguagesSection()
+                    "Appearance & Library" -> AppearanceSection()
+                    "Library Tools" -> LibraryToolsSection()
+                    "Cloud Backup" -> BackupSection()
+                    "Update" -> UpdateSection()
+                    "App" -> AppSection()
+                    "Support" -> SupportSection()
+                }
             }
         }
     }
