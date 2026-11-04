@@ -1255,6 +1255,64 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     }
 
     @Composable
+    fun AboutSection() {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+                .padding(bottom = 100.dp), // clear the floating nav pill
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            // Update content
+            SettingRow(
+                title = "Check for updates",
+                info = "Looks for a newer MoonStream release on GitHub and offers to install it.",
+            ) {
+                MsOutlinePill(
+                    text = if (checkingUpdate) "Checking…" else "Check",
+                    fontSize = 13,
+                    enabled = !checkingUpdate,
+                    onClick = ::checkForUpdates,
+                )
+            }
+            if (updateError != null) {
+                Text(
+                    updateError!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MsColors.TextSecondary,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
+            // App content (version info)
+            SettingRow(
+                title = "Version",
+                info = "Your current MoonStream version.",
+            ) {
+                Text(
+                    text = com.moon.moonstream.BuildConfig.VERSION_NAME,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MsColors.TextSecondary,
+                )
+            }
+            // Support content
+            SettingRow(
+                title = "Support the developer",
+                info = "MoonStream is free. If it saves you time, a small tip keeps it maintained.",
+            ) {
+                BareIconButton(
+                    icon = Icons.Filled.Favorite,
+                    contentDescription = "Support the developer",
+                    tint = Color(0xFFF44336),
+                    onClick = {
+                        MsToast.show("Thank you for the support!")
+                    },
+                )
+            }
+        }
+    }
+
+    @Composable
     fun SupportSection() {
         Column(
             modifier = Modifier
@@ -1311,10 +1369,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 IosNavRow("Appearance & Library") { AppUiState.settingsRoute = "Appearance & Library" }
                 IosNavRow("Library Tools") { AppUiState.settingsRoute = "Library Tools" }
                 IosNavRow("Cloud Backup") { AppUiState.settingsRoute = "Cloud Backup" }
-                IosNavRow("Update") { AppUiState.settingsRoute = "Update" }
                 IosNavRow("Logs") { onOpenLogs() }
-                IosNavRow("App") { AppUiState.settingsRoute = "App" }
-                IosNavRow("Support", showDivider = false) { AppUiState.settingsRoute = "Support" }
+                IosNavRow("About", showDivider = false) { AppUiState.settingsRoute = "About" }
             }
 
             // Version footer (moon's request 2026-11-03): small, one line at bottom.
@@ -1368,9 +1424,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     "Appearance & Library" -> AppearanceSection()
                     "Library Tools" -> LibraryToolsSection()
                     "Cloud Backup" -> BackupSection()
-                    "Update" -> UpdateSection()
-                    "App" -> AppSection()
-                    "Support" -> SupportSection()
+                    "About" -> AboutSection()
                 }
             }
         }

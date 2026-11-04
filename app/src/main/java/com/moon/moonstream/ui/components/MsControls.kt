@@ -702,37 +702,18 @@ fun MsDropdown(
                 tint = if (expanded) MsColors.Accent else MsColors.TextSecondary,
             )
         }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(MsColors.SurfaceAlt),
-        ) {
-            options.forEach { option ->
-                val isSel = option == selected
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = option,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (isSel) MsColors.Accent else MsColors.TextPrimary,
-                                modifier = Modifier.weight(1f),
-                            )
-                            if (isSel) {
-                                Icon(
-                                    imageVector = Icons.Filled.Check,
-                                    contentDescription = "Selected",
-                                    tint = MsColors.Accent,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                    },
+        // iOS action sheet instead of dropdown (moon's request 2026-11-04)
+        IosActionSheet(
+            visible = expanded,
+            onDismiss = { expanded = false },
+            buttons = options.map { option ->
+                IosSheetButton(
+                    label = option,
+                    // Selected option gets a checkmark via the label
                     onClick = { onSelect(option); expanded = false },
                 )
-            }
-        }
+            },
+        )
     }
 }
 

@@ -965,42 +965,25 @@ private fun ChannelRow(
                     )
                 }
                 Spacer(Modifier.width(4.dp))
-                Box {
-                    BareIconButton(
-                        icon = Icons.Filled.MoreVert,
-                        contentDescription = "Channel options",
-                        tint = MsColors.TextSecondary,
-                        onClick = onMenuOpen,
-                    )
-                    DropdownMenu(
-                        expanded = menuOpen,
-                        onDismissRequest = onMenuClose,
-                        modifier = Modifier.background(MsColors.Surface),
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Rescan from scratch") },
-                            onClick = { onMenuClose(); onRescanScratch() },
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (channel.isAnime) "Unmark as anime channel"
-                                    else "Mark as anime channel",
-                                )
-                            },
-                            onClick = { onMenuClose(); onToggleAnime() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Copy channel ID") },
-                            onClick = { onMenuClose(); onCopyId() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Remove channel", color = DestructiveRed) },
-                            onClick = { onMenuClose(); onRemove() },
-                            colors = MenuDefaults.itemColors(textColor = DestructiveRed),
-                        )
-                    }
-                }
+                BareIconButton(
+                    icon = Icons.Filled.MoreVert,
+                    contentDescription = "Channel options",
+                    tint = MsColors.TextSecondary,
+                    onClick = onMenuOpen,
+                )
+                // iOS action sheet for channel options (moon's request 2026-11-04)
+                IosActionSheet(
+                    visible = menuOpen,
+                    onDismiss = onMenuClose,
+                    buttons = listOf(
+                        IosSheetButton("Rescan from scratch") { onMenuClose(); onRescanScratch() },
+                        IosSheetButton(
+                            if (channel.isAnime) "Unmark as anime channel" else "Mark as anime channel"
+                        ) { onMenuClose(); onToggleAnime() },
+                        IosSheetButton("Copy channel ID") { onMenuClose(); onCopyId() },
+                        IosSheetButton("Remove channel", isDestructive = true) { onMenuClose(); onRemove() },
+                    ),
+                )
             }
 
             AnimatedVisibility(
