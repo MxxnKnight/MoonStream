@@ -64,8 +64,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -233,19 +237,58 @@ private fun MsSectionEyebrow(text: String) {
  *   tap-to-copy row) when the server is on — NoxMedia style.
  */
 /**
- * Server card v3 — cinematic "Swipe to awaken" (moon's design 2026-11-04,
- * ChatGPT polish pass).
+ * Server card v4 — cinematic "Swipe to awaken" (moon's design 2026-11-04,
+ * v4 polish 2026-11-04: soft wipe, URL from behind, progress-tied glow).
  *
- * - Fixed card height (no jump between OFF/ON).
- * - Before/after wipe: the pill is a divider; ON content is revealed from
- *   the left as the pill moves right (not pill sliding over static text).
+ * - Fixed card height (no OFF/ON jump).
+ * - SOFT WIPE: the pill is a light edge. ON content fades in left-to-right
+ *   as the pill moves (feathered, not hard-clipped — no mid-letter cuts).
+ *   OFF content fades out as the pill approaches. No ghosting.
+ * - URL is PART OF THE CARD: slides down from behind, rounded bottom
+ *   corners, top tucked behind the main card.
+ * - Static mesh-style gradient inside. Outline sheen runs only when
+ *   waking/wake, intensity tied to swipe progress (0=dark, 1=full glow).
+ * - Metrics (uptime/speed/session/total) clean layout, visible when ON.
  * - 70% snap threshold both ways; left 20% magnetic catch. Swipe-only.
- * - Cinematic phases on wake: glow sweep → status → uptime/speed →
- *   transmission → URL slides from behind + scramble.
- * - Reverse on sleep: phases retract in reverse order.
  * - States: IDLE → STARTING → RUNNING → STOPPING → IDLE.
  */
 private enum class ServerCardState { IDLE, STARTING, RUNNING, STOPPING }
+
+/** Soft horizontal wipe: content fades in left of [revealX], out right of it. */
+private fun Modifier.softWipe(revealX: Float, featherPx: Float, widthPx: Float) =
+    this.drawWithContent {
+        drawContent()
+        if (widthPx <= 0f) return@drawWithContent
+        val startFrac = ((revealX - featherPx) / widthPx).coerceIn(0f, 1f)
+        val endFrac = ((revealX + featherPx) / widthPx).coerceIn(0f, 1f)
+        drawRect(
+            brush = Brush.horizontalGradient(
+                0f to Color.Black,
+                startFrac to Color.Black,
+                endFrac to Color.Transparent,
+                1f to Color.Transparent,
+            ),
+            blendMode = BlendMode.DstIn,
+        )
+    }
+
+/** Inverse soft wipe: content fades in right of [revealX], out left of it. */
+private fun Modifier.softWipeInverse(revealX: Float, featherPx: Float, widthPx: Float) =
+    this.drawWithContent {
+        drawContent()
+        if (widthPx <= 0f) return@drawWithContent
+        val startFrac = ((revealX - featherPx) / widthPx).coerceIn(0f, 1f)
+        val endFrac = ((revealX + featherPx) / widthPx).coerceIn(0f, 1f)
+        drawRect(
+            brush = Brush.horizontalGradient(
+                0f to Color.Transparent,
+                startFrac to Color.Transparent,
+                endFrac to Color.Black,
+                1f to Color.Black,
+            ),
+            blendMode = BlendMode.DstIn,
+        )
+    }
 
 @Composable
 private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
@@ -253,52 +296,15 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
     val sheenX by sheen.animateFloat(
         initialValue = 0f, targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(4200, easing = LinearEasing),
+            animation = tween(3000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "sheenX",
     )
-    val drift = rememberInfiniteTransition(label = "bgDrift")
-    val driftY by drift.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(6000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "driftY",
-    )
 
-    // Card state machine (drives the cinematic phases).
     var cardState by remember { mutableStateOf(ServerCardState.IDLE) }
     LaunchedEffect(on) {
         cardState = if (on) ServerCardState.RUNNING else ServerCardState.IDLE
-    }
-
-    // Cinematic phase: 0=none, 1=status, 2=metrics, 3=transmission, 4=url.
-    var phase by remember { mutableIntStateOf(0) }
-    LaunchedEffect(cardState) {
-        if (cardState == ServerCardState.RUNNING) {
-            delay(250); phase = 1
-            delay(220); phase = 2
-            delay(220); phase = 3
-            delay(220); phase = 4
-        } else if (cardState == ServerCardState.IDLE) {
-            phase = 0
-        }
-        // STARTING/STOPPING keep the current phase (no jump).
-    }
-
-    val borderBrush: Brush = if (cardState == ServerCardState.RUNNING || cardState == ServerCardState.STARTING) {
-        val c = sheenX
-        Brush.linearGradient(
-            0.00f to MsColors.GlowDark,
-            (c - 0.30f).coerceIn(0.001f, 0.999f) to MsColors.GlowDeep,
-            c.coerceIn(0.001f, 0.999f) to MsColors.GlowLight,
-            (c + 0.30f).coerceIn(0.001f, 0.999f) to MsColors.GlowDeep,
-            1.00f to MsColors.GlowDark,
-        )
-    } else {
-        Brush.linearGradient(listOf(Color(0xFF26262C), Color(0xFF26262C)))
     }
 
     // Swipe-pill state.
@@ -307,9 +313,12 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
     var trackWidthPx by remember { mutableIntStateOf(0) }
     var pillOffsetPx by remember { mutableFloatStateOf(0f) }
     val pillWidthPx = with(density) { 68.dp.toPx() }
+    val featherPx = with(density) { 48.dp.toPx() }
     val maxOffset = (trackWidthPx - pillWidthPx).coerceAtLeast(0f)
-    val trackWidthDp = with(density) { trackWidthPx.toDp() }
-    val pillOffsetDp = with(density) { pillOffsetPx.toDp() }
+
+    // Progress 0f (OFF) → 1f (ON), driven by the pill.
+    val progress = if (maxOffset > 0f) (pillOffsetPx / maxOffset).coerceIn(0f, 1f) else 0f
+    val widthPxF = trackWidthPx.toFloat()
 
     // Sync pill if server flips externally (notification Stop button).
     LaunchedEffect(on, maxOffset) {
@@ -324,11 +333,29 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
         pillOffsetPx = (pillOffsetPx + delta).coerceIn(0f, maxOffset)
     }
 
-    // Fixed card height — no jump between OFF/ON (ChatGPT fix 2026-11-04).
-    val cardHeight = 220.dp
+    // Border: dark when OFF, animated sheen when waking/ON.
+    // Intensity follows the swipe progress (moon's point 3).
+    val borderBrush: Brush = if (progress > 0.02f) {
+        val c = sheenX
+        val a = progress.coerceIn(0f, 1f)
+        Brush.linearGradient(
+            0.00f to MsColors.GlowDark.copy(alpha = a),
+            (c - 0.30f).coerceIn(0.001f, 0.999f) to MsColors.GlowDeep.copy(alpha = a),
+            c.coerceIn(0.001f, 0.999f) to MsColors.GlowLight.copy(alpha = a),
+            (c + 0.30f).coerceIn(0.001f, 0.999f) to MsColors.GlowDeep.copy(alpha = a),
+            1.00f to MsColors.GlowDark.copy(alpha = a),
+        )
+    } else {
+        Brush.linearGradient(listOf(Color(0xFF26262C), Color(0xFF26262C)))
+    }
+
+    // Fixed card height.
+    val cardHeight = 240.dp
+    // URL visibility: slides from behind once the swipe is mostly complete.
+    val urlVisible = progress > 0.85f || cardState == ServerCardState.RUNNING
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // Main card (z-index above the URL so the URL slides from behind).
+        // Main card (z-index above URL).
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -336,157 +363,126 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 .clip(RoundedCornerShape(28.dp))
                 .background(borderBrush)
                 .padding(1.5.dp)
-                .clip(RoundedCornerShape(26.5.dp)),
+                .clip(RoundedCornerShape(26.5.dp))
+                .background(Color(0xFF131316)),
         ) {
-            // Ambient background.
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(26.5.dp))
-                    .background(Color(0xFF131316)),
-            ) {
-                if (cardState == ServerCardState.RUNNING || cardState == ServerCardState.STARTING) {
-                    Box(
-                        modifier = Modifier.fillMaxSize().background(
-                            Brush.verticalGradient(
-                                0.00f to MsColors.GlowDeep.copy(alpha = 0.30f),
-                                (0.30f + driftY * 0.15f) to MsColors.GlowDeep.copy(alpha = 0.12f),
-                                (0.65f + driftY * 0.15f) to MsColors.GlowDeep.copy(alpha = 0.03f),
-                                1.00f to Color.Transparent,
+            // Static mesh-style gradient (no drift animation — moon's point 3).
+            // Intensity follows progress.
+            if (progress > 0.02f) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                MsColors.GlowDeep.copy(alpha = 0.25f * progress),
+                                MsColors.GlowDeep.copy(alpha = 0.08f * progress),
+                                Color.Transparent,
                             ),
+                            center = Offset(0.3f, 0.2f),
+                            radius = 800f,
                         ),
-                    )
-                    Box(
-                        modifier = Modifier.fillMaxWidth().height(1.5.dp).background(
-                            Brush.horizontalGradient(
-                                0.0f to Color.Transparent,
-                                0.5f to MsColors.GlowLight.copy(alpha = 0.55f),
-                                1.0f to Color.Transparent,
-                            ),
-                        ),
-                    )
-                }
+                    ),
+                )
             }
 
-            // The swipe track with before/after wipe.
+            // The swipe track.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(cardHeight)
                     .onSizeChanged { trackWidthPx = it.width },
             ) {
-                // OFF layer (bottom, full width).
-                Box(
-                    modifier = Modifier.fillMaxSize().padding(start = 84.dp, end = 16.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    val label = when (cardState) {
-                        ServerCardState.STARTING -> "Starting…"
-                        ServerCardState.STOPPING -> "Stopping…"
-                        else -> "Swipe to awaken >>>"
-                    }
-                    Text(
-                        label,
-                        style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
-                        color = MsColors.TextSecondary,
-                    )
-                }
-
-                // ON layer (top), clipped to the pill position — the wipe.
-                // As the pill moves right, ON is revealed from the left.
                 if (trackWidthPx > 0) {
+                    // OFF layer: fades out as the pill approaches (inverse wipe).
+                    // Overall alpha also tied to (1-progress) — no ghosting.
                     Box(
                         modifier = Modifier
-                            .width(pillOffsetDp)
-                            .fillMaxHeight()
-                            .clipToBounds(),
+                            .fillMaxSize()
+                            .softWipeInverse(pillOffsetPx, featherPx, widthPxF)
+                            .alpha((1f - progress).coerceIn(0f, 1f)),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        // Full-width content, clipped to the visible region.
+                        val label = when (cardState) {
+                            ServerCardState.STARTING -> "Starting…"
+                            ServerCardState.STOPPING -> "Stopping…"
+                            else -> "Swipe to awaken >>>"
+                        }
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
+                            color = MsColors.TextSecondary,
+                            modifier = Modifier.padding(start = 84.dp, end = 16.dp),
+                        )
+                    }
+
+                    // ON layer: fades in left-to-right as the pill moves (soft wipe).
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .softWipe(pillOffsetPx, featherPx, widthPxF)
+                            .alpha(progress.coerceIn(0f, 1f)),
+                    ) {
                         Column(
                             modifier = Modifier
-                                .width(trackWidthDp)
-                                .fillMaxHeight()
+                                .fillMaxSize()
                                 .padding(22.dp)
                                 .padding(end = 84.dp),
+                            verticalArrangement = Arrangement.Center,
                         ) {
-                            // Phase 1: status.
-                            AnimatedVisibility(
-                                visible = phase >= 1,
-                                enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 2 },
-                                exit = fadeOut(tween(200)),
-                            ) {
-                                Text(
-                                    when (cardState) {
-                                        ServerCardState.STARTING -> "Server Starting"
-                                        ServerCardState.STOPPING -> "Server Stopping"
-                                        else -> "Server Awaked"
-                                    },
-                                    style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
-                                    color = Color.White,
-                                )
+                            val statusLabel = when (cardState) {
+                                ServerCardState.STARTING -> "Server Starting"
+                                ServerCardState.STOPPING -> "Server Stopping"
+                                else -> "Server Awaked"
                             }
-                            Spacer(Modifier.height(12.dp))
-                            // Phase 2: uptime + speed.
-                            AnimatedVisibility(
-                                visible = phase >= 2,
-                                enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 2 },
-                                exit = fadeOut(tween(200)),
+                            Text(
+                                statusLabel,
+                                style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
+                                color = Color.White,
+                            )
+                            Spacer(Modifier.height(14.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(24.dp),
                             ) {
-                                Row(modifier = Modifier.fillMaxWidth()) {
-                                    Column(
-                                        modifier = Modifier.weight(1f),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                    ) {
-                                        Text(
-                                            formatUptime(uptimeSecs),
-                                            style = MaterialTheme.typography.displaySmall.copy(fontFamily = Doto),
-                                            color = Color.White,
-                                        )
-                                        Text("uptime", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
-                                    }
-                                    Column(
-                                        modifier = Modifier.weight(1f),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                    ) {
-                                        Text(
-                                            formatBytes(ServerTelemetry.speedBps()) + "/s",
-                                            style = MaterialTheme.typography.displaySmall.copy(fontFamily = Doto),
-                                            color = Color.White,
-                                        )
-                                        Text("speed", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
-                                    }
+                                Column(horizontalAlignment = Alignment.Start) {
+                                    Text(
+                                        formatUptime(uptimeSecs),
+                                        style = MaterialTheme.typography.headlineMedium.copy(fontFamily = Doto),
+                                        color = Color.White,
+                                    )
+                                    Text("uptime", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
+                                }
+                                Column(horizontalAlignment = Alignment.Start) {
+                                    Text(
+                                        formatBytes(ServerTelemetry.speedBps()) + "/s",
+                                        style = MaterialTheme.typography.headlineMedium.copy(fontFamily = Doto),
+                                        color = Color.White,
+                                    )
+                                    Text("speed", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
                                 }
                             }
-                            Spacer(Modifier.height(10.dp))
-                            // Phase 3: transmission info.
-                            AnimatedVisibility(
-                                visible = phase >= 3,
-                                enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 2 },
-                                exit = fadeOut(tween(200)),
+                            Spacer(Modifier.height(12.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color.Black.copy(alpha = 0.35f))
+                                    .padding(vertical = 10.dp, horizontal = 16.dp),
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .background(Color.Black.copy(alpha = 0.35f))
-                                        .padding(vertical = 10.dp, horizontal = 16.dp),
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceEvenly,
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceEvenly,
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text("session ${formatBytes(ServerTelemetry.sessionBytes)}", style = MaterialTheme.typography.bodyMedium, color = MsColors.TextSecondary)
-                                        Text("·", style = MaterialTheme.typography.bodyMedium, color = MsColors.TextSecondary)
-                                        Text("all-time ${formatBytes(ServerTelemetry.totalBytes)}", style = MaterialTheme.typography.bodyMedium, color = MsColors.TextSecondary)
-                                    }
+                                    Text("session ${formatBytes(ServerTelemetry.sessionBytes)}", style = MaterialTheme.typography.bodyMedium, color = MsColors.TextSecondary)
+                                    Text("·", style = MaterialTheme.typography.bodyMedium, color = MsColors.TextSecondary)
+                                    Text("all-time ${formatBytes(ServerTelemetry.totalBytes)}", style = MaterialTheme.typography.bodyMedium, color = MsColors.TextSecondary)
                                 }
                             }
                         }
                     }
                 }
 
-                // The pill — the divider.
+                // The pill — the light edge.
                 Box(
                     modifier = Modifier
                         .offset { IntOffset(pillOffsetPx.roundToInt(), 0) }
@@ -495,8 +491,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                         .padding(vertical = 10.dp, horizontal = 8.dp)
                         .clip(RoundedCornerShape(34.dp))
                         .background(
-                            if (cardState == ServerCardState.RUNNING || cardState == ServerCardState.STARTING)
-                                MsColors.Accent
+                            if (progress > 0.5f) MsColors.Accent
                             else Color.White.copy(alpha = 0.92f)
                         )
                         .draggable(
@@ -530,22 +525,32 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
             }
         }
 
-        // URL card — slides from behind the main card (Phase 4).
+        // URL: part of the card, slides from behind (moon's point 1).
+        // Rounded bottom corners like the card, top tucked behind.
         AnimatedVisibility(
-            visible = phase >= 4,
-            enter = fadeIn(tween(300)) + slideInVertically(tween(400)) { -it / 2 },
-            exit = fadeOut(tween(200)) + slideOutVertically(tween(300)) { -it / 2 },
+            visible = urlVisible,
+            enter = fadeIn(tween(250)) + slideInVertically(tween(350)) { -it },
+            exit = fadeOut(tween(200)) + slideOutVertically(tween(300)) { -it },
         ) {
-            Column {
-                Box(
-                    Modifier.fillMaxWidth().height(1.dp)
-                        .background(Color.White.copy(alpha = 0.08f)),
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
+                    .offset(y = (-8).dp)
+                    .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
+                    .background(Color(0xFF1A1A1E))
+                    .border(
+                        1.dp,
+                        Color.White.copy(alpha = 0.08f),
+                        RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+                    ),
+            ) {
                 ManifestDrawer()
             }
         }
     }
 }
+
 
 /**
  * URL text with a fast scramble/decode animation (moon's request 2026-11-04):
