@@ -806,7 +806,17 @@ private fun ContinueWatchingRow(
 ) {
     val context = LocalContext.current
     var items by remember { mutableStateOf<List<com.moon.moonstream.index.db.WatchProgressEntity>>(emptyList()) }
-    LaunchedEffect(Unit) {
+    var refreshTick by remember { mutableStateOf(0) }
+    // Reload on every resume (moon's bug 2026-11-04: row didn't refresh after watching).
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    androidx.compose.runtime.DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refreshTick++
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(refreshTick) {
         withContext(Dispatchers.IO) {
             val db = com.moon.moonstream.index.db.MsDatabase.get(context)
             // Only items with actual progress (position > 10s, not finished)
