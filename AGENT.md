@@ -72,9 +72,11 @@ yours. When in doubt, update this file instead of guessing.
 
 - ALWAYS bundle the Inter font and force it theme-wide — the user's
   handwriting system font hijacks unlabeled UIs otherwise.
-- Design system: bg `#0E1116`, cards `#161B24`, lime `#7DD956` pills with
-  dark text, floating pill bottom nav. Generous spacing, professional
-  polish — never cramped.
+- Design system (iOS rebuild, merged 2026-11-04 — supersedes the old lime/Material3 look):
+  bg `#0E1116`, iOS grouped cards `#1C1C1E` (14dp), iOS blue `#0A84FF` actions,
+  iOS switches (51×31, green `#30D158`), iOS segmented tabs (gray),
+  iOS spinner loader, iOS action sheets, iOS bottom sheets (grabber),
+  iOS tab bar (icon + label). Generous spacing, professional polish — never cramped.
 - No `Canvas` / `Stroke` / `nativeCanvas` in UI code (the offline build
   mirror's Compose AAR lacks them).
 - Never deliver APKs as chat attachments (the user's phone saves them as
@@ -83,6 +85,31 @@ yours. When in doubt, update this file instead of guessing.
   passwords. Ever.
 - Commits: short imperative summary; push after committing (token is in
   the git credential store).
+
+## iOS restyle (2026-11-04) — component reference
+
+moon picked a full Cupertino/iOS look for the Android app. All components
+live in `ui/components/MsControls.kt` unless noted:
+
+| Component | iOS spec | Notes |
+|---|---|---|
+| `IosSpinner` | 12-blade fading Apple spinner | Replaces all loaders (player buffering). Custom — no M3 equivalent. |
+| `MsToggle` | iOS switch 51×31dp, `#30D158` when on | Drop-in replacement, same signature. |
+| `MsSegmentedControl` (LibraryScreen) | iOS gray `#1C1C1E` track, `#636366` thumb | Was lime — now authentic iOS gray. |
+| `LimePillButton` | iOS blue `#0A84FF`, 14dp rounded | Name is legacy; style is iOS now. |
+| `MsOutlinePill` | iOS gray `#1C1C1E` bg, blue text | Was outlined lime. |
+| `IosGroup` + `IosNavRow` | iOS grouped settings, thin dividers, `›` chevron | Used in SettingsScreen main list. |
+| `IosBottomSheet` | Grabber handle, 16dp top radius, `#1C1C1E` | Wraps M3 ModalBottomSheet; needs `@OptIn(ExperimentalMaterial3Api::class)`. |
+| `IosActionSheet` + `IosSheetButton` | Bottom action sheet, destructive red option | For confirm dialogs (e.g. remove-channel). |
+| `MsToast` (MsToast.kt) | iOS-style dark pill `#1C1C1E` | Already pill-shaped; refined. |
+| `MsCard` | iOS grouped card 14dp, `#1C1C1E` | Was `#161B24`. |
+| Progress bar (SettingsScreen) | iOS blue `#0A84FF`, 8dp, rounded | NO wavy progress (moon: "Not wavy!"). M3 1.1.1 takes Float, not lambda. |
+| Bottom tab bar (MainActivity) | iOS icon + label, blue selected | Keeps floating pill + swipe-to-switch. |
+
+Material3 1.3.x is BROKEN upstream (POM references non-existent
+`material3-android:1.6.1`) — stay on 1.1.1. The Expressive restyle was
+abandoned in favor of this iOS rebuild per moon's pick.
+
 
 ## Cloud backup (Tier 2) — instructions for moon's AI (Antigravity)
 
