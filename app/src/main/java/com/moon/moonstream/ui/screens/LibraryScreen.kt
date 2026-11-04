@@ -50,6 +50,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -409,9 +410,8 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(MsColors.SurfaceAlt)
-                    .border(1.dp, MsColors.Divider, RoundedCornerShape(24.dp))
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF1C1C1E))
                     .padding(horizontal = 8.dp, vertical = 8.dp)
                     .horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically,
@@ -419,31 +419,35 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 BareIconButton(
                     icon = Icons.Filled.Close,
                     contentDescription = "Cancel selection",
-                    tint = MsColors.TextSecondary,
+                    tint = Color(0xFF98989F),
                     onClick = { exitSelectMode() },
                 )
                 Text(
                     "${selectedIds.size} selected",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MsColors.TextPrimary,
+                    color = Color.White,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
                 )
-                LimeTextButton(
-                    text = if (selectedIds.size == filtered.size && filtered.isNotEmpty()) "Deselect" else "Select All",
-                    fontSize = 13,
-                    onClick = {
-                        selectedIds.clear()
-                        if (selectedIds.size != filtered.size) {
-                            selectedIds.addAll(filtered.map { it.id })
-                        }
-                    },
-                )
-                val hideColor = if (inHiddenTab) Color(0xFF059669) else Color(0xFFDC2626)
+                // iOS blue text button (moon's request 2026-11-04).
+                TextButton(onClick = {
+                    selectedIds.clear()
+                    if (selectedIds.size != filtered.size) {
+                        selectedIds.addAll(filtered.map { it.id })
+                    }
+                }) {
+                    Text(
+                        text = if (selectedIds.size == filtered.size && filtered.isNotEmpty()) "Deselect" else "Select All",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF0A84FF),
+                    )
+                }
+                // iOS red pill for Hide/Unhide.
+                val hideColor = if (inHiddenTab) Color(0xFF30D158) else Color(0xFFFF453A)
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(if (selectedIds.isNotEmpty()) hideColor else MsColors.TrackOff)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (selectedIds.isNotEmpty()) hideColor else Color(0xFF39393B))
                         .clickable(enabled = selectedIds.isNotEmpty()) {
                             setHidden(selectedIds.toList(), !inHiddenTab)
                         }
@@ -469,12 +473,13 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 // Two-phase merge (moon's design 2026-11-04):
                 // Phase 1: "Merge to" (1+ selected) → locks sources, pick target next.
                 // Phase 2: "Merge" (target picked) → completes.
+                // iOS blue pill for Merge (moon's request 2026-11-04).
                 Spacer(Modifier.width(8.dp))
                 if (mergeSources.isEmpty()) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(if (selectedIds.isNotEmpty()) Color(0xFF7C3AED) else MsColors.TrackOff)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (selectedIds.isNotEmpty()) Color(0xFF0A84FF) else Color(0xFF39393B))
                             .clickable(enabled = selectedIds.isNotEmpty()) { startMergeTo() }
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         contentAlignment = Alignment.Center,
@@ -489,8 +494,8 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 } else {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(if (selectedIds.isNotEmpty()) Color(0xFF7C3AED) else MsColors.TrackOff)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (selectedIds.isNotEmpty()) Color(0xFF0A84FF) else Color(0xFF39393B))
                             .clickable(enabled = selectedIds.isNotEmpty()) { confirmMerge() }
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         contentAlignment = Alignment.Center,

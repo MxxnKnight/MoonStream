@@ -1094,21 +1094,20 @@ fun PlayerScreen(
             }
         }
 
-        // Center transport: -10s / play-pause / +10s spread across the width
-        // (moon's request 2026-11-02: -10s left edge, +10s right edge).
+        // Center transport: -10s / play-pause / +10s grouped near center
+        // (moon's request 2026-11-04: seek buttons flanking the play button,
+        // not at the screen edges).
         // Hidden when buffering so it doesn't clash with the loader (moon's fix 2026-11-04).
         if (controlsVisible && !controlsLocked && !isBuffering) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxWidth()
-                    .padding(horizontal = 32.dp),
+            Row(
+                modifier = Modifier.align(Alignment.Center),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(48.dp),
             ) {
                 // iOS-style seek buttons (moon's request 2026-11-04): clean icon, no heavy circle.
                 Box(
                     modifier = Modifier
                         .size(52.dp)
-                        .align(Alignment.CenterStart)
                         .clip(CircleShape)
                         .clickable {
                             player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0L))
@@ -1127,9 +1126,7 @@ fun PlayerScreen(
                     onClick = { if (isPlaying) player.pause() else player.play() },
                     shape = CircleShape,
                     color = Color.White.copy(alpha = 0.14f),
-                    modifier = Modifier
-                        .size(76.dp)
-                        .align(Alignment.Center),
+                    modifier = Modifier.size(76.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -1144,7 +1141,6 @@ fun PlayerScreen(
                 Box(
                     modifier = Modifier
                         .size(52.dp)
-                        .align(Alignment.CenterEnd)
                         .clip(CircleShape)
                         .clickable {
                             player.seekTo(

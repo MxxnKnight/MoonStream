@@ -334,19 +334,20 @@ private fun CompactTextField(
 /** Neutral gray outline circle with an "i" — the on-brand info affordance. */
 @Composable
 fun InfoDot(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    // iOS-style info button: small, thin, gray (moon's request 2026-11-04).
     Box(
         modifier = modifier
-            .size(22.dp)
+            .size(16.dp)
             .clip(CircleShape)
-            .border(1.5.dp, MsColors.TextSecondary, CircleShape)
+            .border(1.dp, Color(0xFF98989F), CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = "i",
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
-            color = MsColors.TextSecondary,
+            color = Color(0xFF98989F),
         )
     }
 }
