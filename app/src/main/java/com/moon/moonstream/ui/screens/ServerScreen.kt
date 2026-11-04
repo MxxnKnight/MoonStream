@@ -180,6 +180,8 @@ fun ServerScreen(
 
         RecentlyAddedRow(onOpenLibrary = onOpenLibrary, onOpenDetail = onOpenDetail)
 
+        ContinueWatchingRow(onOpenDetail = onOpenDetail)
+
         Text(
             "Paste the manifest URL into Stremio or Nuvio to browse your library.",
             style = MaterialTheme.typography.bodySmall,
@@ -624,7 +626,7 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                     )
                     Text(
                         text = "files",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyMedium.doto(),
                         color = MsColors.TextSecondary,
                         modifier = Modifier.padding(bottom = 6.dp),
                     )
@@ -787,6 +789,115 @@ private fun RecentlyAddedRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Continue Watching row: horizontal poster strip with progress bars,
+ * under Recently Added (moon's request 2026-11-04).
+ */
+@Composable
+private fun ContinueWatchingRow(
+    onOpenDetail: (Long) -> Unit,
+) {
+    val context = LocalContext.current
+    var items by remember { mutableStateOf<List<com.moon.moonstream.index.db.WatchProgressEntity>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            val db = com.moon.moonstream.index.db.MsDatabase.get(context)
+            // Only items with actual progress (position > 10s, not finished)
+            val recent = db.watchProgressDao().recent(15).filter {
+                it.positionMs > 10_000L && (it.durationMs <= 0L || it.positionMs < it.durationMs * 0.9f)
+            }.take(10)
+            withContext(Dispatchers.Main) { items = recent }
+        }
+    }
+    if (items.isEmpty()) return
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "Continue watching",
+            style = MaterialTheme.typography.titleMedium.copy(fontFamily = Doto),
+            color = MsColors.TextPrimary,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items.forEach { w ->
+                Column(modifier = Modifier.width(110.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .width(110.dp)
+                            .height(160.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MsColors.SurfaceAlt)
+                            .clickable(onClick = { onOpenDetail(w.mediaId) }),
+                    ) {
+                        if (!w.posterUrl.isNullOrBlank()) {
+                            coil.compose.AsyncImage(
+                                model = w.posterUrl,
+                                contentDescription = w.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    w.title.take(1).uppercase(),
+                                    style = MaterialTheme.typography.headlineLarge.copy(fontFamily = Doto),
+                                    color = MsColors.TextSecondary,
+                                )
+                            }
+                        }
+                        // Progress line at bottom of poster (moon's design)
+                        val progress = if (w.durationMs > 0L) {
+                            (w.positionMs.toFloat() / w.durationMs.toFloat()).coerceIn(0f, 1f)
+                        } else 0f
+                        if (progress > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .background(Color.Black.copy(alpha = 0.5f)),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(progress)
+                                        .fillMaxHeight()
+                                        .background(MsColors.Accent),
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        w.title,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MsColors.TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (!w.episodeLabel.isNullOrBlank()) {
+                        Text(
+                            w.episodeLabel,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MsColors.TextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }

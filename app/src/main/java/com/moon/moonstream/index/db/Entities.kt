@@ -85,6 +85,8 @@ data class WatchProgressEntity(
     val playedAt: Long,
     /** Last playback position in ms for in-player Resume (0 = none). */
     val positionMs: Long = 0,
+    /** Total duration in ms for progress bar (0 = unknown). */
+    val durationMs: Long = 0,
 )
 
 /** Resume cursor per channel: newest message id already scanned. */

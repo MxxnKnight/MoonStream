@@ -734,7 +734,7 @@ fun PlayerScreen(
                 withContext(Dispatchers.IO) {
                     try {
                         db.watchProgressDao().updatePosition(
-                            streamFileId, pos, System.currentTimeMillis(),
+                            streamFileId, pos, player.duration.coerceAtLeast(0L), System.currentTimeMillis(),
                         )
                     } catch (e: Exception) { /* never break playback */ }
                 }
@@ -771,7 +771,7 @@ fun PlayerScreen(
                     )
                     try {
                         db.watchProgressDao().updatePosition(
-                            streamFileId, finalPos, System.currentTimeMillis(),
+                            streamFileId, finalPos, player.duration.coerceAtLeast(0L), System.currentTimeMillis(),
                         )
                     } catch (e: Exception) { /* never break close */ }
                     // Auto-delete the downloaded bytes on every close
