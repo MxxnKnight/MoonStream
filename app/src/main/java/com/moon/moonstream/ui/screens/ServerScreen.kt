@@ -399,28 +399,13 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 if (trackWidthPx > 0) {
                     // OFF layer: fades out as the pill approaches (inverse wipe).
                     // Overall alpha also tied to (1-progress) — no ghosting.
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .softWipeInverse(pillOffsetPx, featherPx, widthPxF)
-                            .alpha((1f - progress).coerceIn(0f, 1f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        val label = when (cardState) {
-                            ServerCardState.STARTING -> "Starting…"
-                            ServerCardState.STOPPING -> "Stopping…"
-                            else -> null
-                        }
-                        if (label != null) {
-                            Text(
-                                label,
-                                style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
-                                color = MsColors.TextSecondary,
-                                modifier = Modifier.padding(start = 84.dp, end = 16.dp),
-                            )
-                        } else {
-                            // Swipe hint: Doto text + arrow icon (moon's design 2026-11-05).
-                            // Fades as the pill approaches (inverse wipe + alpha above).
+                    // SIMPLIFIED 2026-11-05: text was not showing in 0.15.106.
+                    // Show directly when IDLE, no wipe complexity.
+                    if (cardState == ServerCardState.IDLE && progress < 0.1f) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -436,6 +421,28 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                     contentDescription = null,
                                     tint = MsColors.TextPrimary,
                                     modifier = Modifier.size(28.dp),
+                                )
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .softWipeInverse(pillOffsetPx, featherPx, widthPxF)
+                                .alpha((1f - progress).coerceIn(0f, 1f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            val label = when (cardState) {
+                                ServerCardState.STARTING -> "Starting…"
+                                ServerCardState.STOPPING -> "Stopping…"
+                                else -> null
+                            }
+                            if (label != null) {
+                                Text(
+                                    label,
+                                    style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
+                                    color = MsColors.TextSecondary,
+                                    modifier = Modifier.padding(start = 84.dp, end = 16.dp),
                                 )
                             }
                         }
