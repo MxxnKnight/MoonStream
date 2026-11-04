@@ -554,13 +554,22 @@ fun AttachSubtitleDialog(
 ) {
     var season by remember { mutableStateOf(sub.season?.toString() ?: "") }
     var episode by remember { mutableStateOf(sub.episode?.toString() ?: "") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MsColors.Surface,
-        titleContentColor = MsColors.TextPrimary,
-        textContentColor = MsColors.TextSecondary,
-        title = { Text("Attach subtitle") },
-        text = {
+    IosDialog(
+        onDismiss = onDismiss,
+        title = "Attach subtitle",
+        buttons = listOf(
+            IosSheetButton("Cancel", onClick = onDismiss),
+            IosSheetButton(
+                label = "Attach",
+                onClick = {
+                    onAttach(
+                        season.toIntOrNull(),
+                        episode.toIntOrNull(),
+                    )
+                },
+            ),
+        ),
+        content = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     sub.fileName,
@@ -585,23 +594,6 @@ fun AttachSubtitleDialog(
                 } else {
                     Text("Attaches to this movie.", style = MaterialTheme.typography.bodyMedium)
                 }
-            }
-        },
-        confirmButton = {
-            LimeTextButton(
-                text = "Attach",
-                fontSize = 14,
-                onClick = {
-                    onAttach(
-                        season.toIntOrNull(),
-                        episode.toIntOrNull(),
-                    )
-                },
-            )
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = MsColors.TextSecondary)
             }
         },
     )
