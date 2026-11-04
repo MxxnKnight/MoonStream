@@ -721,6 +721,7 @@ fun MsDropdown(
             expanded = expanded,
             onDismissRequest = { expanded = false },
             menuWidth = barWidth,
+            anchorHeight = 40.dp,
             buttons = options.map { option ->
                 IosSheetButton(
                     label = option,
@@ -1321,6 +1322,8 @@ fun IosContextMenu(
     buttons: List<IosSheetButton>,
     menuWidth: Dp? = null,
     popupAlignment: Alignment = Alignment.BottomStart,
+    /** Height of the anchor view — popup positions below it (moon's fix 2026-11-05). */
+    anchorHeight: Dp? = null,
 ) {
     // Sharp-corner fix (moon's bug 2026-11-04): M3 1.1.1's DropdownMenu has no
     // shape/containerColor params, so its internal Surface keeps sharp corners
@@ -1332,12 +1335,24 @@ fun IosContextMenu(
     val menuSizing = if (menuWidth != null && menuWidth > 0.dp) {
         Modifier.width(menuWidth)
     } else {
-        Modifier.widthIn(min = 220.dp)
+        // Max width prevents full-screen menu (moon's fix 2026-11-05).
+        Modifier.widthIn(min = 220.dp, max = 320.dp)
     }
     val density = LocalDensity.current
+    // Position BELOW the anchor (moon's fix 2026-11-05): was appearing over the
+    // anchor because BottomStart aligns popup's bottom with anchor's bottom.
+    // Now: popup's top aligns with anchor's top, offset down by anchor height + gap.
+    val belowAlignment = when (popupAlignment) {
+        Alignment.BottomEnd -> Alignment.TopEnd
+        else -> Alignment.TopStart
+    }
+    val yOffsetPx = with(density) {
+        val ah = (anchorHeight ?: 40.dp).roundToPx()
+        ah + 4.dp.roundToPx()
+    }
     androidx.compose.ui.window.Popup(
-        alignment = popupAlignment,
-        offset = with(density) { androidx.compose.ui.unit.IntOffset(0, 4.dp.roundToPx()) },
+        alignment = belowAlignment,
+        offset = androidx.compose.ui.unit.IntOffset(0, yOffsetPx),
         onDismissRequest = onDismissRequest,
         properties = androidx.compose.ui.window.PopupProperties(focusable = true),
     ) {

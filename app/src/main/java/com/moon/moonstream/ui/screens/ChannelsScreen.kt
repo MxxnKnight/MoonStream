@@ -993,6 +993,7 @@ private fun ChannelRow(
                         expanded = menuOpen,
                         onDismissRequest = onMenuClose,
                         popupAlignment = Alignment.BottomEnd,
+                        anchorHeight = 48.dp,
                         buttons = listOf(
                             IosSheetButton(
                                 "Rescan from scratch",
