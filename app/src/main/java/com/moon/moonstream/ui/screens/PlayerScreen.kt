@@ -197,12 +197,19 @@ fun PlayerScreen(
     // only the in-player back button worked).
     BackHandler(onBack = onClose)
 
+    // Track if we're switching episodes (not closing) to avoid portrait flicker.
+    var isSwitching by remember { mutableStateOf(false) }
+
     // moon's rule: video plays in landscape + true fullscreen (like video players).
     // Orientation: landscape while playing. Keyed on streamFileId so it
     // re-applies when switching episodes (moon's bug 2026-11-02: Next
-    // episode opened in portrait). On dispose, always restore portrait —
-    // not the captured value, which could be landscape from a previous
-    // player instance (moon's bug: closing left the app in landscape).
+    // episode opened in portrait). On dispose, restore portrait ONLY if not
+    // switching episodes (moon's bug 2026-11-04: Next caused portrait).
+    // Orientation: landscape while playing. Keyed on streamFileId so it
+    // re-applies when switching episodes (moon's bug 2026-11-02: Next
+    // episode opened in portrait). On dispose, restore portrait ONLY if not
+    // switching episodes — otherwise the old player's dispose fires after the
+    // new player's landscape, leaving it stuck in portrait (moon's bug 2026-11-04).
     DisposableEffect(streamFileId) {
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         val window = activity?.window
@@ -211,7 +218,9 @@ fun PlayerScreen(
         insets?.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         onDispose {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            if (!isSwitching) {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
             insets?.show(WindowInsetsCompat.Type.systemBars())
             // Restore system brightness (gestures override it while playing).
             try {
@@ -414,6 +423,7 @@ fun PlayerScreen(
         if (f.id == streamFileId) return
         val url = PlayerUrls.stream(mediaId, f.id)
         AppLog.i("PLAYER", "Switching to ${episodeLabel(f)}")
+        isSwitching = true
         onSwitchPlayer(url, "$mediaTitle ${episodeLabel(f)}", mediaTitle, mediaId, f.id)
     }
 
