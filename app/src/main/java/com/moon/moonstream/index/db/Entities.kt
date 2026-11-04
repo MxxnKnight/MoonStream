@@ -89,6 +89,24 @@ data class WatchProgressEntity(
     val durationMs: Long = 0,
 )
 
+/**
+ * Display row for the Home "Continue watching" strip (fix 2026-11-05).
+ *
+ * A projection of watch_progress LEFT JOIN media_items, so the poster and
+ * title stay correct after a re-index (the old version copied them at insert
+ * time and showed a blank letter tile when the copy was stale).
+ */
+data class ContinueWatchingItem(
+    val mediaId: Long,
+    val streamFileId: Long,
+    val title: String,
+    val episodeLabel: String?,
+    val posterUrl: String?,
+    val playedAt: Long,
+    val positionMs: Long,
+    val durationMs: Long,
+)
+
 /** Resume cursor per channel: newest message id already scanned. */
 @Entity(tableName = "scan_cursors")
 data class ScanCursorEntity(
