@@ -47,6 +47,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -543,7 +544,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                     // > icon that rotates to < when ON (moon's point 2).
                     // Rotation follows the swipe progress: 0° (>) → 180° (<).
                     androidx.compose.material3.Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Filled.ChevronRight,
+                        imageVector = ChevronRight,
                         contentDescription = if (progress > 0.5f) "Swipe to stop" else "Swipe to awaken",
                         tint = if (progress > 0.5f) Color.White else Color.Black.copy(alpha = 0.7f),
                         modifier = Modifier
