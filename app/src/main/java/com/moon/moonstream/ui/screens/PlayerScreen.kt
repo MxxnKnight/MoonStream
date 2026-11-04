@@ -1737,15 +1737,11 @@ fun PlayerScreen(
                                         modifier = Modifier.weight(1f),
                                     )
                                     MsOutlinePill(
+                                        text = "−250ms",
                                         onClick = { adjustDelay(-250) },
                                         modifier = Modifier.height(36.dp),
-                                    ) {
-                                        Text(
-                                            "−250ms",
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = MsColors.Accent,
-                                        )
-                                    }
+                                        fontSize = 13,
+                                    )
                                     Text(
                                         formatDelay(delayMs),
                                         style = MaterialTheme.typography.bodyMedium,
@@ -1754,15 +1750,11 @@ fun PlayerScreen(
                                         modifier = Modifier.width(80.dp),
                                     )
                                     MsOutlinePill(
+                                        text = "+250ms",
                                         onClick = { adjustDelay(250) },
                                         modifier = Modifier.height(36.dp),
-                                    ) {
-                                        Text(
-                                            "+250ms",
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = MsColors.Accent,
-                                        )
-                                    }
+                                        fontSize = 13,
+                                    )
                                 }
                                 // Appearance (moon's pick 2026-11-02).
                                 Spacer(Modifier.height(4.dp))
