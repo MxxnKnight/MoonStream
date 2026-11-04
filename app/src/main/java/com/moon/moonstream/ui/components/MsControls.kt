@@ -1182,6 +1182,14 @@ fun IosActionSheet(
     message: String? = null,
     buttons: List<IosSheetButton>,
 ) {
+    // Use Dialog so the sheet escapes parent layout bounds (fixes nested
+    // action sheets rendering clipped/ghosting, moon's bug 2026-11-04).
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+        ),
+    ) {
     Box(
         Modifier
             .fillMaxSize()
@@ -1279,6 +1287,7 @@ fun IosActionSheet(
             }
         }
     }
+    } // Dialog
 }
 
 data class IosSheetButton(
@@ -1382,6 +1391,13 @@ fun IosDialog(
     modifier: Modifier = Modifier,
     content: @Composable (() -> Unit)? = null,
 ) {
+    // Use Dialog so it escapes parent layout bounds (same fix as IosActionSheet).
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+        ),
+    ) {
     Box(
         Modifier
             .fillMaxSize()
@@ -1443,4 +1459,5 @@ fun IosDialog(
             }
         }
     }
+    } // Dialog
 }
