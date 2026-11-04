@@ -355,49 +355,19 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 )
                 // iOS-style tab bar (moon's iOS rebuild 2026-11-04): icon + label,
                 // blue selected, gray unselected. Keeps floating pill + swipe.
-                // Frosted glass via BlurView (moon's request 2026-11-04):
-                // real backdrop blur of the scrolling content behind.
+                // Basic black blur look (moon's request 2026-11-04): simple dark
+                // translucent pill like the reference — no GPU blur, light on RAM.
                 var dragAccum by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
                 val pillShape = RoundedCornerShape(24.dp)
-                val blurView = androidx.compose.runtime.remember {
-                    eightbitlab.com.blurview.BlurView(context).apply {
-                        // Rounded corners via outline provider
-                        outlineProvider = object : android.view.ViewOutlineProvider() {
-                            override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
-                                val r = 24 * resources.displayMetrics.density
-                                outline.setRoundRect(0, 0, view.width, view.height, r)
-                            }
-                        }
-                        clipToOutline = true
-                    }
-                }
-                // Setup BlurView against the activity's root view (once).
-                androidx.compose.runtime.LaunchedEffect(blurView) {
-                    val activity = context as? android.app.Activity
-                    val decorView = activity?.window?.decorView as? android.view.ViewGroup
-                    if (decorView != null) {
-                        blurView.setupWith(decorView, eightbitlab.com.blurview.RenderScriptBlur(context))
-                            .setBlurRadius(18f)
-                            .setOverlayColor(android.graphics.Color.argb(140, 0x1C, 0x1C, 0x1E))
-                    }
-                }
-                Box(
+                Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(start = 24.dp, end = 24.dp, bottom = 22.dp)
                         .clip(pillShape)
-                        .border(0.5.dp, Color.White.copy(alpha = 0.14f), pillShape),
-                ) {
-                    // Blur background layer
-                    androidx.compose.ui.viewinterop.AndroidView(
-                        factory = { blurView },
-                        modifier = Modifier.matchParentSize(),
-                    )
-                    // Tab buttons on top
-                    Row(
-                        modifier = Modifier
-                            .draggable(
-                                state = rememberDraggableState { delta ->
+                        .background(Color.Black.copy(alpha = 0.78f))
+                        .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape)
+                        .draggable(
+                            state = rememberDraggableState { delta ->
                                     dragAccum += delta
                                 },
                                 orientation = Orientation.Horizontal,
