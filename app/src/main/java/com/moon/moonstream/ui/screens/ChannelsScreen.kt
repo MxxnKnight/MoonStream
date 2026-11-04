@@ -2,6 +2,7 @@ package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
+import com.moon.moonstream.ui.components.IosBottomSheet
 import com.moon.moonstream.ui.components.MsTextField
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -54,10 +55,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -99,6 +98,8 @@ import com.moon.moonstream.index.scan.ScanUiState
 import com.moon.moonstream.ui.components.AnimeBadge
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.FixMode
+import com.moon.moonstream.ui.components.IosActionSheet
+import com.moon.moonstream.ui.components.IosSheetButton
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MetadataFixSheet
@@ -552,30 +553,22 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
     }
 
     confirmRemove?.let { ch ->
-        AlertDialog(
-            onDismissRequest = { confirmRemove = null },
-            title = { Text("Remove channel?") },
-            text = {
-                Text(
-                    "This deletes every indexed title, file, unmatched entry and the " +
-                        "scan history for \"${ch.title}\". The channel itself stays " +
-                        "in your Telegram account.",
-                )
-            },
-            confirmButton = {
-                TextButton(
+        IosActionSheet(
+            onDismiss = { confirmRemove = null },
+            title = "Remove channel?",
+            message = "This deletes every indexed title, file, unmatched entry and the " +
+                "scan history for \"${ch.title}\". The channel itself stays " +
+                "in your Telegram account.",
+            buttons = listOf(
+                IosSheetButton(
+                    label = "Remove",
+                    isDestructive = true,
                     onClick = {
                         removeChannel(ch)
                         confirmRemove = null
                     },
-                ) { Text("Remove", color = DestructiveRed, fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmRemove = null }) { Text("Cancel") }
-            },
-            containerColor = MsColors.Surface,
-            titleContentColor = MsColors.TextPrimary,
-            textContentColor = MsColors.TextSecondary,
+                ),
+            ),
         )
     }
 
@@ -1187,17 +1180,13 @@ private fun AddChannelSheet(
     onAdd: (id: Long, title: String, isAnime: Boolean) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var channelId by remember { mutableStateOf("") }
     var isAnime by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
+    IosBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
     ) {
         MsSheetContent(title = "Add Channel") {
             Text(

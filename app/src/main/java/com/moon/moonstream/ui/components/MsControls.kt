@@ -7,6 +7,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -21,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.verticalScroll
@@ -37,6 +40,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.verticalScroll
@@ -49,6 +53,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -80,6 +86,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -101,60 +108,66 @@ import com.moon.moonstream.ui.theme.MsRadii
 // Inter everywhere via MaterialTheme typography.
 // ---------------------------------------------------------------------------
 
-/** Primary action: lime filled pill, dark semibold text. */
+/** Primary action: iOS-style blue button, rounded 14dp (moon's iOS rebuild 2026-11-04). */
 @Composable
 fun LimePillButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    fontSize: Int = 15,
+    fontSize: Int = 17,
 ) {
-    val bg = if (enabled) MsColors.Accent else MsColors.TrackOff
-    val fg = if (enabled) MsColors.OnAccent else MsColors.TextSecondary
-    Box(
-        modifier = modifier
-            .clip(CircleShape)
-            .background(bg)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 13.dp),
-        contentAlignment = Alignment.Center,
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color(0xFF0A84FF),
+            contentColor = Color.White,
+            disabledContainerColor = Color(0xFF38383A),
+            disabledContentColor = MsColors.TextSecondary,
+        ),
+        shape = RoundedCornerShape(14.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
             fontSize = fontSize.sp,
-            color = fg,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
-/** Secondary action: outlined pill, lime text. */
+/** Secondary action: iOS-style gray button, blue text (moon's iOS rebuild 2026-11-04). */
 @Composable
 fun MsOutlinePill(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    fontSize: Int = 14,
+    fontSize: Int = 17,
 ) {
-    Box(
-        modifier = modifier
-            .clip(CircleShape)
-            .border(1.dp, MsColors.TextSecondary.copy(alpha = 0.55f), CircleShape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        contentAlignment = Alignment.Center,
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color(0xFF1C1C1E),
+            contentColor = Color(0xFF0A84FF),
+            disabledContainerColor = Color(0xFF1C1C1E),
+            disabledContentColor = MsColors.TextSecondary,
+        ),
+        shape = RoundedCornerShape(14.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Normal,
             fontSize = fontSize.sp,
-            color = if (enabled) MsColors.Accent else MsColors.TextSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
@@ -189,10 +202,11 @@ fun MsCard(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    // iOS-style grouped card (moon's iOS rebuild 2026-11-04): 14dp, #1C1C1E.
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(MsRadii.Card),
-        color = MsColors.Surface,
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFF1C1C1E),
         shadowElevation = 0.dp,
         tonalElevation = 0.dp,
         border = androidx.compose.foundation.BorderStroke(1.dp, MsColors.CardBorder),
@@ -381,19 +395,36 @@ fun MsToggle(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Switch(
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        modifier = modifier,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = MsColors.OnAccent,
-            checkedTrackColor = MsColors.Accent,
-            checkedBorderColor = Color.Transparent,
-            uncheckedThumbColor = MsColors.TextSecondary,
-            uncheckedTrackColor = MsColors.TrackOff,
-            uncheckedBorderColor = Color.Transparent,
-        ),
+    // iOS-style switch (moon's pick 2026-11-04): 51x31, green when on.
+    val trackColor by androidx.compose.animation.animateColorAsState(
+        targetValue = if (checked) Color(0xFF30D158) else Color(0xFF39393B),
+        label = "iosTrack",
     )
+    val knobOffset by androidx.compose.animation.core.animateDpAsState(
+        targetValue = if (checked) 20.dp else 0.dp,
+        label = "iosKnob",
+    )
+    Box(
+        modifier = modifier
+            .size(51.dp, 31.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(trackColor)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onCheckedChange(!checked) },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(
+            Modifier
+                .offset(x = knobOffset)
+                .padding(start = 2.dp)
+                .size(27.dp)
+                .shadow(2.dp, CircleShape)
+                .clip(CircleShape)
+                .background(Color.White),
+        )
+    }
 }
 
 /** Mockup slider: lime. */
@@ -1042,5 +1073,271 @@ fun BackgroundToolButton(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+/**
+ * iOS-style spinner (UIActivityIndicatorView look) — 12 fading blades.
+ * moon's pick 2026-11-04: replaces the Expressive morphing loader.
+ */
+@Composable
+fun IosSpinner(
+    modifier: Modifier = Modifier,
+    color: Color = Color.White,
+    size: Dp = 44.dp,
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "iosSpinner")
+    val head by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "iosHead",
+    )
+    val radius = size * 0.32f
+    val bladeW = size * 0.09f
+    val bladeH = size * 0.26f
+    Box(
+        modifier = modifier.size(size),
+        contentAlignment = Alignment.Center,
+    ) {
+        for (i in 0 until 12) {
+            val behind = ((head - i) % 12 + 12) % 12 / 12f
+            val alpha = 0.12f + 0.88f * (1f - behind)
+            val angleRad = Math.toRadians((i * 30).toDouble())
+            Box(
+                Modifier
+                    .offset(
+                        x = (kotlin.math.sin(angleRad) * radius.value).dp,
+                        y = (-kotlin.math.cos(angleRad) * radius.value).dp,
+                    )
+                    .rotate(i * 30f)
+                    .width(bladeW)
+                    .height(bladeH)
+                    .clip(RoundedCornerShape(50))
+                    .background(color.copy(alpha = alpha)),
+            )
+        }
+    }
+}
+
+/**
+ * iOS-style grouped card: rounded 14dp, dark fill, thin dividers between rows.
+ * moon's iOS rebuild 2026-11-04.
+ */
+@Composable
+fun IosGroup(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF1C1C1E)),
+    ) {
+        Column {
+            content()
+        }
+    }
+}
+
+/**
+ * iOS-style settings row: label left, chevron right, thin divider handled by parent.
+ */
+@Composable
+fun IosNavRow(
+    title: String,
+    modifier: Modifier = Modifier,
+    showDivider: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Normal,
+                fontSize = 16.sp,
+                color = Color.White,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = "›",
+                fontSize = 22.sp,
+                color = Color(0xFF3A3A3C),
+                fontWeight = FontWeight.Light,
+            )
+        }
+        if (showDivider) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp)
+                    .height(0.5.dp)
+                    .background(Color(0xFF38383A)),
+            )
+        }
+    }
+}
+
+/**
+ * iOS-style action sheet: bottom sheet with rounded top, full-width options,
+ * separate Cancel button. moon's iOS rebuild 2026-11-04.
+ */
+@Composable
+fun IosActionSheet(
+    onDismiss: () -> Unit,
+    title: String? = null,
+    message: String? = null,
+    buttons: List<IosSheetButton>,
+) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.4f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onDismiss() },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+                .padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // Main options group.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF1C1C1E).copy(alpha = 0.95f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { /* swallow taps */ },
+            ) {
+                Column {
+                    if (title != null) {
+                        Text(
+                            text = title,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF98989F),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 12.dp, bottom = 4.dp, start = 16.dp, end = 16.dp),
+                        )
+                    }
+                    if (message != null) {
+                        Text(
+                            text = message,
+                            fontSize = 13.sp,
+                            color = Color(0xFF98989F),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp, start = 16.dp, end = 16.dp),
+                        )
+                    }
+                    buttons.forEachIndexed { i, btn ->
+                        if (i > 0 || title != null || message != null) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(0.5.dp)
+                                    .background(Color(0xFF38383A)),
+                            )
+                        }
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { btn.onClick() }
+                                .padding(vertical = 15.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = btn.label,
+                                fontSize = 17.sp,
+                                fontWeight = if (btn.isDestructive) FontWeight.Normal else FontWeight.Normal,
+                                color = if (btn.isDestructive) Color(0xFFFF453A) else Color(0xFF0A84FF),
+                            )
+                        }
+                    }
+                }
+            }
+            // Cancel button (separate group, iOS style).
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF1C1C1E).copy(alpha = 0.95f))
+                    .clickable { onDismiss() }
+                    .padding(vertical = 15.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Cancel",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF0A84FF),
+                )
+            }
+        }
+    }
+}
+
+data class IosSheetButton(
+    val label: String,
+    val onClick: () -> Unit,
+    val isDestructive: Boolean = false,
+)
+
+/**
+ * iOS-style bottom sheet wrapper: grabber handle, rounded top, dark fill.
+ * moon's iOS rebuild 2026-11-04. Wraps M3 ModalBottomSheet.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun IosBottomSheet(
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+    )
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        modifier = modifier,
+        containerColor = Color(0xFF1C1C1E),
+        contentColor = Color.White,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        dragHandle = {
+            // iOS grabber: small rounded bar, centered.
+            Box(
+                Modifier
+                    .padding(top = 8.dp, bottom = 4.dp)
+                    .width(36.dp)
+                    .height(5.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color(0xFF48484A)),
+            )
+        },
+    ) {
+        content()
     }
 }

@@ -84,6 +84,7 @@ import androidx.media3.ui.SubtitleView
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.backend.BackendProvider
+import com.moon.moonstream.ui.components.IosSpinner
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.player.MsDataSourceFactory
 import com.moon.moonstream.ui.player.PlayerUrls
@@ -2017,12 +2018,11 @@ fun PlayerScreen(
                     .background(Color.Black.copy(alpha = 0.45f)),
                 contentAlignment = Alignment.Center,
             ) {
-                // Material3 loader, mpvex-style 96dp (replaces the small default).
-                CircularProgressIndicator(
+                // iOS spinner loader (moon's pick 2026-11-04 — replaces Expressive morphing).
+                IosSpinner(
                     modifier = Modifier.size(96.dp),
-                    color = MsColors.Accent,
-                    trackColor = Color.White.copy(alpha = 0.18f),
-                    strokeWidth = 6.dp,
+                    color = Color.White,
+                    size = 72.dp,
                 )
             }
         }

@@ -2,6 +2,7 @@ package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
+import com.moon.moonstream.ui.components.IosBottomSheet
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -48,9 +49,7 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -547,10 +546,10 @@ private fun MsSegmentedControl(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(46.dp)
-            .clip(CircleShape)
-            .background(MsColors.Surface)
-            .padding(4.dp),
+            .height(40.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF1C1C1E))
+            .padding(2.dp),
     ) {
         val tabWidth = maxWidth / segments.size
         val thumbOffset by animateDpAsState(
@@ -561,12 +560,13 @@ private fun MsSegmentedControl(
             ),
             label = "segmentThumb",
         )
+        // iOS-style: selected thumb is lighter gray (moon's pick 2026-11-04).
         Box(
             modifier = Modifier
                 .offset(x = thumbOffset)
-                .size(width = tabWidth, height = 38.dp)
-                .clip(CircleShape)
-                .background(MsColors.Accent),
+                .size(width = tabWidth, height = 36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF636366)),
         )
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             segments.forEachIndexed { i, label ->
@@ -575,16 +575,16 @@ private fun MsSegmentedControl(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .height(38.dp)
-                        .clip(CircleShape)
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
                         .clickable { onSelect(i) },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = label,
-                        color = if (isSel) MsColors.OnAccent else MsColors.TextSecondary,
-                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
-                        fontSize = 11.sp,
+                        color = Color.White,
+                        fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal,
+                        fontSize = 13.sp,
                         maxLines = 1,
                     )
                 }
@@ -738,12 +738,8 @@ private fun FilterSheet(
     sort: String, onSort: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    IosBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
     ) {
         MsSheetContent(title = "Filters", scrollable = true) {
             FilterRow("Quality", listOf("Any", "4K", "1080p", "720p", "480p"), quality, onQuality)
