@@ -98,6 +98,7 @@ fun MetadataFixSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf(initialQuery) }
+    var results by remember { mutableStateOf<List<EnrichedMeta>>(emptyList()) }
     // IMDb IDs + normalized titles already in the library — for the "In library" badge
     // (moon's request 2026-11-01: know when an entry already exists).
     var libraryKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
