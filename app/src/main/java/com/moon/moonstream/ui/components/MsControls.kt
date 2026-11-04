@@ -1320,70 +1320,78 @@ fun IosContextMenu(
     onDismissRequest: () -> Unit,
     buttons: List<IosSheetButton>,
     menuWidth: Dp? = null,
+    popupAlignment: Alignment = Alignment.BottomStart,
 ) {
-    // Transparent container so the rounded background below is the only
-    // thing visible (moon's bug 2026-11-04: sharp corners behind rounded menu).
+    // Sharp-corner fix (moon's bug 2026-11-04): M3 1.1.1's DropdownMenu has no
+    // shape/containerColor params, so its internal Surface keeps sharp corners
+    // behind our rounded background. Using Popup directly with the rounded
+    // shape on our own Box — only rounded corners, no sharp edge behind.
     // menuWidth (moon's request 2026-11-04): when set, the popup matches the
     // anchor's width instead of sizing to content.
+    if (!expanded) return
     val menuSizing = if (menuWidth != null && menuWidth > 0.dp) {
         Modifier.width(menuWidth)
     } else {
         Modifier.widthIn(min = 220.dp)
     }
-    // Sharp-corner fix (moon's bug 2026-11-04): the rounded shape + color go
-    // directly on DropdownMenu's own Surface — a clip/background on the
-    // outer modifier leaves the internal Surface's sharp corners visible
-    // behind the rounded menu.
-    androidx.compose.material3.DropdownMenu(
-        expanded = expanded,
+    val density = LocalDensity.current
+    androidx.compose.ui.window.Popup(
+        alignment = popupAlignment,
+        offset = with(density) { androidx.compose.ui.unit.IntOffset(0, 4.dp.roundToPx()) },
         onDismissRequest = onDismissRequest,
-        modifier = menuSizing,
-        shape = RoundedCornerShape(14.dp),
-        containerColor = Color(0xFF1C1C1E).copy(alpha = 0.98f),
+        properties = androidx.compose.ui.window.PopupProperties(focusable = true),
     ) {
-        buttons.forEachIndexed { index, button ->
-            if (index > 0) {
-                androidx.compose.foundation.layout.Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(0.5.dp)
-                        .background(Color(0xFF38383A))
-                        .padding(horizontal = 16.dp),
-                )
-            }
-            androidx.compose.material3.DropdownMenuItem(
-                text = {
-                    androidx.compose.foundation.layout.Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = button.label,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (button.isDestructive) Color(0xFFFF453A) else Color.White,
-                            modifier = Modifier.weight(1f),
+        androidx.compose.foundation.layout.Box(
+            modifier = menuSizing
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFF1C1C1E).copy(alpha = 0.98f))
+                .border(0.5.dp, Color(0xFF38383A), RoundedCornerShape(14.dp)),
+        ) {
+            androidx.compose.foundation.layout.Column {
+                buttons.forEachIndexed { index, button ->
+                    if (index > 0) {
+                        androidx.compose.foundation.layout.Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(0.5.dp)
+                                .background(Color(0xFF38383A))
+                                .padding(horizontal = 16.dp),
                         )
-                        // iOS-style icon on the right (moon's request 2026-11-04).
-                        button.icon?.let { icon ->
-                            androidx.compose.foundation.layout.Spacer(
-                                Modifier.padding(horizontal = 6.dp)
-                            )
-                            androidx.compose.material3.Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = if (button.isDestructive) Color(0xFFFF453A)
-                                    else Color(0xFF98989F),
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
                     }
-                },
-                onClick = {
-                    button.onClick()
-                    onDismissRequest()
-                },
-                modifier = Modifier.padding(horizontal = 8.dp),
-            )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = {
+                            androidx.compose.foundation.layout.Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = button.label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (button.isDestructive) Color(0xFFFF453A) else Color.White,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                // iOS-style icon on the right (moon's request 2026-11-04).
+                                button.icon?.let { icon ->
+                                    androidx.compose.foundation.layout.Spacer(
+                                        Modifier.padding(horizontal = 6.dp)
+                                    )
+                                    androidx.compose.material3.Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        tint = if (button.isDestructive) Color(0xFFFF453A)
+                                            else Color(0xFF98989F),
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
+                        },
+                        onClick = { button.onClick(); onDismissRequest() },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            horizontal = 16.dp, vertical = 12.dp
+                        ),
+                    )
+                }
+            }
         }
     }
 }
