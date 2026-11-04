@@ -62,23 +62,13 @@ fun LogsScreen(onBack: () -> Unit) {
     val listState = rememberLazyListState()
     var initialScrollDone by remember { mutableStateOf(false) }
 
-    // Auto-scroll to the newest line whenever the log grows — but only if
-    // the user is already near the bottom. Uses instant scrollToItem (not
-    // animated) so rapid log bursts during audits don't stack animations
-    // and kill the app (moon's crash).
-    // On first load, ALWAYS scroll to bottom (moon's bug 2026-11-04: black screen).
+    // Scroll to bottom ONCE on first load (moon's bug 2026-11-04: black screen on open).
+    // No auto-follow — the scroll-down FAB handles jumping to latest. The old
+    // follow-tail logic fought manual scrolls and blanked the list (moon's bug 2026-11-04).
     LaunchedEffect(lines.size) {
-        if (lines.isNotEmpty()) {
-            if (!initialScrollDone) {
-                listState.scrollToItem(lines.size - 1)
-                initialScrollDone = true
-            } else {
-                val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                // If user is within 5 items of the bottom, follow the tail.
-                if (lastVisible >= lines.size - 6) {
-                    listState.scrollToItem(lines.size - 1)
-                }
-            }
+        if (lines.isNotEmpty() && !initialScrollDone) {
+            listState.scrollToItem(lines.size - 1)
+            initialScrollDone = true
         }
     }
 
