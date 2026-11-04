@@ -399,32 +399,9 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 if (trackWidthPx > 0) {
                     // OFF layer: fades out as the pill approaches (inverse wipe).
                     // Overall alpha also tied to (1-progress) — no ghosting.
-                    // SIMPLIFIED 2026-11-05: text was not showing in 0.15.106.
-                    // Show directly when IDLE, no wipe complexity.
-                    if (cardState == ServerCardState.IDLE && progress < 0.1f) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.padding(start = 84.dp, end = 16.dp),
-                            ) {
-                                Text(
-                                    "Swipe to awaken",
-                                    style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
-                                    color = MsColors.TextPrimary,
-                                )
-                                androidx.compose.material3.Icon(
-                                    imageVector = androidx.compose.material.icons.Icons.Filled.ArrowForward,
-                                    contentDescription = null,
-                                    tint = MsColors.TextPrimary,
-                                    modifier = Modifier.size(28.dp),
-                                )
-                            }
-                        }
-                    } else {
+                    // NOTE: "Swipe to awaken" hint is now OUTSIDE this guard (below),
+                    // so it shows even if trackWidthPx is 0.
+                    if (cardState != ServerCardState.IDLE || progress >= 0.1f) {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -583,6 +560,30 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                             .graphicsLayer {
                                 rotationZ = progress * 180f
                             },
+                    )
+                }
+            }
+
+            // Swipe hint overlay (moon's 2026-11-05): shown when IDLE, outside the
+            // trackWidthPx guard so it always appears. Simple, no wipe effects.
+            if (cardState == ServerCardState.IDLE) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(start = 84.dp, end = 16.dp),
+                ) {
+                    Text(
+                        "Swipe to awaken",
+                        style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
+                        color = MsColors.TextPrimary,
+                    )
+                    androidx.compose.material3.Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = MsColors.TextPrimary,
+                        modifier = Modifier.size(28.dp),
                     )
                 }
             }
