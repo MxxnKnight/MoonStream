@@ -60,10 +60,32 @@ details that bite:
 2. 32-bit ARM also needs `--disable-vulkan`; without it
    `libavcodec/vulkan_video.c` fails on `VkVideoSessionKHR` pointer width.
 
-Verify a build really contains the decoders:
+3. **The linker, not the compiler** — this is what broke v1 (moon's
+   "Dolby still fails", 2026-11-04). `clang++` links the C++ runtime
+   *dynamically* by default, so the `.so` had
+   `NEEDED libc++_shared.so`. That file is not in the APK, so `dlopen`
+   failed, `FfmpegLibrary.isAvailable()` returned false, the player fell back
+   to MediaCodec and EAC3 died exactly as before — with no visible error
+   except one `PLAYER` log line. The shim and FFmpeg are plain C, so the
+   runtime is dropped instead of embedded:
+   `-nostdlib++ -Wl,--no-undefined -Wl,--exclude-libs,ALL`.
+   The script now exits with an error if `libc++_shared` ever reappears.
+
+Verify a build really contains the decoders (unstripped/non-`-s` link, since
+`-s` strips local symbols):
 
 ```sh
 llvm-nm -C libffmpegJNI.so | grep -E 'ff_(eac3|ac3|dca|truehd)_decoder$'
+```
+
+And verify it will actually load on a phone — only `libc`, `libm`, `libdl` and
+`liblog` may be listed, and the load segments must be 16 KB aligned
+(Android 15+ / 16 KB page devices):
+
+```sh
+readelf -d libffmpegJNI.so | grep NEEDED          # no libc++_shared.so
+readelf -lW libffmpegJNI.so | grep '^  LOAD'      # Align column = 0x4000
+readelf --dyn-syms -W libffmpegJNI.so | awk '$7=="UND"' | grep -c _Z   # must be 0
 ```
 
 ## Wiring in the app

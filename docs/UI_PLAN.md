@@ -1,5 +1,12 @@
 # MoonStream UI plan — making the app look designed, not assembled
 
+> **Partly stale:** written 2026-11-03, before moon picked the full iOS/Cupertino
+> restyle (merged 2026-11-04, see AGENT.md). Ignore the lime/Material3 styling
+> in the screen sections. Still valid: the Phase 1 token argument (no shape or
+> size scale, 15 literal radii, `MaterialTheme.shapes` unset), the spacing/type/
+> control-height scales, the gradient rules, and the player items (custom seek
+> bar, scrub feedback, speed control, subtitle style sheet, up-next card).
+
 Written 2026-11-03 after reading `ui/theme/Theme.kt`, `ui/components/MsControls.kt`,
 every screen file, and `MainActivity.kt`. Nothing here is implemented yet: this is
 the proposal, ordered so each phase stands on its own.

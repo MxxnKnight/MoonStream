@@ -374,7 +374,17 @@ Full write-up: `docs/FFMPEG.md`; rebuild script: `tools/ffmpeg/build_ffmpeg.sh`.
   `EXTENSION_RENDERER_MODE_PREFER` when `FfmpegLibrary.isAvailable()`, else
   `OFF`. PREFER is safe: the renderer only claims formats whose decoder is
   really compiled in, so AAC/Opus/MP3 still go to MediaCodec.
-- Not device-verified yet: needs moon to play an EAC3 episode and confirm
+- **v1 shipped broken (fixed 2026-11-04).** The first `.so` was linked with
+  clang++'s default dynamic C++ runtime, so it needed `libc++_shared.so`,
+  which the APK does not contain: `dlopen` failed → `isAvailable()` false →
+  silent fallback to MediaCodec → Dolby still dead. The link now uses
+  `-nostdlib++ -Wl,--no-undefined -Wl,--exclude-libs,ALL` (plain C, no runtime
+  needed) and `tools/ffmpeg/build_ffmpeg.sh` refuses to finish if
+  `libc++_shared` reappears. **Never debug this class of bug from Java alone:**
+  `readelf -d libffmpegJNI.so | grep NEEDED` first.
+- Atmos caveat: the `eac3` decoder decodes the E-AC3 core (5.1). The Atmos
+  object/height layer is ignored — you get audio, not object audio.
+- Still not device-verified: needs moon to play an EAC3 episode and confirm
   audio with the `PLAYER` log line "FFmpeg audio decoders ready".
 
 **Correction to the spec below:** step 1's `media3-exoplayer-ffmpeg`

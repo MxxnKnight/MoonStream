@@ -3,7 +3,23 @@
 All notable changes to MoonStream, newest first. Versions follow the tags
 the CI build stamps onto the APK.
 
-## Unreleased — FFmpeg audio decoders (EAC3/AC3/DTS/TrueHD)
+## Unreleased — FFmpeg audio decoders actually load now
+
+The FFmpeg already in the app was **never loading**: `libffmpegJNI.so` had a
+`NEEDED libc++_shared.so` entry, that library isn't shipped in the APK, so
+`dlopen` failed and the player quietly used the hardware path — which is why
+Dolby/EAC3 still failed after the first attempt. Both ABIs are relinked with
+`-nostdlib++` (the shim and FFmpeg are plain C, so no runtime is needed at
+all), `--no-undefined` so a missing symbol breaks the build instead of the
+phone, and the build script now fails if `libc++_shared` ever comes back.
+
+- `libffmpegJNI.so` needs only `libc`, `libm`, `libdl`, `liblog`; 16 KB-aligned
+  load segments; all 9 JNI methods exported; no C++ symbols.
+- 1.2 MB arm64 / 1.0 MB armv7 (slightly smaller than before).
+- Docs: `docs/FFMPEG.md` gained the linker trap and the three `readelf` checks
+  to run on any future rebuild.
+
+## 0.15.101 and earlier — FFmpeg audio decoders (EAC3/AC3/DTS/TrueHD)
 
 Phones without a Dolby/DTS hardware decoder (moon's POCO M4 Pro is one) made
 the in-app player fail on EAC3 audio with
