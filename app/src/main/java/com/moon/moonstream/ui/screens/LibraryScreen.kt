@@ -42,6 +42,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.Outlined
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Close
@@ -417,7 +418,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 BareIconButton(
-                    icon = Icons.Filled.Close,
+                    icon = Icons.Outlined.Close,
                     contentDescription = "Cancel selection",
                     tint = MsColors.TextSecondary,
                     onClick = { exitSelectMode() },
@@ -452,7 +453,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            Icons.Filled.VisibilityOff,
+                            Icons.Outlined.VisibilityOff,
                             contentDescription = null,
                             tint = Color.White,
                             modifier = Modifier.size(15.dp),
@@ -688,7 +689,7 @@ private fun PosterCell(
                 ) {
                     if (isSelected) {
                         Icon(
-                            Icons.Filled.Check,
+                            Icons.Outlined.Check,
                             contentDescription = "Selected",
                             tint = MsColors.OnAccent,
                             modifier = Modifier.size(15.dp),

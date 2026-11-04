@@ -38,6 +38,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.Outlined
+import androidx.compose.material.icons.automirrored.Outlined
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -1012,7 +1014,7 @@ fun PlayerScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PlayerIconButton(
-                    icon = Icons.Filled.ArrowBack,
+                    icon = Icons.AutoMirrored.Outlined.ArrowBack,
                     contentDescription = "Back",
                     onClick = onClose,
                 )
@@ -1063,7 +1065,7 @@ fun PlayerScreen(
                         onClick = { takeScreenshot() },
                     )
                     PlayerIconButton(
-                        icon = Icons.Filled.Lock,
+                        icon = Icons.Outlined.Lock,
                         contentDescription = "Lock controls",
                         onClick = {
                             controlsLocked = true
@@ -1150,7 +1152,7 @@ fun PlayerScreen(
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         PlayerIconButton(
-                            icon = Icons.Filled.ClosedCaption,
+                            icon = Icons.Outlined.ClosedCaption,
                             contentDescription = "Subtitles",
                             onClick = { openTrackSheet(PlayerSheet.SUBS) },
                         )
@@ -1543,8 +1545,8 @@ fun PlayerScreen(
                                         // subtitles show through while editing.
                                         if (mode == PlayerSheet.SUBS)
                                             Color.Black.copy(alpha = 0.72f)
-                                        else MsColors.Surface,
-                                        RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp),
+                                        else Color(0xFF1C1C1E),
+                                        RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp),
                                     )
                             } else {
                                 Modifier
@@ -1552,8 +1554,8 @@ fun PlayerScreen(
                                     .heightIn(max = 520.dp)
                                     .offset { IntOffset(0, sheetOffsetY.roundToInt()) }
                                     .background(
-                                        MsColors.Surface,
-                                        RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                                        Color(0xFF1C1C1E),
+                                        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
                                     )
                             }
                         )
@@ -2190,7 +2192,7 @@ private fun UnlockSlider(
                 .padding(start = 52.dp),
         ) {
             Icon(
-                Icons.Filled.Lock,
+                Icons.Outlined.Lock,
                 contentDescription = null,
                 tint = Color.White.copy(alpha = 0.65f),
                 modifier = Modifier.size(18.dp),
@@ -2213,7 +2215,7 @@ private fun UnlockSlider(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Filled.ChevronRight,
+                Icons.Outlined.ChevronRight,
                 contentDescription = "Slide",
                 tint = Color.Black,
                 modifier = Modifier.size(26.dp),
@@ -2279,7 +2281,7 @@ private fun TrackRow(label: String, selected: Boolean, onClick: () -> Unit) {
         )
         if (selected) {
             Icon(
-                Icons.Filled.Check,
+                Icons.Outlined.Check,
                 contentDescription = "Selected",
                 tint = MsColors.Accent,
                 modifier = Modifier.size(20.dp),

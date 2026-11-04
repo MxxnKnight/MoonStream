@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.Outlined
+import androidx.compose.material.icons.automirrored.Outlined
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material3.FloatingActionButton
@@ -84,7 +86,7 @@ fun LogsScreen(onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BareIconButton(
-                icon = Icons.Filled.ArrowBack,
+                icon = Icons.AutoMirrored.Outlined.ArrowBack,
                 contentDescription = "Back",
                 onClick = onBack,
             )
@@ -190,19 +192,25 @@ fun LogsScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.BottomEnd,
         ) {
-            FloatingActionButton(
-                onClick = {
-                    scope.launch {
-                        if (lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1)
-                    }
-                },
-                modifier = Modifier.padding(16.dp),
-                containerColor = MsColors.Accent,
-                contentColor = MsColors.OnAccent,
+            // iOS-style small circular button (not M3 FAB) — less overlap.
+            Box(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF0A84FF))
+                    .clickable {
+                        scope.launch {
+                            if (lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1)
+                        }
+                    },
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Icons.Filled.ArrowDownward,
+                    imageVector = Icons.Outlined.ArrowDownward,
                     contentDescription = "Scroll to bottom",
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
                 )
             }
         } // FAB wrapper Box

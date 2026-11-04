@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.Outlined
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -338,7 +339,7 @@ fun CreateScreen(
                 modifier = Modifier.weight(1f),
             )
             BareIconButton(
-                icon = Icons.Filled.Close,
+                icon = Icons.Outlined.Close,
                 contentDescription = "Close",
                 onClick = onCancel,
             )
@@ -850,7 +851,7 @@ private fun SplitLinkRow(
                 modifier = Modifier.weight(1f),
             )
             BareIconButton(
-                icon = Icons.Filled.Close,
+                icon = Icons.Outlined.Close,
                 contentDescription = "Remove part",
                 onClick = onRemove,
             )
@@ -903,7 +904,7 @@ private fun PickedFileRow(
                 )
             }
             BareIconButton(
-                icon = Icons.Filled.Close,
+                icon = Icons.Outlined.Close,
                 contentDescription = "Remove",
                 onClick = onRemove,
             )

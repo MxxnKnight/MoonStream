@@ -29,6 +29,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.Outlined
+import androidx.compose.material.icons.automirrored.Outlined
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -78,6 +80,8 @@ import com.moon.moonstream.index.scan.ScanManager
 import com.moon.moonstream.index.scan.ScanPrefs
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.FixMode
+import com.moon.moonstream.ui.components.IosDialog
+import com.moon.moonstream.ui.components.IosSheetButton
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MetadataFixSheet
@@ -449,7 +453,7 @@ fun DetailScreen(
                     ),
             )
             BareIconButton(
-                icon = Icons.Filled.ArrowBack,
+                icon = Icons.AutoMirrored.Outlined.ArrowBack,
                 contentDescription = "Back",
                 tint = Color.White,
                 onClick = onBack,
@@ -458,7 +462,7 @@ fun DetailScreen(
                     .padding(8.dp),
             )
             BareIconButton(
-                icon = if (m.hidden) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                icon = if (m.hidden) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
                 contentDescription = if (m.hidden) "Unhide entry" else "Hide entry",
                 tint = Color.White,
                 onClick = { toggleHide() },
@@ -695,59 +699,18 @@ fun DetailScreen(
         var episodeText by remember(f.id) {
             mutableStateOf(f.episode?.toString() ?: "")
         }
-        AlertDialog(
-            onDismissRequest = { setEpisodeFile = null },
-            title = {
-                Text(
-                    "Set episode",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MsColors.TextPrimary,
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        f.fileName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MsColors.TextSecondary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        MsTextField(
-                            value = seasonText,
-                            onValueChange = { seasonText = it.filter { c -> c.isDigit() } },
-                            hint = "Season",
-                            modifier = Modifier.weight(1f),
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Number
-                            ),
-                        )
-                        MsTextField(
-                            value = episodeText,
-                            onValueChange = { episodeText = it.filter { c -> c.isDigit() } },
-                            hint = "Episode",
-                            modifier = Modifier.weight(1f),
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Number
-                            ),
-                        )
-                    }
-                    Text(
-                        "The file moves into that episode's list.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MsColors.TextSecondary,
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
+        IosDialog(
+            onDismiss = { setEpisodeFile = null },
+            title = "Set episode",
+            buttons = listOf(
+                IosSheetButton(
+                    label = "Save",
                     onClick = {
                         val season = seasonText.toIntOrNull()
                         val episode = episodeText.toIntOrNull()
                         if (episode == null) {
                             MsToast.show("Enter an episode number")
-                            return@TextButton
+                            return@IosSheetButton
                         }
                         scope.launch(Dispatchers.IO) {
                             try {
@@ -764,18 +727,51 @@ fun DetailScreen(
                                 }
                             }
                         }
-                    }
-                ) {
-                    Text("Save", color = MsColors.Accent)
+                    },
+                ),
+                IosSheetButton(
+                    label = "Cancel",
+                    onClick = { setEpisodeFile = null },
+                ),
+            ),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    f.fileName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF98989F),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    MsTextField(
+                        value = seasonText,
+                        onValueChange = { seasonText = it.filter { c -> c.isDigit() } },
+                        hint = "Season",
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number
+                        ),
+                    )
+                    MsTextField(
+                        value = episodeText,
+                        onValueChange = { episodeText = it.filter { c -> c.isDigit() } },
+                        hint = "Episode",
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number
+                        ),
+                    )
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { setEpisodeFile = null }) {
-                    Text("Cancel", color = MsColors.TextSecondary)
-                }
-            },
-            containerColor = MsColors.Surface,
-        )
+                Text(
+                    "The file moves into that episode's list.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF98989F),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
     }
 
     if (showAddStream) {

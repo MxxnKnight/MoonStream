@@ -69,6 +69,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.Outlined
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
@@ -697,7 +698,7 @@ fun MsDropdown(
                 )
             }
             Icon(
-                imageVector = Icons.Filled.ArrowDropDown,
+                imageVector = Icons.Outlined.ArrowDropDown,
                 contentDescription = "Open options",
                 tint = if (expanded) MsColors.Accent else MsColors.TextSecondary,
             )
@@ -721,7 +722,7 @@ fun MsDropdown(
                             )
                             if (isSel) {
                                 Icon(
-                                    imageVector = Icons.Filled.Check,
+                                    imageVector = Icons.Outlined.Check,
                                     contentDescription = "Selected",
                                     tint = MsColors.Accent,
                                     modifier = Modifier.size(18.dp),
@@ -839,7 +840,7 @@ fun CopyMorphButton(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Check,
+                    imageVector = Icons.Outlined.Check,
                     contentDescription = "Copied",
                     tint = MsColors.OnAccent,
                     modifier = Modifier.size(18.dp),
@@ -855,7 +856,7 @@ fun CopyMorphButton(
             }
         } else {
             Icon(
-                imageVector = Icons.Filled.ContentCopy,
+                imageVector = Icons.Outlined.ContentCopy,
                 contentDescription = "Copy",
                 tint = tint,
                 modifier = Modifier.size(24.dp),
@@ -967,7 +968,7 @@ fun ScanActionButton(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Check,
+                            imageVector = Icons.Outlined.Check,
                             contentDescription = "Done",
                             tint = MsColors.OnAccent,
                             modifier = Modifier.size(14.dp),
@@ -1339,5 +1340,81 @@ fun IosBottomSheet(
         },
     ) {
         content()
+    }
+}
+
+/**
+ * iOS-style centered dialog (UIAlertController alert style): rounded 14dp,
+ * title + message + stacked buttons. For forms, put fields in `content`.
+ * moon's iOS rebuild 2026-11-04.
+ */
+@Composable
+fun IosDialog(
+    onDismiss: () -> Unit,
+    title: String,
+    buttons: List<IosSheetButton>,
+    modifier: Modifier = Modifier,
+    content: @Composable (() -> Unit)? = null,
+) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.4f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onDismiss() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier
+                .padding(horizontal = 32.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFF1C1C1E).copy(alpha = 0.98f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { /* swallow taps */ },
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = title,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 16.dp, start = 16.dp, end = 16.dp),
+                )
+                if (content != null) {
+                    Box(Modifier.padding(16.dp)) { content() }
+                }
+                buttons.forEach { btn ->
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(0.5.dp)
+                            .background(Color(0xFF38383A)),
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { btn.onClick() }
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = btn.label,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = if (btn.isDestructive) Color(0xFFFF453A) else Color(0xFF0A84FF),
+                        )
+                    }
+                }
+                // Bottom padding for last button.
+                Spacer(Modifier.height(4.dp))
+            }
+        }
     }
 }
