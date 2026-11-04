@@ -1287,6 +1287,51 @@ data class IosSheetButton(
 )
 
 /**
+ * iOS-style context menu: popup near the anchor, dark translucent,
+ * rounded corners, thin dividers. Like iOS UIMenu (moon's request 2026-11-04).
+ */
+@Composable
+fun IosContextMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    buttons: List<IosSheetButton>,
+) {
+    androidx.compose.material3.DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        modifier = Modifier
+            .background(
+                Color(0xFF1C1C1E).copy(alpha = 0.95f),
+                RoundedCornerShape(14.dp),
+            )
+            .widthIn(min = 200.dp),
+    ) {
+        buttons.forEachIndexed { index, button ->
+            if (index > 0) {
+                androidx.compose.foundation.layout.Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(0.5.dp)
+                        .background(Color(0xFF38383A))
+                        .padding(horizontal = 16.dp),
+                )
+            }
+            androidx.compose.material3.DropdownMenuItem(
+                text = {
+                    Text(
+                        text = button.label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (button.isDestructive) Color(0xFFFF453A) else Color.White,
+                    )
+                },
+                onClick = button.onClick,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+        }
+    }
+}
+
+/**
  * iOS-style bottom sheet wrapper: grabber handle, rounded top, dark fill.
  * moon's iOS rebuild 2026-11-04. Wraps M3 ModalBottomSheet.
  */

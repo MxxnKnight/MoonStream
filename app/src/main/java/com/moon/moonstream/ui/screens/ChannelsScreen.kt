@@ -99,6 +99,7 @@ import com.moon.moonstream.ui.components.AnimeBadge
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.FixMode
 import com.moon.moonstream.ui.components.IosActionSheet
+import com.moon.moonstream.ui.components.IosContextMenu
 import com.moon.moonstream.ui.components.IosSheetButton
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
@@ -965,16 +966,17 @@ private fun ChannelRow(
                     )
                 }
                 Spacer(Modifier.width(4.dp))
-                BareIconButton(
-                    icon = Icons.Filled.MoreVert,
-                    contentDescription = "Channel options",
-                    tint = MsColors.TextSecondary,
-                    onClick = onMenuOpen,
-                )
-                // iOS action sheet for channel options (moon's request 2026-11-04)
-                if (menuOpen) {
-                    IosActionSheet(
-                        onDismiss = onMenuClose,
+                Box {
+                    BareIconButton(
+                        icon = Icons.Filled.MoreVert,
+                        contentDescription = "Channel options",
+                        tint = MsColors.TextSecondary,
+                        onClick = onMenuOpen,
+                    )
+                    // iOS context menu popup (moon's request 2026-11-04)
+                    IosContextMenu(
+                        expanded = menuOpen,
+                        onDismissRequest = onMenuClose,
                         buttons = listOf(
                             IosSheetButton("Rescan from scratch", onClick = { onMenuClose(); onRescanScratch() }),
                             IosSheetButton(
