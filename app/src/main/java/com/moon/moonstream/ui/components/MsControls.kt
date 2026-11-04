@@ -1295,6 +1295,7 @@ data class IosSheetButton(
     val label: String,
     val onClick: () -> Unit,
     val isDestructive: Boolean = false,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 )
 
 /**
@@ -1314,8 +1315,8 @@ fun IosContextMenu(
         onDismissRequest = onDismissRequest,
         modifier = Modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF1C1C1E).copy(alpha = 0.95f))
-            .widthIn(min = 200.dp),
+            .background(Color(0xFF1C1C1E).copy(alpha = 0.98f))
+            .widthIn(min = 220.dp),
     ) {
         buttons.forEachIndexed { index, button ->
             if (index > 0) {
@@ -1329,13 +1330,35 @@ fun IosContextMenu(
             }
             androidx.compose.material3.DropdownMenuItem(
                 text = {
-                    Text(
-                        text = button.label,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (button.isDestructive) Color(0xFFFF453A) else Color.White,
-                    )
+                    androidx.compose.foundation.layout.Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = button.label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (button.isDestructive) Color(0xFFFF453A) else Color.White,
+                            modifier = Modifier.weight(1f),
+                        )
+                        // iOS-style icon on the right (moon's request 2026-11-04).
+                        button.icon?.let { icon ->
+                            androidx.compose.foundation.layout.Spacer(
+                                Modifier.padding(horizontal = 6.dp)
+                            )
+                            androidx.compose.material3.Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = if (button.isDestructive) Color(0xFFFF453A)
+                                    else Color(0xFF98989F),
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
                 },
-                onClick = button.onClick,
+                onClick = {
+                    button.onClick()
+                    onDismissRequest()
+                },
                 modifier = Modifier.padding(horizontal = 8.dp),
             )
         }

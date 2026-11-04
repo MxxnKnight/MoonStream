@@ -435,6 +435,14 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 )
             }
 
+            item(key = "addCustomContent") {
+                LimePillButton(
+                    text = "＋ Add Custom Content",
+                    onClick = { onCreateEntry(null) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
             item(key = "unmatchedSearch") {
                 com.moon.moonstream.ui.components.MsTextField(
                     value = unmatchedQuery,
@@ -455,8 +463,14 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MsColors.TextPrimary,
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(top = 8.dp, end = 8.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
+                    // Select button (moon's request 2026-11-04): enters select mode.
+                    // Title uses weight + ellipsis so large counts (1000+) don't overlap.
                     if (unmatchedSelectMode) {
                         LimeTextButton(
                             text = "Done (${unmatchedSelectedIds.size})",
@@ -464,6 +478,11 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                                 unmatchedSelectMode = false
                                 unmatchedSelectedIds.clear()
                             },
+                        )
+                    } else {
+                        LimeTextButton(
+                            text = "Select",
+                            onClick = { unmatchedSelectMode = true },
                         )
                     }
                 }
@@ -486,14 +505,6 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                         )
                     }
                 }
-            }
-
-            item(key = "addCustomContent") {
-                LimePillButton(
-                    text = "＋ Add Custom Content",
-                    onClick = { onCreateEntry(null) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
 
             items(filteredUnmatched, key = { it.id }) { f ->
@@ -978,13 +989,27 @@ private fun ChannelRow(
                         expanded = menuOpen,
                         onDismissRequest = onMenuClose,
                         buttons = listOf(
-                            IosSheetButton("Rescan from scratch", onClick = { onMenuClose(); onRescanScratch() }),
+                            IosSheetButton(
+                                "Rescan from scratch",
+                                icon = androidx.compose.material.icons.Icons.Filled.Refresh,
+                                onClick = { onMenuClose(); onRescanScratch() },
+                            ),
                             IosSheetButton(
                                 label = if (channel.isAnime) "Unmark as anime channel" else "Mark as anime channel",
+                                icon = androidx.compose.material.icons.Icons.Filled.Movie,
                                 onClick = { onMenuClose(); onToggleAnime() },
                             ),
-                            IosSheetButton("Copy channel ID", onClick = { onMenuClose(); onCopyId() }),
-                            IosSheetButton("Remove channel", isDestructive = true, onClick = { onMenuClose(); onRemove() }),
+                            IosSheetButton(
+                                "Copy channel ID",
+                                icon = androidx.compose.material.icons.Icons.Filled.ContentCopy,
+                                onClick = { onMenuClose(); onCopyId() },
+                            ),
+                            IosSheetButton(
+                                "Remove channel",
+                                isDestructive = true,
+                                icon = androidx.compose.material.icons.Icons.Outlined.Delete,
+                                onClick = { onMenuClose(); onRemove() },
+                            ),
                         ),
                     )
                 }
