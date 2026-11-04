@@ -58,7 +58,11 @@ import com.moon.moonstream.ui.theme.MsColors
 fun LogsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val lines = com.moon.moonstream.util.AppLog.lines
+    // SNAPSHOT (moon's bug 2026-11-05): AppLog.lines is a live ring buffer.
+    // Observing it directly caused black screen on swipe-up (evicted items
+    // invalidated LazyColumn scroll state). We snapshot on open; Refresh button updates.
+    var snapshot by remember { mutableStateOf(com.moon.moonstream.util.AppLog.lines.toList()) }
+    val lines = snapshot
     val listState = rememberLazyListState()
     var initialScrollDone by remember { mutableStateOf(false) }
 
@@ -70,6 +74,10 @@ fun LogsScreen(onBack: () -> Unit) {
             listState.scrollToItem(lines.size - 1)
             initialScrollDone = true
         }
+    }
+
+    fun refresh() {
+        snapshot = com.moon.moonstream.util.AppLog.lines.toList()
     }
 
     Box(
@@ -114,8 +122,15 @@ fun LogsScreen(onBack: () -> Unit) {
                 fontSize = 13,
                 onClick = {
                     com.moon.moonstream.util.AppLog.clear()
+                    refresh()
                     MsToast.show("Logs cleared")
                 },
+            )
+            Spacer(Modifier.width(8.dp))
+            MsOutlinePill(
+                text = "Refresh",
+                fontSize = 13,
+                onClick = { refresh() },
             )
         }
 

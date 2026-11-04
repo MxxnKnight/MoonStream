@@ -751,7 +751,10 @@ fun PlayerScreen(
     // updatePosition is UPDATE-only, so without this the row never exists and
     // Continue Watching stays empty).
     LaunchedEffect(streamFileId) {
-        if (streamFileId == 0L || mediaId == 0L) return@LaunchedEffect
+        if (streamFileId == 0L || mediaId == 0L) {
+            com.moon.moonstream.util.AppLog.i("PLAYER", "ContinueWatching: SKIP upsert (mediaId=$mediaId, streamFileId=$streamFileId)")
+            return@LaunchedEffect
+        }
         withContext(Dispatchers.IO) {
             try {
                 val media = db.mediaDao().getById(mediaId)
@@ -775,8 +778,13 @@ fun PlayerScreen(
                             durationMs = 0L,
                         )
                     )
+                    com.moon.moonstream.util.AppLog.i("PLAYER", "ContinueWatching: INSERTED row (mediaId=$mediaId, streamFileId=$streamFileId)")
+                } else {
+                    com.moon.moonstream.util.AppLog.i("PLAYER", "ContinueWatching: row already exists (mediaId=$mediaId, streamFileId=$streamFileId)")
                 }
-            } catch (e: Exception) { /* never break playback */ }
+            } catch (e: Exception) {
+                com.moon.moonstream.util.AppLog.e("PLAYER", "ContinueWatching: upsert FAILED: ${e.message}")
+            }
         }
     }
 
