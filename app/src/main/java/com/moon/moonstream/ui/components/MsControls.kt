@@ -1330,13 +1330,16 @@ fun IosContextMenu(
     } else {
         Modifier.widthIn(min = 220.dp)
     }
+    // Sharp-corner fix (moon's bug 2026-11-04): the rounded shape + color go
+    // directly on DropdownMenu's own Surface — a clip/background on the
+    // outer modifier leaves the internal Surface's sharp corners visible
+    // behind the rounded menu.
     androidx.compose.material3.DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
-        modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF1C1C1E).copy(alpha = 0.98f))
-            .then(menuSizing),
+        modifier = menuSizing,
+        shape = RoundedCornerShape(14.dp),
+        containerColor = Color(0xFF1C1C1E).copy(alpha = 0.98f),
     ) {
         buttons.forEachIndexed { index, button ->
             if (index > 0) {

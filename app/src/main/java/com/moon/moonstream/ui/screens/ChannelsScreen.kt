@@ -101,6 +101,8 @@ import com.moon.moonstream.ui.components.FixMode
 import com.moon.moonstream.ui.components.IosActionSheet
 import com.moon.moonstream.ui.components.IosContextMenu
 import com.moon.moonstream.ui.components.IosSheetButton
+import com.moon.moonstream.ui.components.rememberAnimeCheckIcon
+import com.moon.moonstream.ui.components.rememberDeleteIcon
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MetadataFixSheet
@@ -985,6 +987,8 @@ private fun ChannelRow(
                         onClick = onMenuOpen,
                     )
                     // iOS context menu popup (moon's request 2026-11-04)
+                    val animeCheckIcon = rememberAnimeCheckIcon()
+                    val deleteIcon = rememberDeleteIcon()
                     IosContextMenu(
                         expanded = menuOpen,
                         onDismissRequest = onMenuClose,
@@ -996,6 +1000,7 @@ private fun ChannelRow(
                             ),
                             IosSheetButton(
                                 label = if (channel.isAnime) "Unmark as anime channel" else "Mark as anime channel",
+                                icon = animeCheckIcon,
                                 onClick = { onMenuClose(); onToggleAnime() },
                             ),
                             IosSheetButton(
@@ -1005,6 +1010,7 @@ private fun ChannelRow(
                             ),
                             IosSheetButton(
                                 "Remove channel",
+                                icon = deleteIcon,
                                 isDestructive = true,
                                 onClick = { onMenuClose(); onRemove() },
                             ),
