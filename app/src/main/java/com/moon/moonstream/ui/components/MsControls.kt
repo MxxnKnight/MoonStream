@@ -288,15 +288,17 @@ private fun CompactTextField(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
-    val borderColor =
-        if (focused) MsColors.Accent else MsColors.TextSecondary.copy(alpha = 0.35f)
-    val borderWidth = if (focused) 2.dp else 1.dp
+    // iOS style (moon's request 2026-11-04): focused = accent border + white text;
+    // unfocused = no border, gray text (looks like a saved/disabled value).
+    val borderColor = if (focused) MsColors.Accent else Color.Transparent
+    val borderWidth = if (focused) 1.5.dp else 0.dp
+    val textColor = if (focused) MsColors.TextPrimary else Color(0xFF98989F)
 
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.height(48.dp),
-        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MsColors.TextPrimary),
+        modifier = modifier.height(40.dp),
+        textStyle = MaterialTheme.typography.bodyMedium.copy(color = textColor),
         singleLine = true,
         keyboardOptions = keyboardOptions,
         cursorBrush = SolidColor(MsColors.Accent),
@@ -305,9 +307,10 @@ private fun CompactTextField(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(MsRadii.Field))
-                    .border(borderWidth, borderColor, RoundedCornerShape(MsRadii.Field))
-                    .padding(horizontal = 16.dp),
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (focused) MsColors.SurfaceAlt else Color(0xFF1C1C1E))
+                    .border(borderWidth, borderColor, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(modifier = Modifier.weight(1f)) {

@@ -794,10 +794,9 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         }
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(120.dp),
+                    modifier = Modifier.width(100.dp),
                 )
             }
-            CacheStorageBlock()
             SettingRow(
                 title = "Buffer MB",
                 info = "How much video the app downloads ahead while you watch. Bigger means smoother playback on slow connections, but uses more data upfront.",
@@ -806,9 +805,10 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     value = bufferMb,
                     onValueChange = { bufferMb = it },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(120.dp),
+                    modifier = Modifier.width(100.dp),
                 )
             }
+            CacheStorageBlock()
             SettingRow(
                 title = "Max file size (MB)",
                 info = "Skip files bigger than this during scans. Leave empty for no limit. Useful if you only want smaller files indexed.",
@@ -1836,10 +1836,6 @@ private fun CacheStorageBlock() {
                 style = MaterialTheme.typography.bodyLarge,
                 color = MsColors.TextPrimary,
             )
-            Spacer(Modifier.width(10.dp))
-            InfoDot(onClick = {
-                MsToast.show("Temporary files the app keeps on your phone (update downloads). Clearing never touches your library or channels. Video you play is downloaded by Telegram too — see Stream cache below.")
-            })
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
