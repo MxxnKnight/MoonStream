@@ -1077,23 +1077,32 @@ fun PlayerScreen(
 
         // Center transport: -10s / play-pause / +10s spread across the width
         // (moon's request 2026-11-02: -10s left edge, +10s right edge).
-        if (controlsVisible && !controlsLocked) {
+        // Hidden when buffering so it doesn't clash with the loader (moon's fix 2026-11-04).
+        if (controlsVisible && !controlsLocked && !showBufferLoader) {
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .fillMaxWidth()
                     .padding(horizontal = 32.dp),
             ) {
-                PlayerIconButton(
-                    icon = Icons.Filled.Replay10,
-                    contentDescription = "Back 10s",
-                    onClick = {
-                        player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0L))
-                    },
-                    size = 52.dp,
-                    iconSize = 24.dp,
-                    modifier = Modifier.align(Alignment.CenterStart),
-                )
+                // iOS-style seek buttons (moon's request 2026-11-04): clean icon, no heavy circle.
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .align(Alignment.CenterStart)
+                        .clip(CircleShape)
+                        .clickable {
+                            player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0L))
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Replay10,
+                        contentDescription = "Back 10s",
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
                 // Big play/pause: 76dp circle, no border (mpvex-style).
                 Surface(
                     onClick = { if (isPlaying) player.pause() else player.play() },
@@ -1112,19 +1121,27 @@ fun PlayerScreen(
                         )
                     }
                 }
-                PlayerIconButton(
-                    icon = Icons.Filled.Forward10,
-                    contentDescription = "Forward 10s",
-                    onClick = {
-                        player.seekTo(
-                            (player.currentPosition + 10_000)
-                                .coerceAtMost(duration.coerceAtLeast(0L))
-                        )
-                    },
-                    size = 52.dp,
-                    iconSize = 24.dp,
-                    modifier = Modifier.align(Alignment.CenterEnd),
-                )
+                // iOS-style seek buttons (moon's request 2026-11-04): clean icon, no heavy circle.
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .align(Alignment.CenterEnd)
+                        .clip(CircleShape)
+                        .clickable {
+                            player.seekTo(
+                                (player.currentPosition + 10_000)
+                                    .coerceAtMost(duration.coerceAtLeast(0L))
+                            )
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Forward10,
+                        contentDescription = "Forward 10s",
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
             }
         }
 
