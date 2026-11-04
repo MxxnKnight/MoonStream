@@ -99,6 +99,8 @@ import com.moon.moonstream.index.scan.ScanUiState
 import com.moon.moonstream.ui.components.AnimeBadge
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.FixMode
+import com.moon.moonstream.ui.components.IosActionSheet
+import com.moon.moonstream.ui.components.IosSheetButton
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MetadataFixSheet
@@ -552,30 +554,22 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
     }
 
     confirmRemove?.let { ch ->
-        AlertDialog(
-            onDismissRequest = { confirmRemove = null },
-            title = { Text("Remove channel?") },
-            text = {
-                Text(
-                    "This deletes every indexed title, file, unmatched entry and the " +
-                        "scan history for \"${ch.title}\". The channel itself stays " +
-                        "in your Telegram account.",
-                )
-            },
-            confirmButton = {
-                TextButton(
+        IosActionSheet(
+            onDismiss = { confirmRemove = null },
+            title = "Remove channel?",
+            message = "This deletes every indexed title, file, unmatched entry and the " +
+                "scan history for \"${ch.title}\". The channel itself stays " +
+                "in your Telegram account.",
+            buttons = listOf(
+                IosSheetButton(
+                    label = "Remove",
+                    isDestructive = true,
                     onClick = {
                         removeChannel(ch)
                         confirmRemove = null
                     },
-                ) { Text("Remove", color = DestructiveRed, fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmRemove = null }) { Text("Cancel") }
-            },
-            containerColor = MsColors.Surface,
-            titleContentColor = MsColors.TextPrimary,
-            textContentColor = MsColors.TextSecondary,
+                ),
+            ),
         )
     }
 

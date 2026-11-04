@@ -1187,3 +1187,119 @@ fun IosNavRow(
         }
     }
 }
+
+/**
+ * iOS-style action sheet: bottom sheet with rounded top, full-width options,
+ * separate Cancel button. moon's iOS rebuild 2026-11-04.
+ */
+@Composable
+fun IosActionSheet(
+    onDismiss: () -> Unit,
+    title: String? = null,
+    message: String? = null,
+    buttons: List<IosSheetButton>,
+) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.4f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onDismiss() },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+                .padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // Main options group.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF1C1C1E).copy(alpha = 0.95f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { /* swallow taps */ },
+            ) {
+                Column {
+                    if (title != null) {
+                        Text(
+                            text = title,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF98989F),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 12.dp, bottom = 4.dp, start = 16.dp, end = 16.dp),
+                        )
+                    }
+                    if (message != null) {
+                        Text(
+                            text = message,
+                            fontSize = 13.sp,
+                            color = Color(0xFF98989F),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp, start = 16.dp, end = 16.dp),
+                        )
+                    }
+                    buttons.forEachIndexed { i, btn ->
+                        if (i > 0 || title != null || message != null) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(0.5.dp)
+                                    .background(Color(0xFF38383A)),
+                            )
+                        }
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { btn.onClick() }
+                                .padding(vertical = 15.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = btn.label,
+                                fontSize = 17.sp,
+                                fontWeight = if (btn.isDestructive) FontWeight.Normal else FontWeight.Normal,
+                                color = if (btn.isDestructive) Color(0xFFFF453A) else Color(0xFF0A84FF),
+                            )
+                        }
+                    }
+                }
+            }
+            // Cancel button (separate group, iOS style).
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF1C1C1E).copy(alpha = 0.95f))
+                    .clickable { onDismiss() }
+                    .padding(vertical = 15.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Cancel",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF0A84FF),
+                )
+            }
+        }
+    }
+}
+
+data class IosSheetButton(
+    val label: String,
+    val onClick: () -> Unit,
+    val isDestructive: Boolean = false,
+)
