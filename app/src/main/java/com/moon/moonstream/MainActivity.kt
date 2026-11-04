@@ -359,14 +359,43 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // translucent pill like the reference — no GPU blur, light on RAM.
                 var dragAccum by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
                 val pillShape = RoundedCornerShape(24.dp)
-                Row(
+                // Frosted glass via BlurView (moon's request 2026-11-04):
+                // real backdrop blur of the content behind the pill.
+                val blurView = androidx.compose.runtime.remember {
+                    eightbitlab.com.blurview.BlurView(context).apply {
+                        outlineProvider = object : android.view.ViewOutlineProvider() {
+                            override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                                val r = 24 * resources.displayMetrics.density
+                                outline.setRoundRect(0, 0, view.width, view.height, r)
+                            }
+                        }
+                        clipToOutline = true
+                    }
+                }
+                androidx.compose.runtime.LaunchedEffect(blurView) {
+                    val activity = context as? android.app.Activity
+                    val decorView = activity?.window?.decorView as? android.view.ViewGroup
+                    if (decorView != null) {
+                        blurView.setupWith(decorView, eightbitlab.com.blurview.RenderScriptBlur(context))
+                            .setBlurRadius(18f)
+                            .setOverlayColor(android.graphics.Color.argb(140, 0x1C, 0x1C, 0x1E))
+                    }
+                }
+                Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(start = 24.dp, end = 24.dp, bottom = 22.dp)
                         .clip(pillShape)
-                        .background(Color.Black.copy(alpha = 0.78f))
-                        .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape)
-                        .draggable(
+                        .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape),
+                ) {
+                    // Blur background layer
+                    androidx.compose.ui.viewinterop.AndroidView(
+                        factory = { blurView },
+                        modifier = Modifier.matchParentSize(),
+                    )
+                    // Tab buttons on top
+                    Row(
+                        modifier = Modifier.draggable(
                             state = rememberDraggableState { delta ->
                                     dragAccum += delta
                                 },
@@ -407,6 +436,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             )
                         }
                     }
+                }
                 }
             }
             // In-app toast overlay (above content, below nothing — it's last).
