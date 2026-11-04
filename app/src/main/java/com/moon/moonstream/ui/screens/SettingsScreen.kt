@@ -1637,40 +1637,27 @@ private fun AccountCard(onLoggedOut: () -> Unit) {
     Spacer(Modifier.height(4.dp))
 
     if (showLogout) {
-        AlertDialog(
-            onDismissRequest = { showLogout = false },
-            title = {
-                Text(
-                    "Log out?",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MsColors.TextPrimary,
-                )
-            },
-            text = {
-                Text(
-                    "You'll need to enter your phone number again next time.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MsColors.TextSecondary,
-                )
-            },
-            confirmButton = {
-                LimePillButton(
-                    text = "Yes, log out",
-                    fontSize = 14,
+        IosDialog(
+            onDismiss = { showLogout = false },
+            title = "Log out?",
+            buttons = listOf(
+                IosSheetButton(label = "Cancel", onClick = { showLogout = false }),
+                IosSheetButton(
+                    label = "Yes, log out",
+                    isDestructive = true,
                     onClick = {
                         showLogout = false
                         showLogoutFinal = true
                     },
-                )
-            },
-            dismissButton = {
-                MsOutlinePill(text = "Cancel", fontSize = 14, onClick = { showLogout = false })
-            },
-            containerColor = MsColors.Surface,
-            titleContentColor = MsColors.TextPrimary,
-            textContentColor = MsColors.TextSecondary,
-        )
+                ),
+            ),
+        ) {
+            Text(
+                "You'll need to enter your phone number again next time.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MsColors.TextSecondary,
+            )
+        }
     }
     // Second confirmation (moon's request 2026-11-04): double-confirm logout.
     if (showLogoutFinal) {

@@ -343,7 +343,7 @@ interface WatchProgressDao {
     suspend fun latestForMedia(mediaId: Long): WatchProgressEntity?
 
     @Query("UPDATE watch_progress SET positionMs = :positionMs, durationMs = :durationMs, playedAt = :playedAt WHERE streamFileId = :streamFileId")
-    suspend fun updatePosition(streamFileId: Long, positionMs: Long, durationMs: Long, playedAt: Long)
+    suspend fun updatePosition(streamFileId: Long, positionMs: Long, durationMs: Long, playedAt: Long): Int
 
     @Query("DELETE FROM watch_progress WHERE streamFileId = :streamFileId")
     suspend fun deleteByStreamFile(streamFileId: Long)

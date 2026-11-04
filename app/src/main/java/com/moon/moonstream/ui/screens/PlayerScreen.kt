@@ -834,10 +834,13 @@ fun PlayerScreen(
                             if (finished) "watched to the end" else "resume position saved",
                     )
                     try {
-                        db.watchProgressDao().updatePosition(
+                        val rows = db.watchProgressDao().updatePosition(
                             streamFileId, finalPos, player.duration.coerceAtLeast(0L), System.currentTimeMillis(),
                         )
-                    } catch (e: Exception) { /* never break close */ }
+                        AppLog.i("PLAYER", "updatePosition: streamFileId=$streamFileId finalPos=$finalPos rowsAffected=$rows")
+                    } catch (e: Exception) {
+                        AppLog.e("PLAYER", "updatePosition FAILED: ${e.message}")
+                    }
                     // Auto-delete the downloaded bytes on every close
                     // (moon's call 2026-11-02: no 90% rule — always clear).
                     try {
