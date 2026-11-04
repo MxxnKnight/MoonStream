@@ -526,7 +526,7 @@ private fun ScrambleUrlText(url: String, modifier: Modifier = Modifier) {
         color = MsColors.TextSecondary,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        modifier = modifier.weight(1f),
+        modifier = modifier,
     )
 }
 
@@ -565,7 +565,7 @@ private fun ManifestDrawer() {
             .padding(18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ScrambleUrlText(url = url)
+        ScrambleUrlText(url = url, modifier = Modifier.weight(1f))
         // NoxMedia-style "copied" feedback (moon's request 2026-11-01).
         AnimatedVisibility(
             visible = copied,
