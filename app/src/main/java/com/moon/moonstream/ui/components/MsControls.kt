@@ -1309,6 +1309,7 @@ data class IosSheetButton(
  * iOS-style bottom sheet wrapper: grabber handle, rounded top, dark fill.
  * moon's iOS rebuild 2026-11-04. Wraps M3 ModalBottomSheet.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun IosBottomSheet(
     onDismissRequest: () -> Unit,

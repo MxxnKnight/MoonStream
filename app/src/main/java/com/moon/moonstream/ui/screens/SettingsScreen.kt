@@ -1436,7 +1436,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         )
                         // iOS-style progress bar (moon's pick 2026-11-04): blue, rounded, clean.
                         androidx.compose.material3.LinearProgressIndicator(
-                            progress = { p / 100f },
+                            progress = p / 100f,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(8.dp)
