@@ -887,24 +887,19 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         val sel = qualityPriority.contains(q)
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (sel) MsColors.Accent else MsColors.SurfaceAlt)
-                                .border(
-                                    1.dp,
-                                    if (sel) MsColors.Accent else MsColors.TextSecondary.copy(alpha = 0.35f),
-                                    RoundedCornerShape(8.dp),
-                                )
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (sel) MsColors.Accent else Color(0xFF1C1C1E))
                                 .clickable {
                                     if (sel) qualityPriority.remove(q) else qualityPriority.add(q)
                                 }
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
                                 text = q,
                                 style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (sel) MsColors.OnAccent else MsColors.TextSecondary,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (sel) MsColors.OnAccent else Color(0xFF98989F),
                             )
                         }
                     }

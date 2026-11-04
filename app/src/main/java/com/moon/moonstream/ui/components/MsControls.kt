@@ -40,6 +40,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
@@ -670,18 +672,24 @@ fun MsDropdown(
     label: String? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // Measure the bar so the popup menu opens at the same width (moon's
+    // request 2026-11-04: dropdown menu same width as the dropdown bar).
+    var barWidth by remember { mutableStateOf(0.dp) }
+    val density = LocalDensity.current
     Box(modifier = modifier) {
         Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(MsRadii.Field))
-                .background(MsColors.SurfaceAlt)
+                .onSizeChanged { barWidth = with(density) { it.width.toDp() } }
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFF1C1C1E))
                 .border(
-                    1.dp,
-                    if (expanded) MsColors.Accent else MsColors.TextSecondary.copy(alpha = 0.35f),
-                    RoundedCornerShape(MsRadii.Field),
+                    1.5.dp,
+                    if (expanded) MsColors.Accent else Color.Transparent,
+                    RoundedCornerShape(10.dp),
                 )
                 .clickable { expanded = true }
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .height(40.dp)
+                .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
@@ -696,7 +704,7 @@ fun MsDropdown(
                     text = selected,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
-                    color = MsColors.TextPrimary,
+                    color = if (expanded) MsColors.TextPrimary else Color(0xFF98989F),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -712,6 +720,7 @@ fun MsDropdown(
         IosContextMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            menuWidth = barWidth,
             buttons = options.map { option ->
                 IosSheetButton(
                     label = option,
@@ -1310,16 +1319,24 @@ fun IosContextMenu(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
     buttons: List<IosSheetButton>,
+    menuWidth: Dp? = null,
 ) {
     // Transparent container so the rounded background below is the only
     // thing visible (moon's bug 2026-11-04: sharp corners behind rounded menu).
+    // menuWidth (moon's request 2026-11-04): when set, the popup matches the
+    // anchor's width instead of sizing to content.
+    val menuSizing = if (menuWidth != null && menuWidth > 0.dp) {
+        Modifier.width(menuWidth)
+    } else {
+        Modifier.widthIn(min = 220.dp)
+    }
     androidx.compose.material3.DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = Modifier
             .clip(RoundedCornerShape(14.dp))
             .background(Color(0xFF1C1C1E).copy(alpha = 0.98f))
-            .widthIn(min = 220.dp),
+            .then(menuSizing),
     ) {
         buttons.forEachIndexed { index, button ->
             if (index > 0) {
