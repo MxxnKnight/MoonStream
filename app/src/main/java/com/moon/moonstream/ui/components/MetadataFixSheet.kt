@@ -23,9 +23,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -99,7 +97,6 @@ fun MetadataFixSheet(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var query by remember { mutableStateOf(initialQuery) }
     var results by remember { mutableStateOf<List<EnrichedMeta>>(emptyList()) }
     // IMDb IDs + normalized titles already in the library — for the "In library" badge
@@ -150,11 +147,8 @@ fun MetadataFixSheet(
         }
     }
 
-    ModalBottomSheet(
+    IosBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
     ) {
         MsSheetContent(title = heading) {
             Text(
@@ -242,21 +236,26 @@ fun MetadataFixSheet(
                     )
                 }
                 results.isNotEmpty() -> {
-                    // Check which results already have a library entry.
+                    // Check which results already have a library entry WITH streams.
+                    // (moon's request: show "already indexed" icon in all modes, not just LINK)
                     LaunchedEffect(results) {
-                        if (mode == FixMode.LINK && results.isNotEmpty()) {
+                        if (results.isNotEmpty()) {
                             libraryKeys = withContext(Dispatchers.IO) {
                                 val db = MsDatabase.get(context)
                                 val keys = mutableSetOf<String>()
                                 for (r in results) {
-                                    val exists = if (!r.imdbId.isNullOrBlank()) {
-                                        db.mediaDao().findByImdb(r.imdbId) != null
+                                    val media = if (!r.imdbId.isNullOrBlank()) {
+                                        db.mediaDao().findByImdb(r.imdbId)
                                     } else {
                                         db.mediaDao().findByNormAnyChannel(
                                             normalizeTitle(r.title),
-                                        ) != null
+                                        )
                                     }
-                                    if (exists) {
+                                    // Only mark if the entry has actual streams
+                                    // (moon's 2026-11-04: "already indexed with streams").
+                                    if (media != null &&
+                                        db.streamDao().listByMedia(media.id).isNotEmpty()
+                                    ) {
                                         r.imdbId?.let { keys.add(it) }
                                         keys.add(normalizeTitle(r.title))
                                     }

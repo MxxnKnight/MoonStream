@@ -144,6 +144,18 @@ object FilenameParser {
         return text.replace(Regex("\\s+"), " ").trim()
     }
 
+    /**
+     * Light cleanup for DISPLAY names (moon's request 2026-11-04): strips
+     * @channel mentions and telegram/URLs but keeps everything else intact
+     * (emojis, quality tags, etc.).
+     */
+    fun cleanDisplayName(raw: String): String {
+        var text = urlRe.replace(raw, " ")
+        text = domainRe.replace(text, " ")
+        text = mentionRe.replace(text, " ")
+        return text.replace(Regex("\\s+"), " ").trim()
+    }
+
     // ---- caption-first naming (same idea as NoxMedia's extract_best_filename) ----
 
     private val dividerRe = Regex("""^[\s\-_=*#~━─—–•·:|]+$""")

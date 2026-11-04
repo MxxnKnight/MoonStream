@@ -99,8 +99,9 @@ class ScanService : Service() {
                 try {
                     val prefs = getSharedPreferences("moonstream_prefs", Context.MODE_PRIVATE)
                     val autoBackup = prefs.getBoolean("auto_backup_sync", true)
-                    val backupToTg = prefs.getBoolean("backup_to_telegram", true)
-                    if (autoBackup && backupToTg) {
+                    // backup_to_telegram toggle removed — Telegram is the only
+                    // destination now (moon's call 2026-11-03).
+                    if (autoBackup) {
                         Log.i(TAG, "Triggering post-scan automatic cloud backup")
                         val json = com.moon.moonstream.backup.BackupManager.buildBackupJson(this@ScanService)
                         val gz = com.moon.moonstream.backup.BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))

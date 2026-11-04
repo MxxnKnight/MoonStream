@@ -72,20 +72,18 @@ yours. When in doubt, update this file instead of guessing.
 
 - ALWAYS bundle the Inter font and force it theme-wide — the user's
   handwriting system font hijacks unlabeled UIs otherwise.
-- Design system: bg `#0E1116`, cards `#161B24`, lime `#7DD956` pills with
-  dark text, floating pill bottom nav. Generous spacing, professional
-  polish — never cramped.
-- **UI plan: `docs/UI_PLAN.md`** (2026-11-03). The app has colours + fonts
-  but no shape/size scale: `MsRadii` is used by only 3 of 12 UI files and 15
-  different literal corner radii are scattered across the screens, and
-  `MaterialTheme.shapes` is unset so sheets/menus/sliders use Material
-  defaults. Read that file before changing any spacing, radius, gradient or
-  player control. Rules that follow from it: corner radii only from
-  `MsShapes` (6 / 10 / 14 / 20 / 28 / pill), spacing only from
-  4/8/12/16/20/24/32, no drop shadows (hairline border + sheen instead),
-  gradients only from `Bg`/`Surface`/`Glow*` so the AMOLED toggle keeps
-  working, and control heights 48 (field/primary button) / 44 (secondary,
-  icon) / 36 (chip).
+- Design system (iOS rebuild, merged 2026-11-04 — supersedes the old lime/Material3 look):
+  bg `#0E1116`, iOS grouped cards `#1C1C1E` (14dp), iOS blue `#0A84FF` actions,
+  iOS switches (51×31, green `#30D158`), iOS segmented tabs (gray),
+  iOS spinner loader, iOS action sheets, iOS bottom sheets (grabber),
+  iOS tab bar (icon + label). Generous spacing, professional polish — never cramped.
+- **UI plan: `docs/UI_PLAN.md`** (2026-11-03). It predates the 2026-11-04 iOS
+  restyle, so ignore its lime/Material3 screen styling — but its core finding
+  still stands: there is no shape/size scale (`MsRadii` used by 3 of 12 UI
+  files, 15 literal corner radii, `MaterialTheme.shapes` unset). Reusable
+  rules: radii from one scale, spacing from 4/8/12/16/20/24/32, control
+  heights 48 / 44 / 36, no drop shadows, gradients derived from `Bg`/
+  `Surface` so the AMOLED toggle keeps working.
 - No `Canvas` / `Stroke` / `nativeCanvas` in UI code (the offline build
   mirror's Compose AAR lacks them).
 - Never deliver APKs as chat attachments (the user's phone saves them as
@@ -95,9 +93,34 @@ yours. When in doubt, update this file instead of guessing.
 - Commits: short imperative summary; push after committing (token is in
   the git credential store).
 
+## iOS restyle (2026-11-04) — component reference
+
+moon picked a full Cupertino/iOS look for the Android app. All components
+live in `ui/components/MsControls.kt` unless noted:
+
+| Component | iOS spec | Notes |
+|---|---|---|
+| `IosSpinner` | 12-blade fading Apple spinner | Replaces all loaders (player buffering). Custom — no M3 equivalent. |
+| `MsToggle` | iOS switch 51×31dp, `#30D158` when on | Drop-in replacement, same signature. |
+| `MsSegmentedControl` (LibraryScreen) | iOS gray `#1C1C1E` track, `#636366` thumb | Was lime — now authentic iOS gray. |
+| `LimePillButton` | iOS blue `#0A84FF`, 14dp rounded | Name is legacy; style is iOS now. |
+| `MsOutlinePill` | iOS gray `#1C1C1E` bg, blue text | Was outlined lime. |
+| `IosGroup` + `IosNavRow` | iOS grouped settings, thin dividers, `›` chevron | Used in SettingsScreen main list. |
+| `IosBottomSheet` | Grabber handle, 16dp top radius, `#1C1C1E` | Wraps M3 ModalBottomSheet; needs `@OptIn(ExperimentalMaterial3Api::class)`. |
+| `IosActionSheet` + `IosSheetButton` | Bottom action sheet, destructive red option | For confirm dialogs (e.g. remove-channel). |
+| `MsToast` (MsToast.kt) | iOS-style dark pill `#1C1C1E` | Already pill-shaped; refined. |
+| `MsCard` | iOS grouped card 14dp, `#1C1C1E` | Was `#161B24`. |
+| Progress bar (SettingsScreen) | iOS blue `#0A84FF`, 8dp, rounded | NO wavy progress (moon: "Not wavy!"). M3 1.1.1 takes Float, not lambda. |
+| Bottom tab bar (MainActivity) | iOS icon + label, blue selected | Keeps floating pill + swipe-to-switch. |
+
+Material3 1.3.x is BROKEN upstream (POM references non-existent
+`material3-android:1.6.1`) — stay on 1.1.1. The Expressive restyle was
+abandoned in favor of this iOS rebuild per moon's pick.
+
+
 ## Cloud backup (Tier 2) — DONE (verified on main, 2026-11-03)
 
-**Status: implemented, nothing left to build.** The three contract methods
+**Status: implemented, nothing left to build.** The contract methods
 (`uploadBackup`, `findLatestBackup`, `downloadBackup`, `BackupRef`) exist in
 `backend/MoonStreamBackend.kt`, `TdlibMoonStreamBackend` implements them via
 Saved Messages (`CreatePrivateChat(me)` → `SendMessage` with a document and
@@ -106,9 +129,8 @@ the `#MoonStreamBackup` caption → `SearchChatMessages` newest-first →
 complete: `backup/BackupManager.kt` (build/gzip/parse/restore, 6 Room tables
 + settings), Settings → "Push to / Pull from Saved Messages", plus an
 automatic push after each scan when `auto_backup_sync` and
-`backup_to_telegram` are on (`ScanService`). `docs/BUG_CHECKLIST.md` still
-lists it as deferred — it is not; it just needs a device test. The spec below
-is kept as the record of what those methods must do.
+`backup_to_telegram` are on (`ScanService`). It just needs a device test. The
+spec below is kept as the record of what those methods must do.
 
 Local file backup (Tier 1) is already in the app. This is the spec for the
 cloud tier: push/pull the backup through the user's Telegram Saved Messages.

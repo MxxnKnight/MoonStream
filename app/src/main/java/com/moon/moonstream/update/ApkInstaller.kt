@@ -10,7 +10,6 @@ import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
 /**
@@ -58,7 +57,7 @@ object ApkInstaller {
 
         val done = java.util.concurrent.atomic.AtomicLong(0)
         try {
-            coroutineScope {
+            kotlinx.coroutines.coroutineScope {
                 parts.map { (file, range) ->
                     async(Dispatchers.IO) {
                         downloadRange(info.apkUrl, file, range.first, range.second) { n ->

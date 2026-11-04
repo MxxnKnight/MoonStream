@@ -27,20 +27,21 @@ object AniSkip {
 
     /**
      * Fetches skip times for an anime episode.
-     * @param kitsuId Kitsu anime ID (from our DB)
+     * @param anilistId AniList anime ID (mapped from Kitsu at index time)
      * @param episode Episode number (1-based)
      * @param episodeLength Episode length in seconds (for the API)
      * @return SkipTimes or null if not found / on error.
      */
     suspend fun getSkipTimes(
-        kitsuId: String,
+        anilistId: String,
         episode: Int,
         episodeLength: Long,
     ): SkipTimes? = withContext(Dispatchers.IO) {
         try {
-            // AniSkip v2: /skip-times/{id_type}/{id}/{episode_type}/{episode}/{length}
-            // id_type: kitsu, episode_type: episode
-            val url = "$BASE/kitsu/$kitsuId/episode/$episode/${episodeLength.coerceAtLeast(1)}"
+            // AniSkip v2 real route: /v2/skip-times/{anilistId}/{episode}
+            // with types[] and episodeLength query params.
+            val url = "$BASE/$anilistId/$episode" +
+                "?types[]=op&types[]=ed&episodeLength=${episodeLength.coerceAtLeast(1)}"
             AppLog.i(TAG, "Fetching: $url")
             val conn = (URL(url).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 10_000
@@ -49,12 +50,12 @@ object AniSkip {
             }
             try {
                 if (conn.responseCode != 200) {
-                    AppLog.w(TAG, "AniSkip HTTP ${conn.responseCode} for kitsu=$kitsuId ep=$episode")
+                    AppLog.w(TAG, "AniSkip HTTP ${conn.responseCode} for anilist=$anilistId ep=$episode")
                     return@withContext null
                 }
                 val json = JSONObject(conn.inputStream.bufferedReader().readText())
                 if (json.optBoolean("found", false).not()) {
-                    AppLog.i(TAG, "AniSkip: no data for kitsu=$kitsuId ep=$episode")
+                    AppLog.i(TAG, "AniSkip: no data for anilist=$anilistId ep=$episode")
                     return@withContext null
                 }
                 val results = json.optJSONArray("results") ?: return@withContext null
@@ -64,10 +65,11 @@ object AniSkip {
                 var edEnd: Double? = null
                 for (i in 0 until results.length()) {
                     val r = results.optJSONObject(i) ?: continue
-                    val type = r.optString("skip_type", "")
+                    // Real API uses camelCase: skipType, interval.startTime/endTime.
+                    val type = r.optString("skipType", "")
                     val interval = r.optJSONObject("interval") ?: continue
-                    val start = interval.optDouble("start_time", -1.0)
-                    val end = interval.optDouble("end_time", -1.0)
+                    val start = interval.optDouble("startTime", -1.0)
+                    val end = interval.optDouble("endTime", -1.0)
                     if (start < 0 || end < 0) continue
                     when (type) {
                         "op" -> { opStart = start; opEnd = end }

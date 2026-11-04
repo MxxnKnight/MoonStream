@@ -11,6 +11,16 @@ interface MediaDao {
     @Query("SELECT * FROM media_items ORDER BY updatedAt DESC")
     fun observeAll(): Flow<List<MediaItemEntity>>
 
+    /** Delete entries with no streams AND no subtitles (moon's request 2026-11-04:
+     *  "really we don't need a entry without any streams right!").
+     *  Returns the number of deleted entries. */
+    @Query(
+        """DELETE FROM media_items
+           WHERE id NOT IN (SELECT DISTINCT mediaId FROM stream_files WHERE mediaId IS NOT NULL)
+           AND id NOT IN (SELECT DISTINCT mediaId FROM subtitle_files WHERE mediaId IS NOT NULL)"""
+    )
+    suspend fun deleteEmpty(): Int
+
     @Query("SELECT * FROM media_items")
     suspend fun getAll(): List<MediaItemEntity>
 
@@ -309,8 +319,8 @@ interface WatchProgressDao {
     @Query("SELECT * FROM watch_progress WHERE mediaId = :mediaId ORDER BY playedAt DESC LIMIT 1")
     suspend fun latestForMedia(mediaId: Long): WatchProgressEntity?
 
-    @Query("UPDATE watch_progress SET positionMs = :positionMs, playedAt = :playedAt WHERE streamFileId = :streamFileId")
-    suspend fun updatePosition(streamFileId: Long, positionMs: Long, playedAt: Long)
+    @Query("UPDATE watch_progress SET positionMs = :positionMs, durationMs = :durationMs, playedAt = :playedAt WHERE streamFileId = :streamFileId")
+    suspend fun updatePosition(streamFileId: Long, positionMs: Long, durationMs: Long, playedAt: Long)
 
     @Query("DELETE FROM watch_progress WHERE streamFileId = :streamFileId")
     suspend fun deleteByStreamFile(streamFileId: Long)

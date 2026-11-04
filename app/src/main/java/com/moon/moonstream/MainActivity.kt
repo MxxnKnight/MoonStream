@@ -7,9 +7,14 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,26 +23,31 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.RssFeed
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Tv
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.List
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Dns
+import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.ripple.LocalRippleTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -102,9 +112,9 @@ private data class Tab(
 )
 
 private val tabs = listOf(
-    Tab(AppScreen.Server, "Home", Icons.Filled.Home, Icons.Outlined.Home),
-    Tab(AppScreen.Library, "Library", Icons.Filled.List, Icons.Outlined.List),
-    Tab(AppScreen.Channels, "Channels", Icons.Filled.Tv, Icons.Outlined.Tv),
+    Tab(AppScreen.Server, "Home", Icons.Filled.Dns, Icons.Outlined.Dns),
+    Tab(AppScreen.Library, "Library", Icons.Filled.Archive, Icons.Outlined.Archive),
+    Tab(AppScreen.Channels, "Channels", Icons.Filled.RssFeed, Icons.Outlined.RssFeed),
     Tab(AppScreen.Settings, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
 )
 
@@ -116,6 +126,19 @@ class MainActivity : ComponentActivity() {
     AppUiState.init(this)
     BackendProvider.init(this)
     com.moon.moonstream.server.ServerTelemetry.load(this)
+
+    // One-time cleanup: delete library entries with no streams and no subtitles
+    // (moon's request 2026-11-04: "we don't need a entry without any streams").
+    // Runs in background on every start; only touches truly empty entries.
+    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        try {
+            val db = com.moon.moonstream.index.db.MsDatabase.get(this@MainActivity)
+            val n = db.mediaDao().deleteEmpty()
+            if (n > 0) com.moon.moonstream.util.AppLog.i("LIB", "deleted $n empty entries")
+        } catch (e: Exception) {
+            com.moon.moonstream.util.AppLog.w("LIB", "empty-entry cleanup failed: ${e.message}")
+        }
+    }
 
     // Start TelegramManager early so it can restore the saved session
     val telegramManager = com.moon.moonstream.tdlib.TelegramManager.getInstance(this)
@@ -330,32 +353,58 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             ),
                         ),
                 )
+                // iOS-style tab bar (moon's iOS rebuild 2026-11-04): icon + label,
+                // blue selected, gray unselected. Keeps floating pill + swipe.
+                // Basic black blur look (moon's request 2026-11-04): simple dark
+                // translucent pill like the reference — no GPU blur, light on RAM.
+                var dragAccum by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
+                val pillShape = RoundedCornerShape(24.dp)
+                // Plain black pill (hotfix 2026-11-05: BlurView crashed on Android 12).
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(start = 32.dp, end = 32.dp, bottom = 22.dp)
-                        .clip(RoundedCornerShape(30.dp))
-                        .background(MsColors.Surface)
-                        .border(1.dp, MsColors.Divider, RoundedCornerShape(30.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                        .padding(start = 24.dp, end = 24.dp, bottom = 22.dp)
+                        .clip(pillShape)
+                        .background(Color.Black.copy(alpha = 0.78f))
+                        .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape)
+                        .draggable(
+                            state = rememberDraggableState { delta ->
+                                    dragAccum += delta
+                                },
+                                orientation = Orientation.Horizontal,
+                                onDragStopped = {
+                                    val idx = tabs.indexOfFirst { it.screen == selectedTab }
+                                if (dragAccum < -80 && idx < tabs.size - 1) {
+                                    goTab(tabs[idx + 1].screen)
+                                } else if (dragAccum > 80 && idx > 0) {
+                                    goTab(tabs[idx - 1].screen)
+                                }
+                                dragAccum = 0f
+                            },
+                        )
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     tabs.forEach { tab ->
                         val selected = selectedTab == tab.screen
-                        Box(
+                        Column(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(22.dp))
-                                .background(
-                                    if (selected) MsColors.Accent else MsColors.Accent.copy(alpha = 0f),
-                                )
+                                .clip(RoundedCornerShape(16.dp))
                                 .clickable { goTab(tab.screen) }
-                                .padding(horizontal = 20.dp, vertical = 11.dp),
-                            contentAlignment = Alignment.Center,
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Icon(
                                 if (selected) tab.iconFilled else tab.iconOutlined,
                                 contentDescription = tab.label,
-                                tint = if (selected) MsColors.OnAccent else MsColors.TextSecondary,
+                                tint = if (selected) MsColors.Accent else Color(0xFF98989F),
+                                modifier = Modifier.size(24.dp),
+                            )
+                            Text(
+                                text = tab.label,
+                                fontSize = 10.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) MsColors.Accent else Color(0xFF98989F),
                             )
                         }
                     }

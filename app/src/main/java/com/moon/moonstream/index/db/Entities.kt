@@ -28,6 +28,8 @@ data class MediaItemEntity(
     val tmdbId: Int?,
     /** Kitsu anime ID for AniSkip intro lookup. Set at index time for anime. */
     val kitsuId: String? = null,
+    /** AniList anime ID for AniSkip API. Set at index time for anime. */
+    val anilistId: String? = null,
     /**
      * Stremio-facing ID: real `tt...` when matched, else synthetic `tg...`
      * (see StremioIds). Set at index time; backfilled for older rows.
@@ -83,6 +85,8 @@ data class WatchProgressEntity(
     val playedAt: Long,
     /** Last playback position in ms for in-player Resume (0 = none). */
     val positionMs: Long = 0,
+    /** Total duration in ms for progress bar (0 = unknown). */
+    val durationMs: Long = 0,
 )
 
 /** Resume cursor per channel: newest message id already scanned. */

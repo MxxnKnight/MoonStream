@@ -4,9 +4,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
+import com.moon.moonstream.ui.components.MsToggle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,7 +63,6 @@ import com.moon.moonstream.ui.components.MsSectionLabel
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.model.CreatePrefill
 import com.moon.moonstream.ui.model.PrefillFile
-import com.moon.moonstream.ui.model.subtitleLanguages
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.ui.theme.MsRadii
 import java.util.Calendar
@@ -68,6 +70,9 @@ import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** Supported subtitle languages (was in FakeData.kt, it's real data). */
+val subtitleLanguages = listOf("English", "Malayalam", "Hindi", "Tamil", "Spanish", "Arabic")
 
 /**
  * Create Custom Content — the real thing. Builds a library entry by hand:
@@ -623,7 +628,7 @@ fun CreateScreen(
                     color = MsColors.TextSecondary,
                 )
             }
-            androidx.compose.material3.Switch(
+            MsToggle(
                 checked = isSplit,
                 onCheckedChange = {
                     isSplit = it
@@ -632,10 +637,6 @@ fun CreateScreen(
                         splitLinks.add("")
                     }
                 },
-                colors = androidx.compose.material3.SwitchDefaults.colors(
-                    checkedThumbColor = MsColors.Accent,
-                    checkedTrackColor = MsColors.Accent.copy(alpha = 0.4f),
-                ),
             )
         }
         if (isSplit) {
@@ -800,10 +801,16 @@ fun CreateScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            LimeTextButton(
-                text = "Cancel",
+            TextButton(
                 onClick = onCancel,
-            )
+                modifier = Modifier.padding(end = 8.dp),
+            ) {
+                Text(
+                    text = "Cancel",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MsColors.Accent,
+                )
+            }
             LimePillButton(
                 text = if (saving) "Saving…" else "Save Content",
                 onClick = ::save,
@@ -939,17 +946,11 @@ private fun SegmentOption(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // iOS segmented control style (moon's bug 2026-11-04: old UI).
     Box(
         modifier = modifier
-            .clip(CircleShape)
-            .background(if (selected) MsColors.Accent else MsColors.SurfaceAlt)
-            .then(
-                if (!selected) Modifier.border(
-                    1.dp,
-                    MsColors.TextSecondary.copy(alpha = 0.4f),
-                    CircleShape,
-                ) else Modifier,
-            )
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) MsColors.Accent else Color(0xFF1C1C1E))
             .clickable(onClick = onClick)
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,
@@ -958,7 +959,7 @@ private fun SegmentOption(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
-            color = if (selected) MsColors.OnAccent else MsColors.TextSecondary,
+            color = if (selected) Color.White else Color(0xFF98989F),
         )
     }
 }

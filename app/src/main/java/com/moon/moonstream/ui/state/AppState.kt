@@ -42,21 +42,19 @@ enum class MsAccent(
     val logoRes: Int? = null,
 ) {
     LIME(
-        "Lime", Color(0xFF7DD956), Color(0xFF0E1116),
+        "Moon Lime", Color(0xFF7DD956), Color(0xFF0E1116),
         glowLight = Color(0xFFB8F59B), glowDeep = Color(0xFF2E7A1E),
         logoRes = R.drawable.logo_lime,
     ),
-    COSMOS(
-        "Cosmos Blue", Color(0xFF6A9BFF), Color(0xFF0E1116),
-        glowLight = Color(0xFFA8C6FF), glowDeep = Color(0xFF2A4A9B),
-    ),
     EMBER(
-        "Ember Orange", Color(0xFFFF8A3D), Color(0xFF0E1116),
+        "Moon Ember", Color(0xFFFF8A3D), Color(0xFF0E1116),
         glowLight = Color(0xFFFFB37D), glowDeep = Color(0xFF9B4A1A),
+        logoRes = R.drawable.logo_moon_ember,
     ),
     VIOLET(
-        "Violet", Color(0xFFB388FF), Color(0xFF0E1116),
+        "Moon Violet", Color(0xFFB388FF), Color(0xFF0E1116),
         glowLight = Color(0xFFD3B8FF), glowDeep = Color(0xFF5E35B1),
+        logoRes = R.drawable.logo_moon_violet,
     ),
     MOON_BLUE(
         "Moon Blue", Color(0xFF3B82F6), Color(0xFF0E1116),
@@ -89,8 +87,13 @@ object AppUiState {
     var streamPort by mutableStateOf(8081)
 
     // Appearance (persisted)
-    var accent by mutableStateOf(MsAccent.LIME)
+    var accent by mutableStateOf(MsAccent.MOON_BLUE)
     var amoled by mutableStateOf(false)
+    /** AMOLED hairline card borders (moon's request 2026-11-03). Default on. */
+    var amoledCardBorders by mutableStateOf(true)
+    /** Settings sub-screen route (moon's bug 2026-11-04: preserve across tab switches).
+     *  Null = main settings list, otherwise the section name. */
+    var settingsRoute by mutableStateOf<String?>(null)
 
     // Telegram login state is driven by the real backend's authState;
     // loggedIn here mirrors it for the splash router.
@@ -127,8 +130,9 @@ object AppUiState {
     fun init(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         accent = MsAccent.values().find { it.name == prefs.getString("accent", null) }
-            ?: MsAccent.LIME
+            ?: MsAccent.MOON_BLUE
         amoled = prefs.getBoolean("amoled", false)
+        amoledCardBorders = prefs.getBoolean("amoled_card_borders", true)
         loggedIn = prefs.getBoolean("logged_in", false)
         cacheMaxMb = prefs.getInt("cache_max_mb", 2048).coerceAtLeast(0)
         currentIp = com.moon.moonstream.server.MoonStreamServer.getLocalIpAddress()
@@ -165,6 +169,12 @@ object AppUiState {
         amoled = on
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putBoolean("amoled", on).commit()
+    }
+
+    fun setAmoledCardBorders(on: Boolean, context: Context) {
+        amoledCardBorders = on
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("amoled_card_borders", on).commit()
     }
 
     fun setLoggedIn(context: Context) {

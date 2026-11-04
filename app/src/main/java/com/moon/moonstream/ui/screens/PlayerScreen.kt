@@ -15,6 +15,7 @@ import android.view.SurfaceView
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -83,6 +84,9 @@ import androidx.media3.ui.SubtitleView
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.backend.BackendProvider
+import com.moon.moonstream.ui.components.IosSpinner
+import com.moon.moonstream.ui.components.MsOutlinePill
+import com.moon.moonstream.ui.components.MsSlider
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.player.MsDataSourceFactory
 import com.moon.moonstream.ui.player.PlayerUrls
@@ -93,6 +97,7 @@ import com.moon.moonstream.ui.state.LanguagePrefs
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.util.AppLog
 import com.moon.moonstream.util.AniSkip
+import com.moon.moonstream.util.IntroDb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -143,11 +148,10 @@ private data class EpisodeGroup(
  *
  * PREFER is safe because FfmpegAudioRenderer only claims a format when the
  * .so really has that decoder — for AAC it declines and MediaCodec wins.
- * If the .so is missing (x86 emulator, armeabi-v7a build) we fall back to
- * hardware-only instead of crashing.
+ * If the .so is missing we fall back to hardware-only instead of crashing.
  */
 @OptIn(UnstableApi::class)
-private fun buildRenderersFactory(context: Context): DefaultRenderersFactory {
+private fun buildRenderersFactory(context: android.content.Context): DefaultRenderersFactory {
     val ffmpegAvailable = try {
         FfmpegLibrary.isAvailable()
     } catch (t: Throwable) {
@@ -161,6 +165,15 @@ private fun buildRenderersFactory(context: Context): DefaultRenderersFactory {
                 "eac3/ac3/dca/truehd in software",
         )
     } else {
+        // Diagnostic: why did FFmpeg fail to load? (moon's bug 2026-11-04)
+        try {
+            System.loadLibrary("ffmpegJNI")
+            AppLog.w("PLAYER", "FFmpeg .so loads manually but FfmpegLibrary.isAvailable() is false — version check failed")
+        } catch (e: UnsatisfiedLinkError) {
+            AppLog.e("PLAYER", "FFmpeg .so load failed: ${e.message}")
+        } catch (e: Exception) {
+            AppLog.e("PLAYER", "FFmpeg load error: ${e.message}")
+        }
         AppLog.w("PLAYER", "FFmpeg extension not available — hardware decoders only")
     }
     return DefaultRenderersFactory(context).setExtensionRendererMode(
@@ -191,12 +204,23 @@ fun PlayerScreen(
     val db = remember { MsDatabase.get(context) }
     val ioScope = rememberCoroutineScope()
 
+    // System back gesture/button closes the player (moon's bug 2026-11-04:
+    // only the in-player back button worked).
+    BackHandler(onBack = onClose)
+
+    // Track if we're switching episodes (not closing) to avoid portrait flicker.
+    var isSwitching by remember { mutableStateOf(false) }
+
     // moon's rule: video plays in landscape + true fullscreen (like video players).
     // Orientation: landscape while playing. Keyed on streamFileId so it
     // re-applies when switching episodes (moon's bug 2026-11-02: Next
-    // episode opened in portrait). On dispose, always restore portrait —
-    // not the captured value, which could be landscape from a previous
-    // player instance (moon's bug: closing left the app in landscape).
+    // episode opened in portrait). On dispose, restore portrait ONLY if not
+    // switching episodes (moon's bug 2026-11-04: Next caused portrait).
+    // Orientation: landscape while playing. Keyed on streamFileId so it
+    // re-applies when switching episodes (moon's bug 2026-11-02: Next
+    // episode opened in portrait). On dispose, restore portrait ONLY if not
+    // switching episodes — otherwise the old player's dispose fires after the
+    // new player's landscape, leaving it stuck in portrait (moon's bug 2026-11-04).
     DisposableEffect(streamFileId) {
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         val window = activity?.window
@@ -205,7 +229,9 @@ fun PlayerScreen(
         insets?.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         onDispose {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            if (!isSwitching) {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
             insets?.show(WindowInsetsCompat.Type.systemBars())
             // Restore system brightness (gestures override it while playing).
             try {
@@ -400,7 +426,9 @@ fun PlayerScreen(
             "S${f.season} E${f.episode}" +
                 (if (f.episodeEnd != null) "-${f.episodeEnd}" else "")
         } else {
-            f.fileName.substringBeforeLast('.').take(40)
+            com.moon.moonstream.index.parse.FilenameParser.cleanDisplayName(
+                f.fileName.substringBeforeLast('.')
+            ).take(40)
         }
 
     /** Switch playback to another file of the same entry. */
@@ -408,6 +436,7 @@ fun PlayerScreen(
         if (f.id == streamFileId) return
         val url = PlayerUrls.stream(mediaId, f.id)
         AppLog.i("PLAYER", "Switching to ${episodeLabel(f)}")
+        isSwitching = true
         onSwitchPlayer(url, "$mediaTitle ${episodeLabel(f)}", mediaTitle, mediaId, f.id)
     }
 
@@ -718,6 +747,47 @@ fun PlayerScreen(
         }
     }
 
+    // Create the watch-progress row on playback start (moon's bug 2026-11-04:
+    // updatePosition is UPDATE-only, so without this the row never exists and
+    // Continue Watching stays empty).
+    LaunchedEffect(streamFileId) {
+        if (streamFileId == 0L || mediaId == 0L) {
+            com.moon.moonstream.util.AppLog.i("PLAYER", "ContinueWatching: SKIP upsert (mediaId=$mediaId, streamFileId=$streamFileId)")
+            return@LaunchedEffect
+        }
+        withContext(Dispatchers.IO) {
+            try {
+                val media = db.mediaDao().getById(mediaId)
+                val file = orderedFiles.firstOrNull { it.id == streamFileId }
+                val season = currentGroup?.season ?: file?.season
+                val episode = currentGroup?.episode ?: file?.episode
+                val epLabel = if (season != null && episode != null) {
+                    "S%02dE%02d".format(season, episode)
+                } else null
+                // Only create if it doesn't exist yet (don't overwrite position).
+                if (db.watchProgressDao().get(mediaId, streamFileId) == null) {
+                    db.watchProgressDao().upsert(
+                        com.moon.moonstream.index.db.WatchProgressEntity(
+                            mediaId = mediaId,
+                            streamFileId = streamFileId,
+                            title = media?.title ?: mediaTitle,
+                            episodeLabel = epLabel,
+                            posterUrl = media?.posterUrl,
+                            playedAt = System.currentTimeMillis(),
+                            positionMs = 0L,
+                            durationMs = 0L,
+                        )
+                    )
+                    com.moon.moonstream.util.AppLog.i("PLAYER", "ContinueWatching: INSERTED row (mediaId=$mediaId, streamFileId=$streamFileId)")
+                } else {
+                    com.moon.moonstream.util.AppLog.i("PLAYER", "ContinueWatching: row already exists (mediaId=$mediaId, streamFileId=$streamFileId)")
+                }
+            } catch (e: Exception) {
+                com.moon.moonstream.util.AppLog.e("PLAYER", "ContinueWatching: upsert FAILED: ${e.message}")
+            }
+        }
+    }
+
     // Save position every 5s while playing (for Resume + "watched X ago").
     LaunchedEffect(streamFileId) {
         if (streamFileId == 0L) return@LaunchedEffect
@@ -728,7 +798,7 @@ fun PlayerScreen(
                 withContext(Dispatchers.IO) {
                     try {
                         db.watchProgressDao().updatePosition(
-                            streamFileId, pos, System.currentTimeMillis(),
+                            streamFileId, pos, player.duration.coerceAtLeast(0L), System.currentTimeMillis(),
                         )
                     } catch (e: Exception) { /* never break playback */ }
                 }
@@ -765,7 +835,7 @@ fun PlayerScreen(
                     )
                     try {
                         db.watchProgressDao().updatePosition(
-                            streamFileId, finalPos, System.currentTimeMillis(),
+                            streamFileId, finalPos, player.duration.coerceAtLeast(0L), System.currentTimeMillis(),
                         )
                     } catch (e: Exception) { /* never break close */ }
                     // Auto-delete the downloaded bytes on every close
@@ -811,6 +881,7 @@ fun PlayerScreen(
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
+    var bufferedPosition by remember { mutableLongStateOf(0L) }
     // Playback state UI (moon's bug 2026-11-02: black screen, no feedback).
     var isBuffering by remember { mutableStateOf(true) }
     var playerError by remember { mutableStateOf<String?>(null) }
@@ -861,6 +932,7 @@ fun PlayerScreen(
         try {
             while (true) {
                 currentPosition = player.currentPosition.coerceAtLeast(0L)
+                bufferedPosition = player.bufferedPosition.coerceAtLeast(0L)
                 if (duration <= 0L) duration = player.duration.coerceAtLeast(0L)
                 delay(500)
             }
@@ -1069,15 +1141,18 @@ fun PlayerScreen(
             }
         }
 
-        // Center transport: -10s / play-pause / +10s spread across the width
-        // (moon's request 2026-11-02: -10s left edge, +10s right edge).
-        if (controlsVisible && !controlsLocked) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxWidth()
-                    .padding(horizontal = 32.dp),
+        // Center transport: -10s / play-pause / +10s grouped near center
+        // (moon's request 2026-11-04: seek buttons flanking the play button,
+        // not at the screen edges).
+        // Hidden when buffering so it doesn't clash with the loader (moon's fix 2026-11-04).
+        if (controlsVisible && !controlsLocked && !isBuffering) {
+            Row(
+                modifier = Modifier.align(Alignment.Center),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(64.dp),
             ) {
+                // Seek buttons with round overlay like other player icons
+                // (moon's request 2026-11-04: too close to pause, add the circle).
                 PlayerIconButton(
                     icon = Icons.Filled.Replay10,
                     contentDescription = "Back 10s",
@@ -1085,17 +1160,14 @@ fun PlayerScreen(
                         player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0L))
                     },
                     size = 52.dp,
-                    iconSize = 24.dp,
-                    modifier = Modifier.align(Alignment.CenterStart),
+                    iconSize = 32.dp,
                 )
                 // Big play/pause: 76dp circle, no border (mpvex-style).
                 Surface(
                     onClick = { if (isPlaying) player.pause() else player.play() },
                     shape = CircleShape,
                     color = Color.White.copy(alpha = 0.14f),
-                    modifier = Modifier
-                        .size(76.dp)
-                        .align(Alignment.Center),
+                    modifier = Modifier.size(76.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -1106,6 +1178,8 @@ fun PlayerScreen(
                         )
                     }
                 }
+                // Seek buttons with round overlay like other player icons
+                // (moon's request 2026-11-04: too close to pause, add the circle).
                 PlayerIconButton(
                     icon = Icons.Filled.Forward10,
                     contentDescription = "Forward 10s",
@@ -1116,8 +1190,7 @@ fun PlayerScreen(
                         )
                     },
                     size = 52.dp,
-                    iconSize = 24.dp,
-                    modifier = Modifier.align(Alignment.CenterEnd),
+                    iconSize = 32.dp,
                 )
             }
         }
@@ -1229,16 +1302,51 @@ fun PlayerScreen(
                                 .padding(vertical = 2.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Slider(
-                                value = currentPosition.toFloat(),
-                                onValueChange = { player.seekTo(it.toLong()) },
-                                valueRange = 0f..duration.toFloat(),
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MsColors.Accent,
-                                    activeTrackColor = MsColors.Accent,
-                                ),
-                            )
+                            // Buffer track (moon's request): white/gray behind the blue progress.
+                            // Fixed-height container so the buffer aligns with the Slider's track.
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(24.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (duration > 0L) {
+                                    val bufferFrac = (bufferedPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+                                    // Background track (dark)
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(4.dp)
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(Color.White.copy(alpha = 0.25f)),
+                                    )
+                                    // Buffer fill (white/gray, behind the blue progress)
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(4.dp)
+                                            .clip(RoundedCornerShape(2.dp)),
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth(bufferFrac)
+                                                .fillMaxHeight()
+                                                .background(Color.White.copy(alpha = 0.5f)),
+                                        )
+                                    }
+                                }
+                                Slider(
+                                    value = currentPosition.toFloat(),
+                                    onValueChange = { player.seekTo(it.toLong()) },
+                                    valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = MsColors.Accent,
+                                        activeTrackColor = MsColors.Accent,
+                                        inactiveTrackColor = Color.Transparent,
+                                    ),
+                                )
+                            }
                         }
                         Text(
                             if (showRemaining) {
@@ -1349,30 +1457,16 @@ fun PlayerScreen(
                     contentAlignment =
                         if (forward) Alignment.CenterEnd else Alignment.CenterStart,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .padding(horizontal = 56.dp)
-                            .background(
-                                Color.Black.copy(alpha = 0.62f),
-                                CircleShape,
-                            )
-                            .border(
-                                1.dp,
-                                Color.White.copy(alpha = 0.2f),
-                                CircleShape,
-                            )
-                            .padding(horizontal = 22.dp, vertical = 14.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "${if (forward) "+" else "-"}${secs}s",
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                            ),
-                        )
-                    }
+                    // Text only, no background or outline (moon's request 2026-11-04).
+                    Text(
+                        "${if (forward) "+" else "-"}${secs}s",
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        modifier = Modifier.padding(horizontal = 56.dp),
+                    )
                 }
             }
         }
@@ -1424,45 +1518,72 @@ fun PlayerScreen(
         }
 
         // Skip Intro button (moon's request 2026-11-02): Netflix-style pill
-        // at bottom-right. Uses AniSkip API for anime (exact timestamps),
-        // falls back to manual +85s.
+        // at bottom-right. Anime → AniSkip (Kitsu ID), series/movies → IntroDB
+        // (IMDb ID). No manual fallback — no API data = no button.
         var skipTimes by remember { mutableStateOf<AniSkip.SkipTimes?>(null) }
+        var introSegs by remember { mutableStateOf<IntroDb.Segments?>(null) }
         var skipFetched by remember { mutableStateOf(false) }
 
-        // Fetch AniSkip data once per episode.
+        // Fetch skip data once per episode.
         LaunchedEffect(mediaId, currentGroup?.episode) {
             if (skipFetched) return@LaunchedEffect
             skipFetched = true
-            val ep = currentGroup?.episode ?: return@LaunchedEffect
-            val kitsuId = try {
-                withContext(Dispatchers.IO) {
-                    db.mediaDao().getById(mediaId)?.kitsuId
-                }
+            // Season/episode fallback chain (moon's fix 2026-11-04): currentGroup
+            // can be null (e.g. movies have no season/episode), so fall back to
+            // the stream file's own values from the DB.
+            val currentFile = orderedFiles.firstOrNull { it.id == streamFileId }
+            val season = currentGroup?.season ?: currentFile?.season
+            val ep = currentGroup?.episode ?: currentFile?.episode
+            val media = try {
+                withContext(Dispatchers.IO) { db.mediaDao().getById(mediaId) }
             } catch (e: Exception) { null }
-            if (kitsuId.isNullOrBlank()) {
-                AppLog.i("PLAYER", "Skip: no kitsuId, using manual +85s")
+            val isAnime = media?.type == "anime"
+            val isMovie = media?.type == "movie"
+            // Anime → AniSkip via AniList ID (mapped from Kitsu at index).
+            if (isAnime && ep != null && !media?.anilistId.isNullOrBlank()) {
+                val durSecs = duration.coerceAtLeast(1L) / 1000
+                skipTimes = AniSkip.getSkipTimes(media!!.anilistId!!, ep, durSecs)
                 return@LaunchedEffect
             }
-            val durSecs = duration.coerceAtLeast(1L) / 1000
-            skipTimes = AniSkip.getSkipTimes(kitsuId, ep, durSecs)
+            // Series/movies → IntroDB via IMDb ID.
+            val imdb = media?.imdbId
+            if (!imdb.isNullOrBlank()) {
+                if (!isMovie && (season == null || ep == null)) {
+                    // Can't query IntroDB for TV without season+episode —
+                    // it would 400. Log why instead of a silent failure.
+                    AppLog.i("PLAYER", "Skip: no season/episode for series, IntroDB skipped (S=$season E=$ep)")
+                } else {
+                    introSegs = IntroDb.getSegments(
+                        imdbId = imdb,
+                        season = if (isMovie) null else season,
+                        episode = if (isMovie) null else ep,
+                        isMovie = isMovie,
+                    )
+                }
+            } else {
+                AppLog.i("PLAYER", "Skip: no anilistId/imdbId, no button")
+            }
         }
 
-        val opEndMs = skipTimes?.opEnd?.let { (it * 1000).toLong() }
-        val opStartMs = skipTimes?.opStart?.let { (it * 1000).toLong() } ?: 0L
-        // Show during OP range (API) or first 3 min (manual fallback).
-        val showSkipIntro = if (opEndMs != null) {
-            currentPosition in opStartMs until opEndMs && !controlsLocked
-        } else {
-            currentPosition < 180_000L && currentPosition > 5_000L && !controlsLocked
-        }
+        // Resolve the intro window from whichever API answered.
+        val apiEndMs: Long? = skipTimes?.opEnd?.let { (it * 1000).toLong() }
+            ?: introSegs?.introEndSec?.let { (it * 1000).toLong() }
+        val apiStartMs: Long = skipTimes?.opStart?.let { (it * 1000).toLong() }
+            ?: introSegs?.introStartSec?.let { (it * 1000).toLong() }
+            ?: 0L
+        val apiSource = if (skipTimes?.opEnd != null) "AniSkip"
+            else if (introSegs?.introEndSec != null) "IntroDB" else null
+        // Show ONLY during the actual intro from the API. No data = no button.
+        val showSkipIntro = apiEndMs != null &&
+            currentPosition in apiStartMs until apiEndMs &&
+            !controlsLocked
         if (showSkipIntro) {
-            val skipTarget = opEndMs ?: (currentPosition + 85_000L)
-                .coerceAtMost(duration.coerceAtLeast(0L))
+            // apiEndMs is non-null here (showSkipIntro requires it).
+            val endMs = apiEndMs!!
             Button(
                 onClick = {
-                    player.seekTo(skipTarget)
-                    AppLog.i("PLAYER", "Skip intro: ${currentPosition/1000}s → ${skipTarget/1000}s" +
-                        if (opEndMs != null) " (AniSkip)" else " (manual)")
+                    player.seekTo(endMs)
+                    AppLog.i("PLAYER", "Skip intro: ${currentPosition/1000}s → ${endMs/1000}s ($apiSource)")
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -1523,8 +1644,8 @@ fun PlayerScreen(
                                         // subtitles show through while editing.
                                         if (mode == PlayerSheet.SUBS)
                                             Color.Black.copy(alpha = 0.72f)
-                                        else MsColors.Surface,
-                                        RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp),
+                                        else Color(0xFF1C1C1E),
+                                        RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp),
                                     )
                             } else {
                                 Modifier
@@ -1532,8 +1653,8 @@ fun PlayerScreen(
                                     .heightIn(max = 520.dp)
                                     .offset { IntOffset(0, sheetOffsetY.roundToInt()) }
                                     .background(
-                                        MsColors.Surface,
-                                        RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                                        Color(0xFF1C1C1E),
+                                        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
                                     )
                             }
                         )
@@ -1635,27 +1756,25 @@ fun PlayerScreen(
                                         color = MsColors.TextPrimary,
                                         modifier = Modifier.weight(1f),
                                     )
-                                    IconButton(onClick = { adjustDelay(-250) }) {
-                                        Icon(
-                                            Icons.Filled.Remove,
-                                            contentDescription = "Delay -250ms",
-                                            tint = MsColors.TextPrimary,
-                                        )
-                                    }
+                                    MsOutlinePill(
+                                        text = "−250ms",
+                                        onClick = { adjustDelay(-250) },
+                                        modifier = Modifier.height(36.dp),
+                                        fontSize = 13,
+                                    )
                                     Text(
                                         formatDelay(delayMs),
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MsColors.Accent,
+                                        color = MsColors.TextPrimary,
                                         textAlign = TextAlign.Center,
                                         modifier = Modifier.width(80.dp),
                                     )
-                                    IconButton(onClick = { adjustDelay(250) }) {
-                                        Icon(
-                                            Icons.Filled.Add,
-                                            contentDescription = "Delay +250ms",
-                                            tint = MsColors.TextPrimary,
-                                        )
-                                    }
+                                    MsOutlinePill(
+                                        text = "+250ms",
+                                        onClick = { adjustDelay(250) },
+                                        modifier = Modifier.height(36.dp),
+                                        fontSize = 13,
+                                    )
                                 }
                                 // Appearance (moon's pick 2026-11-02).
                                 Spacer(Modifier.height(4.dp))
@@ -1782,7 +1901,7 @@ fun PlayerScreen(
                                         color = MsColors.TextPrimary,
                                         modifier = Modifier.weight(1f),
                                     )
-                                    Slider(
+                                    MsSlider(
                                         value = subPosition,
                                         onValueChange = {
                                             subPosition = it
@@ -1791,10 +1910,6 @@ fun PlayerScreen(
                                         },
                                         valueRange = 0f..0.4f,
                                         modifier = Modifier.weight(1.6f),
-                                        colors = SliderDefaults.colors(
-                                            thumbColor = MsColors.Accent,
-                                            activeTrackColor = MsColors.Accent,
-                                        ),
                                     )
                                 }
                             }
@@ -1978,18 +2093,31 @@ fun PlayerScreen(
         }
 
         // Loading spinner while the stream buffers (moon's bug 2026-11-02:
-        // black screen with zero feedback).
-        if (isBuffering && playerError == null && !awaitingResumeChoice) {
+        // Full-screen buffering loader (moon's request 2026-11-03):
+        // shows during initial load AND when seeks take time. Uses a small
+        // delay (400ms) so quick seeks don't flicker the loader.
+        var showBufferLoader by remember { mutableStateOf(false) }
+        LaunchedEffect(isBuffering) {
+            if (isBuffering) {
+                kotlinx.coroutines.delay(400)
+                // Re-check: still buffering after the delay?
+                if (isBuffering) showBufferLoader = true
+            } else {
+                showBufferLoader = false
+            }
+        }
+        if (showBufferLoader && playerError == null && !awaitingResumeChoice) {
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f)),
                 contentAlignment = Alignment.Center,
             ) {
-                // Material3 loader, mpvex-style 96dp (replaces the small default).
-                CircularProgressIndicator(
-                    modifier = Modifier.size(96.dp),
-                    color = MsColors.Accent,
-                    trackColor = Color.White.copy(alpha = 0.18f),
-                    strokeWidth = 6.dp,
+                // iOS spinner loader (moon's pick 2026-11-04 — replaces Expressive morphing).
+                IosSpinner(
+                    modifier = Modifier.size(48.dp),
+                    color = Color.White,
+                    size = 32.dp,
                 )
             }
         }

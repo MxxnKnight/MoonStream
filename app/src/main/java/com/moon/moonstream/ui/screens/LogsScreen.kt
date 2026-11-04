@@ -18,11 +18,27 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -42,27 +58,36 @@ import com.moon.moonstream.ui.theme.MsColors
 fun LogsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val lines = com.moon.moonstream.util.AppLog.lines
+    // SNAPSHOT (moon's bug 2026-11-05): AppLog.lines is a live ring buffer.
+    // Observing it directly caused black screen on swipe-up (evicted items
+    // invalidated LazyColumn scroll state). We snapshot on open; Refresh button updates.
+    var snapshot by remember { mutableStateOf(com.moon.moonstream.util.AppLog.lines.toList()) }
+    val lines = snapshot
     val listState = rememberLazyListState()
+    var initialScrollDone by remember { mutableStateOf(false) }
 
-    // Auto-scroll to the newest line whenever the log grows — but only if
-    // the user is already near the bottom. Uses instant scrollToItem (not
-    // animated) so rapid log bursts during audits don't stack animations
-    // and kill the app (moon's crash).
+    // Scroll to bottom ONCE on first load (moon's bug 2026-11-04: black screen on open).
+    // No auto-follow — the scroll-down FAB handles jumping to latest. The old
+    // follow-tail logic fought manual scrolls and blanked the list (moon's bug 2026-11-04).
     LaunchedEffect(lines.size) {
-        if (lines.isNotEmpty()) {
-            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            // If user is within 5 items of the bottom, follow the tail.
-            if (lastVisible >= lines.size - 6) {
-                listState.scrollToItem(lines.size - 1)
-            }
+        if (lines.isNotEmpty() && !initialScrollDone) {
+            listState.scrollToItem(lines.size - 1)
+            initialScrollDone = true
         }
     }
 
-    Column(
+    fun refresh() {
+        snapshot = com.moon.moonstream.util.AppLog.lines.toList()
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MsColors.Bg),
+    ) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize(),
     ) {
         Row(
             modifier = Modifier
@@ -97,13 +122,23 @@ fun LogsScreen(onBack: () -> Unit) {
                 fontSize = 13,
                 onClick = {
                     com.moon.moonstream.util.AppLog.clear()
+                    refresh()
                     MsToast.show("Logs cleared")
                 },
+            )
+            Spacer(Modifier.width(8.dp))
+            MsOutlinePill(
+                text = "Refresh",
+                fontSize = 13,
+                onClick = { refresh() },
             )
         }
 
         Spacer(Modifier.height(4.dp))
 
+        // Box wraps list + FAB so the FAB can align to BottomEnd
+        // (crash fix 2026-11-04: align() doesn't work directly in Column).
+        Box(modifier = Modifier.weight(1f)) {
         if (lines.isEmpty()) {
             Column(
                 modifier = Modifier
@@ -157,5 +192,47 @@ fun LogsScreen(onBack: () -> Unit) {
             }
             }
         }
+    }
+
+        // Scroll-to-bottom FAB (moon's request 2026-11-03): appears when
+        // scrolled up, jumps to the latest logs.
+        // Simple if instead of AnimatedVisibility (scope issues in Box).
+        val scope = rememberCoroutineScope()
+        val showScrollDown by remember {
+            derivedStateOf {
+                val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                lines.isNotEmpty() && lastVisible < lines.size - 6
+            }
+        }
+        if (showScrollDown) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.BottomEnd,
+        ) {
+            // iOS-style small circular button (not M3 FAB) — less overlap.
+            // Positioned above the floating bottom pill (moon's fix 2026-11-04).
+            Box(
+                modifier = Modifier
+                    .padding(end = 20.dp, bottom = 110.dp)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(MsColors.Accent)
+                    .clickable {
+                        scope.launch {
+                            if (lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1)
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ArrowDownward,
+                    contentDescription = "Scroll to bottom",
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        } // FAB wrapper Box
+        } // if showScrollDown
+        } // outer Box
     }
 }

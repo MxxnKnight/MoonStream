@@ -2,6 +2,7 @@ package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
+import com.moon.moonstream.ui.components.IosBottomSheet
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -48,9 +49,8 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -118,6 +118,10 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     // Multi-select state — Select button or long-press; bottom action bar.
     var selectMode by remember { mutableStateOf(false) }
     val selectedIds = remember { mutableStateListOf<Long>() }
+    /** Two-phase merge (moon's design 2026-11-04): phase 1 = pick sources,
+     *  tap "Merge to" → sources locked in (red outline = will be deleted),
+     *  phase 2 = pick the target. Empty = not in merge mode. */
+    val mergeSources = remember { mutableStateListOf<Long>() }
 
     // Real filter id-sets, loaded when the filter changes.
     var qualityIds by remember { mutableStateOf<Set<Long>?>(null) }
@@ -177,6 +181,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     fun exitSelectMode() {
         selectMode = false
         selectedIds.clear()
+        mergeSources.clear()
     }
 
     fun setHidden(ids: List<Long>, hidden: Boolean) {
@@ -187,26 +192,40 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
         }
     }
 
-    /** Merge selected entries: move all streams/subs to the first one,
-     *  delete the rest. (moon's idea 2026-11-01) */
-    fun mergeSelected() {
-        val ids = selectedIds.toList()
-        if (ids.size < 2) return
+    /** Phase 1 → 2: lock selected as merge sources (red outline = will be deleted),
+     *  then pick the target. (moon's two-phase design 2026-11-04) */
+    fun startMergeTo() {
+        if (selectedIds.isEmpty()) return
+        mergeSources.clear()
+        mergeSources.addAll(selectedIds)
+        selectedIds.clear()
+        // selectMode stays on — user now picks the target (can switch tabs).
+    }
+
+    /** Phase 2: merge the locked sources into the selected target. */
+    fun confirmMerge() {
+        val targetId = selectedIds.firstOrNull() ?: return
+        val sources = mergeSources.toList().filter { it != targetId }
+        if (sources.isEmpty()) return
         scope.launch {
-            val targetId = ids.first()
             withContext(Dispatchers.IO) {
-                for (id in ids.drop(1)) {
+                for (id in sources) {
                     db.streamDao().moveAllToMedia(id, targetId)
                     db.subtitleDao().moveAllToMedia(id, targetId)
                     db.mediaDao().deleteById(id)
                 }
                 db.mediaDao().refreshAggregates(targetId, System.currentTimeMillis())
+                // Safety net: delete any entries left empty (moon's 2026-11-04).
+                db.mediaDao().deleteEmpty()
             }
-            val n = ids.size - 1
-            MsToast.show("Merged $n ${if (n == 1) "entry" else "entries"}")
+            MsToast.show("Merged ${sources.size} ${if (sources.size == 1) "entry" else "entries"}")
             exitSelectMode()
         }
     }
+
+    /** Merge selected entries: move all streams/subs to the first one,
+     *  delete the rest. (moon's idea 2026-11-01) */
+    // (old mergeSelected removed — replaced by two-phase startMergeTo/confirmMerge above)
 
     /** Delete selected entries and their streams/subs. */
     fun deleteSelected() {
@@ -264,7 +283,8 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 selected = segment,
                 onSelect = {
                     segment = it
-                    exitSelectMode()
+                    // Don't exit select mode on tab switch (moon's bug 2026-11-04:
+                    // selection must survive to allow cross-tab merge).
                 },
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
@@ -342,11 +362,19 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                             item = item,
                             selectMode = selectMode,
                             isSelected = isSelected,
+                            isMergeSource = mergeSources.contains(item.id),
                             inHiddenTab = inHiddenTab,
                             onClick = {
                                 if (selectMode) {
-                                    if (isSelected) selectedIds.remove(item.id)
-                                    else selectedIds.add(item.id)
+                                    // In phase 2 (mergeSources locked), can't pick a source as target.
+                                    if (mergeSources.isNotEmpty() && mergeSources.contains(item.id)) {
+                                        MsToast.show("This entry is marked for merge")
+                                    } else if (isSelected) selectedIds.remove(item.id)
+                                    else {
+                                        // Phase 2: single target only.
+                                        if (mergeSources.isNotEmpty()) selectedIds.clear()
+                                        selectedIds.add(item.id)
+                                    }
                                 } else {
                                     onOpenDetail(item.id)
                                 }
@@ -382,9 +410,8 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(MsColors.SurfaceAlt)
-                    .border(1.dp, MsColors.Divider, RoundedCornerShape(24.dp))
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF1C1C1E))
                     .padding(horizontal = 8.dp, vertical = 8.dp)
                     .horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically,
@@ -392,31 +419,35 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 BareIconButton(
                     icon = Icons.Filled.Close,
                     contentDescription = "Cancel selection",
-                    tint = MsColors.TextSecondary,
+                    tint = Color(0xFF98989F),
                     onClick = { exitSelectMode() },
                 )
                 Text(
                     "${selectedIds.size} selected",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MsColors.TextPrimary,
+                    color = Color.White,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
                 )
-                LimeTextButton(
-                    text = if (selectedIds.size == filtered.size && filtered.isNotEmpty()) "Deselect" else "Select All",
-                    fontSize = 13,
-                    onClick = {
-                        selectedIds.clear()
-                        if (selectedIds.size != filtered.size) {
-                            selectedIds.addAll(filtered.map { it.id })
-                        }
-                    },
-                )
-                val hideColor = if (inHiddenTab) Color(0xFF059669) else Color(0xFFDC2626)
+                // iOS blue text button (moon's request 2026-11-04).
+                TextButton(onClick = {
+                    selectedIds.clear()
+                    if (selectedIds.size != filtered.size) {
+                        selectedIds.addAll(filtered.map { it.id })
+                    }
+                }) {
+                    Text(
+                        text = if (selectedIds.size == filtered.size && filtered.isNotEmpty()) "Deselect" else "Select All",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MsColors.Accent,
+                    )
+                }
+                // iOS red pill for Hide/Unhide.
+                val hideColor = if (inHiddenTab) Color(0xFF30D158) else Color(0xFFFF453A)
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(if (selectedIds.isNotEmpty()) hideColor else MsColors.TrackOff)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (selectedIds.isNotEmpty()) hideColor else Color(0xFF39393B))
                         .clickable(enabled = selectedIds.isNotEmpty()) {
                             setHidden(selectedIds.toList(), !inHiddenTab)
                         }
@@ -439,22 +470,43 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                         )
                     }
                 }
-                // Merge: needs 2+ selected (moon's idea 2026-11-01).
+                // Two-phase merge (moon's design 2026-11-04):
+                // Phase 1: "Merge to" (1+ selected) → locks sources, pick target next.
+                // Phase 2: "Merge" (target picked) → completes.
+                // iOS blue pill for Merge (moon's request 2026-11-04).
                 Spacer(Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(if (selectedIds.size >= 2) Color(0xFF7C3AED) else MsColors.TrackOff)
-                        .clickable(enabled = selectedIds.size >= 2) { mergeSelected() }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "Merge (${selectedIds.size})",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                    )
+                if (mergeSources.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (selectedIds.isNotEmpty()) MsColors.Accent else Color(0xFF39393B))
+                            .clickable(enabled = selectedIds.isNotEmpty()) { startMergeTo() }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "Merge to (${selectedIds.size})",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (selectedIds.isNotEmpty()) MsColors.Accent else Color(0xFF39393B))
+                            .clickable(enabled = selectedIds.isNotEmpty()) { confirmMerge() }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "Merge (${mergeSources.size} → 1)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                        )
+                    }
                 }
                 // Delete: needs 1+ selected.
                 Spacer(Modifier.width(8.dp))
@@ -499,10 +551,10 @@ private fun MsSegmentedControl(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(46.dp)
-            .clip(CircleShape)
-            .background(MsColors.Surface)
-            .padding(4.dp),
+            .height(40.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF1C1C1E))
+            .padding(2.dp),
     ) {
         val tabWidth = maxWidth / segments.size
         val thumbOffset by animateDpAsState(
@@ -513,12 +565,13 @@ private fun MsSegmentedControl(
             ),
             label = "segmentThumb",
         )
+        // iOS-style: selected thumb is lighter gray (moon's pick 2026-11-04).
         Box(
             modifier = Modifier
                 .offset(x = thumbOffset)
-                .size(width = tabWidth, height = 38.dp)
-                .clip(CircleShape)
-                .background(MsColors.Accent),
+                .size(width = tabWidth, height = 36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF636366)),
         )
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             segments.forEachIndexed { i, label ->
@@ -527,16 +580,16 @@ private fun MsSegmentedControl(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .height(38.dp)
-                        .clip(CircleShape)
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
                         .clickable { onSelect(i) },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = label,
-                        color = if (isSel) MsColors.OnAccent else MsColors.TextSecondary,
-                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
-                        fontSize = 11.sp,
+                        color = Color.White,
+                        fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal,
+                        fontSize = 13.sp,
                         maxLines = 1,
                     )
                 }
@@ -551,6 +604,8 @@ private fun PosterCell(
     item: MediaItemEntity,
     selectMode: Boolean,
     isSelected: Boolean,
+    /** Red outline = marked as merge source, will be deleted (moon's 2026-11-04). */
+    isMergeSource: Boolean = false,
     inHiddenTab: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
@@ -569,8 +624,12 @@ private fun PosterCell(
                     .aspectRatio(2f / 3f)
                     .clip(RoundedCornerShape(14.dp))
                     .border(
-                        width = if (isSelected) 2.dp else 0.dp,
-                        color = if (isSelected) MsColors.Accent else Color.Transparent,
+                        width = if (isSelected || isMergeSource) 2.dp else 0.dp,
+                        color = when {
+                            isMergeSource -> Color(0xFFF44336)
+                            isSelected -> MsColors.Accent
+                            else -> Color.Transparent
+                        },
                         shape = RoundedCornerShape(14.dp),
                     )
                     .background(MsColors.SurfaceAlt),
@@ -684,12 +743,8 @@ private fun FilterSheet(
     sort: String, onSort: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    IosBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
     ) {
         MsSheetContent(title = "Filters", scrollable = true) {
             FilterRow("Quality", listOf("Any", "4K", "1080p", "720p", "480p"), quality, onQuality)

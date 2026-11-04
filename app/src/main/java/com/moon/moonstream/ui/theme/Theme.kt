@@ -58,6 +58,14 @@ object MsColors {
         get() = if (AppUiState.amoled) Color(0xFF2A2A2A) else Color(0xFF3A4356)
     val Divider: Color
         get() = if (AppUiState.amoled) Color(0xFF1C1C1C) else Color(0xFF232A38)
+    /** Hairline card border for AMOLED (moon's request 2026-11-03):
+     *  pure black melts cards together, so a 1dp white-at-8% outline
+     *  defines boundaries without killing the AMOLED look.
+     *  Off when AMOLED is off, or when the user disables the toggle. */
+    val CardBorder: Color
+        get() = if (AppUiState.amoled && AppUiState.amoledCardBorders)
+                    Color.White.copy(alpha = 0.08f)
+                else Color.Transparent
 }
 
 object MsRadii {
@@ -94,9 +102,11 @@ val Redaction35 = FontFamily(
     Font(R.font.redaction35_bold, FontWeight.Bold),
 )
 
+/** Public extension: apply Doto display font to any TextStyle. */
+fun TextStyle.doto() = copy(fontFamily = Doto)
+
 private fun Typography.withBrandFonts(): Typography {
     fun TextStyle.inter() = copy(fontFamily = Inter)
-    fun TextStyle.doto() = copy(fontFamily = Doto)
     return copy(
         displayLarge = displayLarge.doto(),
         displayMedium = displayMedium.doto(),

@@ -2,6 +2,7 @@ package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
+import com.moon.moonstream.ui.components.IosBottomSheet
 import com.moon.moonstream.ui.components.MsTextField
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -38,9 +39,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -50,10 +55,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -95,6 +98,11 @@ import com.moon.moonstream.index.scan.ScanUiState
 import com.moon.moonstream.ui.components.AnimeBadge
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.FixMode
+import com.moon.moonstream.ui.components.IosActionSheet
+import com.moon.moonstream.ui.components.IosContextMenu
+import com.moon.moonstream.ui.components.IosSheetButton
+import com.moon.moonstream.ui.components.rememberAnimeCheckIcon
+import com.moon.moonstream.ui.components.rememberDeleteIcon
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MetadataFixSheet
@@ -235,7 +243,11 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
             ChannelRowCache.rows = result
             ChannelRowCache.version = ScanUiState.channelListVersion.value
         } catch (e: Exception) {
-            MsToast.show("Couldn't load channels")
+            // Only toast if we have nothing to show (moon's bug 2026-11-04:
+            // transient failure toasted even though retry succeeded seconds later).
+            if (channels.isNullOrEmpty() && ChannelRowCache.rows.isNullOrEmpty()) {
+                MsToast.show("Couldn't load channels")
+            }
         } finally {
             if (!silent) loading = false
         }
@@ -425,6 +437,14 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 )
             }
 
+            item(key = "addCustomContent") {
+                LimePillButton(
+                    text = "＋ Add Custom Content",
+                    onClick = { onCreateEntry(null) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
             item(key = "unmatchedSearch") {
                 com.moon.moonstream.ui.components.MsTextField(
                     value = unmatchedQuery,
@@ -445,8 +465,14 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MsColors.TextPrimary,
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(top = 8.dp, end = 8.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
+                    // Select button (moon's request 2026-11-04): enters select mode.
+                    // Title uses weight + ellipsis so large counts (1000+) don't overlap.
                     if (unmatchedSelectMode) {
                         LimeTextButton(
                             text = "Done (${unmatchedSelectedIds.size})",
@@ -454,6 +480,11 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                                 unmatchedSelectMode = false
                                 unmatchedSelectedIds.clear()
                             },
+                        )
+                    } else {
+                        LimeTextButton(
+                            text = "Select",
+                            onClick = { unmatchedSelectMode = true },
                         )
                     }
                 }
@@ -476,14 +507,6 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                         )
                     }
                 }
-            }
-
-            item(key = "addCustomContent") {
-                LimePillButton(
-                    text = "＋ Add Custom Content",
-                    onClick = { onCreateEntry(null) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
 
             items(filteredUnmatched, key = { it.id }) { f ->
@@ -544,30 +567,22 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
     }
 
     confirmRemove?.let { ch ->
-        AlertDialog(
-            onDismissRequest = { confirmRemove = null },
-            title = { Text("Remove channel?") },
-            text = {
-                Text(
-                    "This deletes every indexed title, file, unmatched entry and the " +
-                        "scan history for \"${ch.title}\". The channel itself stays " +
-                        "in your Telegram account.",
-                )
-            },
-            confirmButton = {
-                TextButton(
+        IosActionSheet(
+            onDismiss = { confirmRemove = null },
+            title = "Remove channel?",
+            message = "This deletes every indexed title, file, unmatched entry and the " +
+                "scan history for \"${ch.title}\". The channel itself stays " +
+                "in your Telegram account.",
+            buttons = listOf(
+                IosSheetButton(
+                    label = "Remove",
+                    isDestructive = true,
                     onClick = {
                         removeChannel(ch)
                         confirmRemove = null
                     },
-                ) { Text("Remove", color = DestructiveRed, fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmRemove = null }) { Text("Cancel") }
-            },
-            containerColor = MsColors.Surface,
-            titleContentColor = MsColors.TextPrimary,
-            textContentColor = MsColors.TextSecondary,
+                ),
+            ),
         )
     }
 
@@ -971,34 +986,38 @@ private fun ChannelRow(
                         tint = MsColors.TextSecondary,
                         onClick = onMenuOpen,
                     )
-                    DropdownMenu(
+                    // iOS context menu popup (moon's request 2026-11-04)
+                    val animeCheckIcon = rememberAnimeCheckIcon()
+                    val deleteIcon = rememberDeleteIcon()
+                    IosContextMenu(
                         expanded = menuOpen,
                         onDismissRequest = onMenuClose,
-                        modifier = Modifier.background(MsColors.Surface),
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Rescan from scratch") },
-                            onClick = { onMenuClose(); onRescanScratch() },
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (channel.isAnime) "Unmark as anime channel"
-                                    else "Mark as anime channel",
-                                )
-                            },
-                            onClick = { onMenuClose(); onToggleAnime() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Copy channel ID") },
-                            onClick = { onMenuClose(); onCopyId() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Remove channel", color = DestructiveRed) },
-                            onClick = { onMenuClose(); onRemove() },
-                            colors = MenuDefaults.itemColors(textColor = DestructiveRed),
-                        )
-                    }
+                        popupAlignment = Alignment.BottomEnd,
+                        anchorHeight = 48.dp,
+                        buttons = listOf(
+                            IosSheetButton(
+                                "Rescan from scratch",
+                                icon = Icons.Filled.Refresh,
+                                onClick = { onMenuClose(); onRescanScratch() },
+                            ),
+                            IosSheetButton(
+                                label = if (channel.isAnime) "Unmark as anime channel" else "Mark as anime channel",
+                                icon = animeCheckIcon,
+                                onClick = { onMenuClose(); onToggleAnime() },
+                            ),
+                            IosSheetButton(
+                                "Copy channel ID",
+                                icon = Icons.Filled.ContentCopy,
+                                onClick = { onMenuClose(); onCopyId() },
+                            ),
+                            IosSheetButton(
+                                "Remove channel",
+                                icon = deleteIcon,
+                                isDestructive = true,
+                                onClick = { onMenuClose(); onRemove() },
+                            ),
+                        ),
+                    )
                 }
             }
 
@@ -1108,19 +1127,35 @@ private fun UnmatchedFileRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
             )
-            // FlowRow: buttons wrap to the next line instead of squeezing
-            // "Link to Title" into 3 lines (moon's layout bug).
-            FlowRow(
+            // Icon buttons in moon's order (2026-11-04): Play, Copy Link,
+            // Create entry, Link to Title. Icons instead of text.
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                LimeTextButton(text = "Play", onClick = onPlay)
-                LimeTextButton(text = "Create entry", onClick = { onCreateEntry(file) })
-                LimeTextButton(text = "Copy Link", onClick = onCopyLink)
-                LimeTextButton(text = "Link to Title", onClick = onLinkToTitle)
+                BareIconButton(
+                    icon = Icons.Filled.PlayArrow,
+                    contentDescription = "Play",
+                    onClick = onPlay,
+                )
+                BareIconButton(
+                    icon = Icons.Filled.ContentCopy,
+                    contentDescription = "Copy Link",
+                    onClick = onCopyLink,
+                )
+                BareIconButton(
+                    icon = Icons.Filled.AddCircle,
+                    contentDescription = "Create entry",
+                    onClick = { onCreateEntry(file) },
+                )
+                BareIconButton(
+                    icon = Icons.Filled.Link,
+                    contentDescription = "Link to Title",
+                    onClick = onLinkToTitle,
+                )
             }
         }
     }
@@ -1163,17 +1198,13 @@ private fun AddChannelSheet(
     onAdd: (id: Long, title: String, isAnime: Boolean) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var channelId by remember { mutableStateOf("") }
     var isAnime by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
+    IosBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
     ) {
         MsSheetContent(title = "Add Channel") {
             Text(

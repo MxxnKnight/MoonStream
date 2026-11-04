@@ -1,6 +1,9 @@
 package com.moon.moonstream.ui.screens
 
 import com.moon.moonstream.ui.components.MsToast
+import com.moon.moonstream.ui.components.IosBottomSheet
+import com.moon.moonstream.ui.components.IosDialog
+import com.moon.moonstream.ui.components.IosSheetButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.rememberCoroutineScope
@@ -51,7 +54,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
@@ -61,10 +64,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -363,23 +364,28 @@ fun FileRow(
                     onClick = onCopy,
                 )
                 BareIconButton(
-                    icon = Icons.Filled.Delete,
+                    icon = Icons.Outlined.Delete,
                     contentDescription = "Delete",
                     onClick = onDelete,
                 )
             }
-            LimeTextButton(
-                text = "wrong title?",
-                onClick = onFixFile,
-                fontSize = 12,
-            )
-            // Manual episode assignment (moon's pick 2026-11-02).
-            if (onSetEpisode != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 LimeTextButton(
-                    text = "set episode",
-                    onClick = onSetEpisode,
+                    text = "wrong title?",
+                    onClick = onFixFile,
                     fontSize = 12,
                 )
+                // Manual episode assignment (moon's pick 2026-11-02).
+                if (onSetEpisode != null) {
+                    LimeTextButton(
+                        text = "set SxxExx",
+                        onClick = onSetEpisode,
+                        fontSize = 12,
+                    )
+                }
             }
         }
     }
@@ -440,23 +446,28 @@ fun StreamRow(
                     onClick = onCopy,
                 )
                 BareIconButton(
-                    icon = Icons.Filled.Delete,
+                    icon = Icons.Outlined.Delete,
                     contentDescription = "Delete",
                     onClick = onDelete,
                 )
             }
-            LimeTextButton(
-                text = "wrong title?",
-                onClick = onFixFile,
-                fontSize = 13,
-            )
-            // Manual episode assignment (moon's pick 2026-11-02).
-            if (onSetEpisode != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 LimeTextButton(
-                    text = "set episode",
-                    onClick = onSetEpisode,
+                    text = "wrong title?",
+                    onClick = onFixFile,
                     fontSize = 13,
                 )
+                // Manual episode assignment (moon's pick 2026-11-02).
+                if (onSetEpisode != null) {
+                    LimeTextButton(
+                        text = "set SxxExx",
+                        onClick = onSetEpisode,
+                        fontSize = 13,
+                    )
+                }
             }
         }
     }
@@ -527,7 +538,7 @@ fun SubtitleRow(
         }
         if (onDelete != null) {
             BareIconButton(
-                icon = Icons.Filled.Delete,
+                icon = Icons.Outlined.Delete,
                 contentDescription = "Remove subtitle",
                 onClick = onDelete,
             )
@@ -545,13 +556,22 @@ fun AttachSubtitleDialog(
 ) {
     var season by remember { mutableStateOf(sub.season?.toString() ?: "") }
     var episode by remember { mutableStateOf(sub.episode?.toString() ?: "") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MsColors.Surface,
-        titleContentColor = MsColors.TextPrimary,
-        textContentColor = MsColors.TextSecondary,
-        title = { Text("Attach subtitle") },
-        text = {
+    IosDialog(
+        onDismiss = onDismiss,
+        title = "Attach subtitle",
+        buttons = listOf(
+            IosSheetButton("Cancel", onClick = onDismiss),
+            IosSheetButton(
+                label = "Attach",
+                onClick = {
+                    onAttach(
+                        season.toIntOrNull(),
+                        episode.toIntOrNull(),
+                    )
+                },
+            ),
+        ),
+        content = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     sub.fileName,
@@ -578,23 +598,6 @@ fun AttachSubtitleDialog(
                 }
             }
         },
-        confirmButton = {
-            LimeTextButton(
-                text = "Attach",
-                fontSize = 14,
-                onClick = {
-                    onAttach(
-                        season.toIntOrNull(),
-                        episode.toIntOrNull(),
-                    )
-                },
-            )
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = MsColors.TextSecondary)
-            }
-        },
     )
 }
 
@@ -606,7 +609,6 @@ fun AddStreamSheet(
     onFetchFileName: suspend (link: String) -> String?,
     isSeries: Boolean = false,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var link by remember { mutableStateOf("") }
     var quality by remember { mutableStateOf("1080p") }
@@ -640,11 +642,8 @@ fun AddStreamSheet(
         }
     }
 
-    ModalBottomSheet(
+    IosBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
     ) {
         MsSheetContent(title = "Add Custom Stream") {
             Text(
@@ -728,7 +727,6 @@ fun AddSubtitleSheet(
     onFetchFileName: suspend (link: String) -> String?,
     onSaveLink: (link: String, language: String, fileName: String, season: Int?, episode: Int?) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var link by remember { mutableStateOf("") }
     var language by remember { mutableStateOf("Mal") }
@@ -738,11 +736,8 @@ fun AddSubtitleSheet(
     var fetching by remember { mutableStateOf(false) }
     var seasonText by remember { mutableStateOf("") }
     var episodeText by remember { mutableStateOf("") }
-    ModalBottomSheet(
+    IosBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
     ) {
         MsSheetContent(title = "Add Subtitle") {
             if (unlinked.isNotEmpty()) {

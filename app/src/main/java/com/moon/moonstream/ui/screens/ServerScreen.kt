@@ -11,6 +11,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -19,6 +21,10 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,7 +36,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,6 +47,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -47,21 +56,33 @@ import com.moon.moonstream.server.ServerTelemetry
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.moon.moonstream.index.db.MsDatabase
@@ -69,10 +90,13 @@ import com.moon.moonstream.ui.components.MsCard
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.Doto
 import com.moon.moonstream.ui.theme.MsColors
+import com.moon.moonstream.ui.theme.doto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * Server home screen.
@@ -179,6 +203,8 @@ fun ServerScreen(
 
         RecentlyAddedRow(onOpenLibrary = onOpenLibrary, onOpenDetail = onOpenDetail)
 
+        ContinueWatchingRow(onOpenDetail = onOpenDetail)
+
         Text(
             "Paste the manifest URL into Stremio or Nuvio to browse your library.",
             style = MaterialTheme.typography.bodySmall,
@@ -213,214 +239,387 @@ private fun MsSectionEyebrow(text: String) {
  * - The manifest drawer slides down inside the same card (separator line +
  *   tap-to-copy row) when the server is on — NoxMedia style.
  */
+/**
+ * Server card v4 — cinematic "Swipe to awaken" (moon's design 2026-11-04,
+ * v4 polish 2026-11-04: soft wipe, URL from behind, progress-tied glow).
+ *
+ * - Fixed card height (no OFF/ON jump).
+ * - SOFT WIPE: the pill is a light edge. ON content fades in left-to-right
+ *   as the pill moves (feathered, not hard-clipped — no mid-letter cuts).
+ *   OFF content fades out as the pill approaches. No ghosting.
+ * - URL is PART OF THE CARD: slides down from behind, rounded bottom
+ *   corners, top tucked behind the main card.
+ * - Static mesh-style gradient inside. Outline sheen runs only when
+ *   waking/wake, intensity tied to swipe progress (0=dark, 1=full glow).
+ * - Metrics (uptime/speed/session/total) clean layout, visible when ON.
+ * - 70% snap threshold both ways; left 20% magnetic catch. Swipe-only.
+ * - States: IDLE → STARTING → RUNNING → STOPPING → IDLE.
+ */
+private enum class ServerCardState { IDLE, STARTING, RUNNING, STOPPING }
+
+/** Soft horizontal wipe: content fades in left of [revealX], out right of it. */
+private fun Modifier.softWipe(revealX: Float, featherPx: Float, widthPx: Float) =
+    this.drawWithContent {
+        drawContent()
+        if (widthPx <= 0f) return@drawWithContent
+        val startFrac = ((revealX - featherPx) / widthPx).coerceIn(0f, 1f)
+        val endFrac = ((revealX + featherPx) / widthPx).coerceIn(0f, 1f)
+        drawRect(
+            brush = Brush.horizontalGradient(
+                0f to Color.Black,
+                startFrac to Color.Black,
+                endFrac to Color.Transparent,
+                1f to Color.Transparent,
+            ),
+            blendMode = BlendMode.DstIn,
+        )
+    }
+
+/** Inverse soft wipe: content fades in right of [revealX], out left of it. */
+private fun Modifier.softWipeInverse(revealX: Float, featherPx: Float, widthPx: Float) =
+    this.drawWithContent {
+        drawContent()
+        if (widthPx <= 0f) return@drawWithContent
+        val startFrac = ((revealX - featherPx) / widthPx).coerceIn(0f, 1f)
+        val endFrac = ((revealX + featherPx) / widthPx).coerceIn(0f, 1f)
+        drawRect(
+            brush = Brush.horizontalGradient(
+                0f to Color.Transparent,
+                startFrac to Color.Transparent,
+                endFrac to Color.Black,
+                1f to Color.Black,
+            ),
+            blendMode = BlendMode.DstIn,
+        )
+    }
+
 @Composable
 private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
-    // Looping sheen — created only to be read when ON.
     val sheen = rememberInfiniteTransition(label = "goldSheen")
     val sheenX by sheen.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
+        initialValue = 0f, targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(4200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse, // smooth back-and-forth, no jump
+            animation = tween(3000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
         ),
         label = "sheenX",
     )
-    // Slow drifting background glow.
-    val drift = rememberInfiniteTransition(label = "bgDrift")
-    val driftY by drift.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(6000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "driftY",
-    )
 
-    val borderBrush: Brush = if (on) {
-        // Bright band sweeps 0 -> 1 across the border; stops are clamped so
-        // the gradient stays valid at the sweep edges.
+    var cardState by remember { mutableStateOf(ServerCardState.IDLE) }
+    LaunchedEffect(on) {
+        cardState = if (on) ServerCardState.RUNNING else ServerCardState.IDLE
+    }
+
+    // Swipe-pill state.
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    var trackWidthPx by remember { mutableIntStateOf(0) }
+    var pillOffsetPx by remember { mutableFloatStateOf(0f) }
+    val pillWidthPx = with(density) { 68.dp.toPx() }
+    val featherPx = with(density) { 48.dp.toPx() }
+    val maxOffset = (trackWidthPx - pillWidthPx).coerceAtLeast(0f)
+
+    // Progress 0f (OFF) → 1f (ON), driven by the pill.
+    val progress = if (maxOffset > 0f) (pillOffsetPx / maxOffset).coerceIn(0f, 1f) else 0f
+    val widthPxF = trackWidthPx.toFloat()
+
+    // Sync pill if server flips externally (notification Stop button).
+    LaunchedEffect(on, maxOffset) {
+        if (maxOffset <= 0f) return@LaunchedEffect
+        val target = if (on) maxOffset else 0f
+        if (pillOffsetPx != target && cardState != ServerCardState.STARTING && cardState != ServerCardState.STOPPING) {
+            Animatable(pillOffsetPx).animateTo(target, tween(300)) { pillOffsetPx = value }
+        }
+    }
+
+    val dragState = rememberDraggableState { delta ->
+        pillOffsetPx = (pillOffsetPx + delta).coerceIn(0f, maxOffset)
+    }
+
+    // Border: dark when OFF, animated sheen when waking/ON.
+    // Intensity follows the swipe progress (moon's point 3).
+    val borderBrush: Brush = if (progress > 0.02f) {
         val c = sheenX
+        val a = progress.coerceIn(0f, 1f)
         Brush.linearGradient(
-            0.00f to MsColors.GlowDark,
-            (c - 0.30f).coerceIn(0.001f, 0.999f) to MsColors.GlowDeep,
-            c.coerceIn(0.001f, 0.999f) to MsColors.GlowLight,
-            (c + 0.30f).coerceIn(0.001f, 0.999f) to MsColors.GlowDeep,
-            1.00f to MsColors.GlowDark,
+            0.00f to MsColors.GlowDark.copy(alpha = a),
+            (c - 0.30f).coerceIn(0.001f, 0.999f) to MsColors.GlowDeep.copy(alpha = a),
+            c.coerceIn(0.001f, 0.999f) to MsColors.GlowLight.copy(alpha = a),
+            (c + 0.30f).coerceIn(0.001f, 0.999f) to MsColors.GlowDeep.copy(alpha = a),
+            1.00f to MsColors.GlowDark.copy(alpha = a),
         )
     } else {
         Brush.linearGradient(listOf(Color(0xFF26262C), Color(0xFF26262C)))
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
-            .background(borderBrush)
-            .padding(1.5.dp)
-            .clip(RoundedCornerShape(26.5.dp))
-            .clickable(onClick = onToggle),
-    ) {
-        // Premium ambient background: dark base, soft glow washing down from
-        // the top (not a centered ball), plus a thin top-edge highlight.
-        // matchParentSize so the layers cover the content Column exactly.
+    // Fixed card height.
+    val cardHeight = 240.dp
+    // URL visibility: slides from behind once the swipe is mostly complete.
+    val urlVisible = progress > 0.85f || cardState == ServerCardState.RUNNING
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Main card (z-index above URL).
         Box(
             modifier = Modifier
-                .matchParentSize()
+                .fillMaxWidth()
+                .zIndex(1f)
+                .clip(RoundedCornerShape(28.dp))
+                .background(borderBrush)
+                .padding(1.5.dp)
                 .clip(RoundedCornerShape(26.5.dp))
                 .background(Color(0xFF131316)),
         ) {
-            if (on) {
-                // Soft top-down ambient wash (vertical gradient fades evenly —
-                // it can't form a concentrated "ball" like a centered radial).
+            // Static mesh-style gradient (no drift animation — moon's point 3).
+            // Intensity follows progress.
+            if (progress > 0.02f) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                MsColors.GlowDeep.copy(alpha = 0.45f * progress),
+                                MsColors.GlowDeep.copy(alpha = 0.15f * progress),
+                                Color.Transparent,
+                            ),
+                            center = Offset(0.3f, 0.2f),
+                            radius = 800f,
+                        ),
+                    ),
+                )
+            }
+
+            // The swipe track.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(cardHeight)
+                    .onSizeChanged { trackWidthPx = it.width },
+            ) {
+                if (trackWidthPx > 0) {
+                    // OFF layer: fades out as the pill approaches (inverse wipe).
+                    // Overall alpha also tied to (1-progress) — no ghosting.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .softWipeInverse(pillOffsetPx, featherPx, widthPxF)
+                            .alpha((1f - progress).coerceIn(0f, 1f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        val label = when (cardState) {
+                            ServerCardState.STARTING -> "Starting…"
+                            ServerCardState.STOPPING -> "Stopping…"
+                            else -> "Swipe to awaken >>>"
+                        }
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
+                            color = MsColors.TextSecondary,
+                            modifier = Modifier.padding(start = 84.dp, end = 16.dp),
+                        )
+                    }
+
+                    // ON layer: fades in left-to-right as the pill moves (soft wipe).
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .softWipe(pillOffsetPx, featherPx, widthPxF)
+                            .alpha(progress.coerceIn(0f, 1f)),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(22.dp)
+                                .padding(end = 84.dp),
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            val statusLabel = when (cardState) {
+                                ServerCardState.STARTING -> "Server Starting"
+                                ServerCardState.STOPPING -> "Server Stopping"
+                                else -> "Server Awaked"
+                            }
+                            Text(
+                                statusLabel,
+                                style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
+                                color = Color.White,
+                            )
+                            Spacer(Modifier.height(14.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            ) {
+                                Column(horizontalAlignment = Alignment.Start) {
+                                    Text(
+                                        formatUptime(uptimeSecs),
+                                        style = MaterialTheme.typography.headlineMedium.copy(fontFamily = Doto),
+                                        color = Color.White,
+                                    )
+                                    Text("uptime", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
+                                }
+                                Column(horizontalAlignment = Alignment.Start) {
+                                    Text(
+                                        formatBytes(ServerTelemetry.averageSpeedBps()) + "/s",
+                                        style = MaterialTheme.typography.headlineMedium.copy(fontFamily = Doto),
+                                        color = Color.White,
+                                    )
+                                    Text("speed", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
+                                }
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color.Black.copy(alpha = 0.35f))
+                                    .padding(vertical = 10.dp, horizontal = 16.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            formatBytes(ServerTelemetry.sessionBytes),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = Color.White,
+                                        )
+                                        Text("session", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            formatBytes(ServerTelemetry.totalBytes),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = Color.White,
+                                        )
+                                        Text("all-time", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // The pill — the light edge.
+                // Color blends slowly from white to accent (moon's point 4).
+                val pillColor = androidx.compose.ui.graphics.lerp(
+                    Color.White.copy(alpha = 0.92f),
+                    MsColors.Accent,
+                    progress.coerceIn(0f, 1f),
+                )
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                0.00f to MsColors.GlowDeep.copy(alpha = 0.30f),
-                                (0.30f + driftY * 0.15f) to MsColors.GlowDeep.copy(alpha = 0.12f),
-                                (0.65f + driftY * 0.15f) to MsColors.GlowDeep.copy(alpha = 0.03f),
-                                1.00f to Color.Transparent,
-                            ),
+                        .offset { IntOffset(pillOffsetPx.roundToInt(), 0) }
+                        .width(68.dp)
+                        .fillMaxHeight()
+                        .padding(vertical = 10.dp, horizontal = 8.dp)
+                        .clip(RoundedCornerShape(34.dp))
+                        .background(pillColor)
+                        .draggable(
+                            state = dragState,
+                            orientation = Orientation.Horizontal,
+                            onDragStopped = {
+                                val fraction = if (maxOffset > 0f) pillOffsetPx / maxOffset else 0f
+                                scope.launch {
+                                    if (cardState == ServerCardState.IDLE) {
+                                        if (fraction >= 0.7f) {
+                                            cardState = ServerCardState.STARTING
+                                            Animatable(pillOffsetPx).animateTo(maxOffset, tween(300)) { pillOffsetPx = value }
+                                            onToggle()
+                                        } else {
+                                            val duration = if (fraction <= 0.2f) 150 else 300
+                                            Animatable(pillOffsetPx).animateTo(0f, tween(duration)) { pillOffsetPx = value }
+                                        }
+                                    } else if (cardState == ServerCardState.RUNNING) {
+                                        if (fraction <= 0.3f) {
+                                            cardState = ServerCardState.STOPPING
+                                            Animatable(pillOffsetPx).animateTo(0f, tween(300)) { pillOffsetPx = value }
+                                            onToggle()
+                                        } else {
+                                            Animatable(pillOffsetPx).animateTo(maxOffset, tween(300)) { pillOffsetPx = value }
+                                        }
+                                    }
+                                }
+                            },
                         ),
-                )
-                // Thin top highlight line.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.5.dp)
-                        .background(
-                            Brush.horizontalGradient(
-                                0.0f to Color.Transparent,
-                                0.5f to MsColors.GlowLight.copy(alpha = 0.55f),
-                                1.0f to Color.Transparent,
-                            ),
-                        ),
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // > icon that rotates to < when ON (moon's point 2).
+                    // Rotation follows the swipe progress: 0° (>) → 180° (<).
+                    androidx.compose.material3.Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Filled.ChevronRight,
+                        contentDescription = if (progress > 0.5f) "Swipe to stop" else "Swipe to awaken",
+                        tint = if (progress > 0.5f) Color.White else Color.Black.copy(alpha = 0.7f),
+                        modifier = Modifier
+                            .size(32.dp)
+                            .graphicsLayer {
+                                rotationZ = progress * 180f
+                            },
+                    )
+                }
             }
         }
-        if (!on) {
-            // NoxMedia-style sleep state: the whole card is the button.
+
+        // URL: part of the card, slides from behind (moon's point 1).
+        // Rounded bottom corners like the card, top tucked behind.
+        AnimatedVisibility(
+            visible = urlVisible,
+            enter = fadeIn(tween(250)) + slideInVertically(tween(350)) { -it },
+            exit = fadeOut(tween(200)) + slideOutVertically(tween(300)) { -it },
+        ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 64.dp),
-                contentAlignment = Alignment.Center,
+                    .padding(horizontal = 8.dp)
+                    .offset(y = (-8).dp)
+                    .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
+                    .background(Color(0xFF1A1A1E))
+                    .border(
+                        1.dp,
+                        Color.White.copy(alpha = 0.08f),
+                        RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+                    ),
             ) {
-                Text(
-                    "In Sleep mode",
-                    style = MaterialTheme.typography.headlineSmall.copy(fontFamily = Doto),
-                    color = MsColors.TextSecondary,
-                )
+                ManifestDrawer()
             }
-        } else {
-            // Parent Column so URL sits BELOW content (was Box sibling → overlap).
-            Column(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(22.dp),
-            ) {
-                // Top row: title left, "sleep" (stop) right.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Server Awaked",
-                        style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
-                        color = Color.White,
-                    )
-                    Text(
-                        "sleep",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MsColors.TextSecondary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(onClick = onToggle)
-                            .padding(8.dp),
-                    )
-                }
-                Spacer(Modifier.height(16.dp))
-                // Uptime + speed, NoxMedia-style big Doto numbers.
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(
-                            formatUptime(uptimeSecs),
-                            style = MaterialTheme.typography.displaySmall.copy(fontFamily = Doto),
-                            color = Color.White,
-                        )
-                        Text(
-                            "uptime",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MsColors.TextSecondary,
-                        )
-                    }
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(
-                            formatBytes(ServerTelemetry.speedBps()) + "/s",
-                            style = MaterialTheme.typography.displaySmall.copy(fontFamily = Doto),
-                            color = Color.White,
-                        )
-                        Text(
-                            "speed",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MsColors.TextSecondary,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(14.dp))
-                // Session / all-time in a darker inner box.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color.Black.copy(alpha = 0.35f))
-                        .padding(vertical = 12.dp, horizontal = 16.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "session ${formatBytes(ServerTelemetry.sessionBytes)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MsColors.TextSecondary,
-                        )
-                        Text(
-                            "·",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MsColors.TextSecondary,
-                        )
-                        Text(
-                            "all-time ${formatBytes(ServerTelemetry.totalBytes)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MsColors.TextSecondary,
-                        )
-                    }
-                }
-            }
-            // URL section: darker, pushed below a separator.
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(Color.White.copy(alpha = 0.08f)),
-            )
-            ManifestDrawer()
-            } // parent Column
         }
     }
+}
+
+
+/**
+ * URL text with a fast scramble/decode animation (moon's request 2026-11-04):
+ * random chars resolve left-to-right into the real URL, ~600ms.
+ */
+@Composable
+private fun ScrambleUrlText(url: String, modifier: Modifier = Modifier) {
+    var display by remember { mutableStateOf(url) }
+    LaunchedEffect(url) {
+        if (url.isEmpty()) { display = ""; return@LaunchedEffect }
+        val pool = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        val structural = setOf(':', '/', '.', '-', '_', '?', '=', '&', '%', '#')
+        val steps = 10
+        repeat(steps) { step ->
+            val progress = (step + 1) / steps.toFloat()
+            val resolved = (url.length * progress).toInt()
+            display = buildString {
+                url.forEachIndexed { i, c ->
+                    when {
+                        i < resolved -> append(c)
+                        c in structural -> append(c)
+                        else -> append(pool.random())
+                    }
+                }
+            }
+            delay(60)
+        }
+        display = url
+    }
+    Text(
+        "URL: $display",
+        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Doto),
+        color = MsColors.TextSecondary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
+    )
 }
 
 /**
@@ -458,14 +657,7 @@ private fun ManifestDrawer() {
             .padding(18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            "URL: $url",
-            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Doto),
-            color = MsColors.TextSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        ScrambleUrlText(url = url, modifier = Modifier.weight(1f))
         // NoxMedia-style "copied" feedback (moon's request 2026-11-01).
         AnimatedVisibility(
             visible = copied,
@@ -548,9 +740,16 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
             .background(
+                // Richer "mesh-like" gradient: layered radial glows over a
+                // linear base (moon's request 2026-11-03). True mesh gradients
+                // aren't in Compose, this is the closest.
                 Brush.linearGradient(
-                    // Follows the theme accent (moon's request 2026-11-01).
-                    listOf(MsColors.GlowLight, MsColors.GlowDeep, MsColors.Bg),
+                    listOf(
+                        MsColors.GlowLight,
+                        MsColors.GlowDeep,
+                        MsColors.GlowDeep.copy(alpha = 0.7f),
+                        MsColors.Bg,
+                    ),
                 ),
             )
             .clickable(onClick = onOpenLibrary)
@@ -561,8 +760,15 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(26.5.dp))
                 .background(
-                    Brush.linearGradient(
-                        listOf(MsColors.GlowDeep.copy(alpha = 0.55f), MsColors.Bg, MsColors.Bg),
+                    Brush.radialGradient(
+                        colors = listOf(
+                            MsColors.GlowDeep.copy(alpha = 0.75f),
+                            MsColors.GlowDeep.copy(alpha = 0.35f),
+                            MsColors.Bg,
+                            MsColors.Bg,
+                        ),
+                        center = androidx.compose.ui.geometry.Offset(0.15f, 0.1f),
+                        radius = 900f,
                     ),
                 )
                 .padding(20.dp),
@@ -576,21 +782,21 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "Library",
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleMedium.doto(),
                             fontWeight = FontWeight.Medium,
-                            color = Color(0xFFF3E8FF),
+                            color = Color.White,
                         )
                         Text(
                             "›",
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleLarge.doto(),
                             fontWeight = FontWeight.Light,
-                            color = Color(0xCCE9D5FF),
+                            color = MsColors.TextSecondary,
                             modifier = Modifier.padding(start = 4.dp),
                         )
                     }
                     Text(
                         text = formatBytes(stats.sizeBytes),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyMedium.doto(),
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White,
                         maxLines = 1,
@@ -603,22 +809,22 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                 ) {
                     Text(
                         text = formatCount(files.value.toInt()),
-                        style = MaterialTheme.typography.displaySmall,
+                        style = MaterialTheme.typography.displaySmall.doto(),
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                     )
                     Text(
                         text = "files",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFFE9D5FF),
+                        style = MaterialTheme.typography.bodyMedium.doto(),
+                        color = MsColors.TextSecondary,
                         modifier = Modifier.padding(bottom = 6.dp),
                     )
                     Spacer(Modifier.weight(1f))
                     Text(
                         text = "${formatCount(titles.value.toInt())} titles",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyMedium.doto(),
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFE9D5FF),
+                        color = MsColors.TextSecondary,
                         modifier = Modifier.padding(bottom = 6.dp),
                     )
                 }
@@ -628,8 +834,8 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                     text = "${formatCount(stats.movies)} Movies  ·  " +
                         "${formatCount(stats.shows)} Shows  ·  " +
                         "${formatCount(stats.episodes)} Ep",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFDDD6FE),
+                    style = MaterialTheme.typography.bodySmall.doto(),
+                    color = MsColors.TextSecondary,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
@@ -641,7 +847,7 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                     Text(
                         text = "New: " + latest.take(3).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFDDD6FE).copy(alpha = 0.75f),
+                        color = MsColors.TextSecondary.copy(alpha = 0.75f),
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis,
@@ -772,6 +978,126 @@ private fun RecentlyAddedRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Continue Watching row: horizontal poster strip with progress bars,
+ * under Recently Added (moon's request 2026-11-04).
+ */
+@Composable
+private fun ContinueWatchingRow(
+    onOpenDetail: (Long) -> Unit,
+) {
+    val context = LocalContext.current
+    var items by remember { mutableStateOf<List<com.moon.moonstream.index.db.WatchProgressEntity>>(emptyList()) }
+    var refreshTick by remember { mutableStateOf(0) }
+    // Reload on every resume (moon's bug 2026-11-04: row didn't refresh after watching).
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    val lifecycle = lifecycleOwner.lifecycle
+    androidx.compose.runtime.DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refreshTick++
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(refreshTick) {
+        withContext(Dispatchers.IO) {
+            val db = com.moon.moonstream.index.db.MsDatabase.get(context)
+            // Only items with actual progress (position > 10s, not finished)
+            val recent = db.watchProgressDao().recent(15).filter {
+                it.positionMs > 10_000L && (it.durationMs <= 0L || it.positionMs < it.durationMs * 0.9f)
+            }.take(10)
+            withContext(Dispatchers.Main) { items = recent }
+        }
+    }
+    if (items.isEmpty()) return
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "Continue watching",
+            style = MaterialTheme.typography.titleMedium.copy(fontFamily = Doto),
+            color = MsColors.TextPrimary,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items.forEach { w ->
+                Column(modifier = Modifier.width(110.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .width(110.dp)
+                            .height(160.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MsColors.SurfaceAlt)
+                            .clickable(onClick = { onOpenDetail(w.mediaId) }),
+                    ) {
+                        if (!w.posterUrl.isNullOrBlank()) {
+                            coil.compose.AsyncImage(
+                                model = w.posterUrl,
+                                contentDescription = w.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    w.title.take(1).uppercase(),
+                                    style = MaterialTheme.typography.headlineLarge.copy(fontFamily = Doto),
+                                    color = MsColors.TextSecondary,
+                                )
+                            }
+                        }
+                        // Progress line at bottom of poster (moon's design)
+                        val progress = if (w.durationMs > 0L) {
+                            (w.positionMs.toFloat() / w.durationMs.toFloat()).coerceIn(0f, 1f)
+                        } else 0f
+                        if (progress > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .background(Color.Black.copy(alpha = 0.5f)),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(progress)
+                                        .fillMaxHeight()
+                                        .background(MsColors.Accent),
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        w.title,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MsColors.TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (!w.episodeLabel.isNullOrBlank()) {
+                        Text(
+                            w.episodeLabel,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MsColors.TextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
