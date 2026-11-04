@@ -635,7 +635,6 @@ fun CreateScreen(
                     }
                 },
             )
-            )
         }
         if (isSplit) {
             splitLinks.forEachIndexed { i, link ->
