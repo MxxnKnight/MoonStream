@@ -1429,10 +1429,15 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                             style = MaterialTheme.typography.bodyMedium,
                             color = MsColors.TextPrimary,
                         )
-                        androidx.compose.material3.LinearProgressIndicator(
-                            progress = p / 100f,
+                        // M3 Expressive wavy thick progress (moon's pick 2026-11-04).
+                        androidx.compose.material3.LinearWavyProgressIndicator(
+                            progress = { p / 100f },
                             modifier = Modifier.fillMaxWidth(),
                             color = MsColors.Accent,
+                            trackColor = MsColors.TrackOff,
+                            amplitude = 8f,
+                            wavelength = 24.dp,
+                            waveSpeed = 24.dp,
                         )
                     } else if (updateState is UpdateState.Done) {
                         Text(

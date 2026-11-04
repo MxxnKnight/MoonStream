@@ -2017,12 +2017,10 @@ fun PlayerScreen(
                     .background(Color.Black.copy(alpha = 0.45f)),
                 contentAlignment = Alignment.Center,
             ) {
-                // Material3 loader, mpvex-style 96dp (replaces the small default).
-                CircularProgressIndicator(
+                // M3 Expressive morphing-shape loader (moon's pick 2026-11-04).
+                androidx.compose.material3.LoadingIndicator(
                     modifier = Modifier.size(96.dp),
                     color = MsColors.Accent,
-                    trackColor = Color.White.copy(alpha = 0.18f),
-                    strokeWidth = 6.dp,
                 )
             }
         }
