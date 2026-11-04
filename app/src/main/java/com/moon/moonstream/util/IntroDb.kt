@@ -29,17 +29,24 @@ object IntroDb {
      * @param imdbId e.g. "tt0944947"
      * @param season Season number (null for movies)
      * @param episode Episode number (null for movies)
+     * @param isMovie If true, passes is_movie=true and drops season/episode
+     *                (per IntroDB docs: movies are keyed by IMDb id alone).
      */
     suspend fun getSegments(
         imdbId: String,
         season: Int?,
         episode: Int?,
+        isMovie: Boolean = false,
     ): Segments? = withContext(Dispatchers.IO) {
         try {
             val url = buildString {
                 append("$BASE/segments?imdb_id=$imdbId")
-                if (season != null) append("&season=$season")
-                if (episode != null) append("&episode=$episode")
+                if (isMovie) {
+                    append("&is_movie=true")
+                } else {
+                    if (season != null) append("&season=$season")
+                    if (episode != null) append("&episode=$episode")
+                }
             }
             AppLog.i(TAG, "Fetching: $url")
             val conn = (URL(url).openConnection() as HttpURLConnection).apply {
@@ -48,9 +55,24 @@ object IntroDb {
                 setRequestProperty("User-Agent", "MoonStream")
             }
             try {
-                if (conn.responseCode == 404) {
-                    AppLog.i(TAG, "IntroDB: no data for $imdbId S$season E$episode")
-                    return@withContext null
+                when (conn.responseCode) {
+                    404 -> {
+                        AppLog.i(TAG, "IntroDB: no data for $imdbId S$season E$episode")
+                        return@withContext null
+                    }
+                    400 -> {
+                        // Bad request = our query was malformed (e.g. missing
+                        // season/episode for TV). Distinct from network failure.
+                        val err = try {
+                            conn.errorStream?.bufferedReader()?.readText()
+                        } catch (e: Exception) { null }
+                        AppLog.w(TAG, "IntroDB 400 bad request for $imdbId S$season E$episode: $err")
+                        return@withContext null
+                    }
+                    429 -> {
+                        AppLog.w(TAG, "IntroDB 429 rate limited")
+                        return@withContext null
+                    }
                 }
                 if (conn.responseCode != 200) {
                     AppLog.w(TAG, "IntroDB HTTP ${conn.responseCode}")

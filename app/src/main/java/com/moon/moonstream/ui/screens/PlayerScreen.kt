@@ -1448,11 +1448,17 @@ fun PlayerScreen(
         LaunchedEffect(mediaId, currentGroup?.episode) {
             if (skipFetched) return@LaunchedEffect
             skipFetched = true
-            val ep = currentGroup?.episode
+            // Season/episode fallback chain (moon's fix 2026-11-04): currentGroup
+            // can be null (e.g. movies have no season/episode), so fall back to
+            // the stream file's own values from the DB.
+            val currentFile = orderedFiles.firstOrNull { it.id == streamFileId }
+            val season = currentGroup?.season ?: currentFile?.season
+            val ep = currentGroup?.episode ?: currentFile?.episode
             val media = try {
                 withContext(Dispatchers.IO) { db.mediaDao().getById(mediaId) }
             } catch (e: Exception) { null }
             val isAnime = media?.type == "anime"
+            val isMovie = media?.type == "movie"
             // Anime → AniSkip via AniList ID (mapped from Kitsu at index).
             if (isAnime && ep != null && !media?.anilistId.isNullOrBlank()) {
                 val durSecs = duration.coerceAtLeast(1L) / 1000
@@ -1462,11 +1468,18 @@ fun PlayerScreen(
             // Series/movies → IntroDB via IMDb ID.
             val imdb = media?.imdbId
             if (!imdb.isNullOrBlank()) {
-                introSegs = IntroDb.getSegments(
-                    imdbId = imdb,
-                    season = currentGroup?.season,
-                    episode = ep,
-                )
+                if (!isMovie && (season == null || ep == null)) {
+                    // Can't query IntroDB for TV without season+episode —
+                    // it would 400. Log why instead of a silent failure.
+                    AppLog.i("PLAYER", "Skip: no season/episode for series, IntroDB skipped (S=$season E=$ep)")
+                } else {
+                    introSegs = IntroDb.getSegments(
+                        imdbId = imdb,
+                        season = if (isMovie) null else season,
+                        episode = if (isMovie) null else ep,
+                        isMovie = isMovie,
+                    )
+                }
             } else {
                 AppLog.i("PLAYER", "Skip: no anilistId/imdbId, no button")
             }
