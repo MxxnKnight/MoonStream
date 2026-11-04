@@ -48,6 +48,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -408,14 +409,36 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                         val label = when (cardState) {
                             ServerCardState.STARTING -> "Starting…"
                             ServerCardState.STOPPING -> "Stopping…"
-                            else -> "Swipe to awaken >>>"
+                            else -> null
                         }
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
-                            color = MsColors.TextSecondary,
-                            modifier = Modifier.padding(start = 84.dp, end = 16.dp),
-                        )
+                        if (label != null) {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
+                                color = MsColors.TextSecondary,
+                                modifier = Modifier.padding(start = 84.dp, end = 16.dp),
+                            )
+                        } else {
+                            // Swipe hint: Doto text + arrow icon (moon's design 2026-11-05).
+                            // Fades as the pill approaches (inverse wipe + alpha above).
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(start = 84.dp, end = 16.dp),
+                            ) {
+                                Text(
+                                    "Swipe to awaken",
+                                    style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
+                                    color = MsColors.TextPrimary,
+                                )
+                                androidx.compose.material3.Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Filled.ArrowForward,
+                                    contentDescription = null,
+                                    tint = MsColors.TextPrimary,
+                                    modifier = Modifier.size(28.dp),
+                                )
+                            }
+                        }
                     }
 
                     // ON layer: fades in left-to-right as the pill moves (soft wipe).
