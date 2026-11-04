@@ -125,7 +125,10 @@ dependencies {
 
     // Cloudy: backdrop blur for the bottom nav pill (moon's request 2026-11-04).
     // Classic frosted glass, not liquid glass.
-    implementation 'com.github.skydoves:cloudy:1.0.0-alpha01'
+    // Exclude runtime-retain (needs Compose 1.7+, we pin 1.6.1).
+    implementation('com.github.skydoves:cloudy:1.0.0-alpha01') {
+        exclude group: 'androidx.compose.runtime', module: 'runtime-retain'
+    }
 
     // Room: on-phone library database (Phase 3 indexing)
     implementation 'androidx.room:room-runtime:2.6.1'
