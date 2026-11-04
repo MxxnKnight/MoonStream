@@ -72,10 +72,28 @@ make install-libs >> "$SRC/make.log" 2>&1
 
 LIBS="$SRC/android-libs/$ABI_DIR"
 mkdir -p "$OUT/$ABI_DIR"
+# LINKING — this is where the v1 build broke (moon's bug 2026-11-04:
+# "Dolby still fails"). clang++ links the C++ runtime DYNAMICALLY by default,
+# so the first .so needed libc++_shared.so, which is not in the APK; dlopen
+# failed, FfmpegLibrary.isAvailable() returned false, the player quietly fell
+# back to MediaCodec and EAC3 died exactly as before. FFmpeg and the JNI shim
+# are plain C (no std::, no exceptions, no RTTI), so the runtime is dropped
+# entirely instead of embedding ~300 KB of libc++_static:
+#   -nostdlib++        no implicit -lc++ (nothing in the shim needs it)
+#   --no-undefined     a missing symbol fails the LINK, not the phone
+#   --exclude-libs,ALL keep FFmpeg's symbols out of the export table
 "$TOOLCHAIN/$CROSS$API-clang++" -shared -O2 -fPIC -std=c++11 \
     -o "$OUT/$ABI_DIR/libffmpegJNI.so" "$JNI/ffmpeg_jni.cc" \
     -I"$SRC" -L"$LIBS" -lavcodec -lswresample -lavutil -llog \
-    -Wl,-Bsymbolic -Wl,--gc-sections -Wl,-z,max-page-size=16384 $EXTRA_LDFLAGS -s
+    -nostdlib++ -Wl,--no-undefined \
+    -Wl,-Bsymbolic -Wl,--gc-sections -Wl,--exclude-libs,ALL \
+    -Wl,-z,max-page-size=16384 $EXTRA_LDFLAGS -s
+
+# Fail loudly if a libc++ dependency ever comes back.
+if readelf -d "$OUT/$ABI_DIR/libffmpegJNI.so" | grep -q 'NEEDED.*libc++_shared'; then
+    echo "ERROR: $ABI_DIR/libffmpegJNI.so still links libc++_shared.so — it will not load on device" >&2
+    exit 1
+fi
 
 echo "wrote $OUT/$ABI_DIR/libffmpegJNI.so"
 ls -l "$OUT/$ABI_DIR/libffmpegJNI.so"
