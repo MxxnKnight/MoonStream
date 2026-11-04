@@ -703,17 +703,17 @@ fun MsDropdown(
             )
         }
         // iOS action sheet instead of dropdown (moon's request 2026-11-04)
-        IosActionSheet(
-            visible = expanded,
-            onDismiss = { expanded = false },
-            buttons = options.map { option ->
-                IosSheetButton(
-                    label = option,
-                    // Selected option gets a checkmark via the label
-                    onClick = { onSelect(option); expanded = false },
-                )
-            },
-        )
+        if (expanded) {
+            IosActionSheet(
+                onDismiss = { expanded = false },
+                buttons = options.map { option ->
+                    IosSheetButton(
+                        label = option,
+                        onClick = { onSelect(option); expanded = false },
+                    )
+                },
+            )
+        }
     }
 }
 

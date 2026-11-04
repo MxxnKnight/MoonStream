@@ -972,18 +972,20 @@ private fun ChannelRow(
                     onClick = onMenuOpen,
                 )
                 // iOS action sheet for channel options (moon's request 2026-11-04)
-                IosActionSheet(
-                    visible = menuOpen,
-                    onDismiss = onMenuClose,
-                    buttons = listOf(
-                        IosSheetButton("Rescan from scratch") { onMenuClose(); onRescanScratch() },
-                        IosSheetButton(
-                            if (channel.isAnime) "Unmark as anime channel" else "Mark as anime channel"
-                        ) { onMenuClose(); onToggleAnime() },
-                        IosSheetButton("Copy channel ID") { onMenuClose(); onCopyId() },
-                        IosSheetButton("Remove channel", isDestructive = true) { onMenuClose(); onRemove() },
-                    ),
-                )
+                if (menuOpen) {
+                    IosActionSheet(
+                        onDismiss = onMenuClose,
+                        buttons = listOf(
+                            IosSheetButton("Rescan from scratch", onClick = { onMenuClose(); onRescanScratch() }),
+                            IosSheetButton(
+                                label = if (channel.isAnime) "Unmark as anime channel" else "Mark as anime channel",
+                                onClick = { onMenuClose(); onToggleAnime() },
+                            ),
+                            IosSheetButton("Copy channel ID", onClick = { onMenuClose(); onCopyId() }),
+                            IosSheetButton("Remove channel", isDestructive = true, onClick = { onMenuClose(); onRemove() }),
+                        ),
+                    )
+                }
             }
 
             AnimatedVisibility(
