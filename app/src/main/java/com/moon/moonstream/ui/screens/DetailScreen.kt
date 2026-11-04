@@ -736,7 +736,7 @@ fun DetailScreen(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    f.fileName,
+                    com.moon.moonstream.index.parse.FilenameParser.cleanDisplayName(f.fileName),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFF98989F),
                     maxLines = 2,

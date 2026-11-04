@@ -424,7 +424,9 @@ fun PlayerScreen(
             "S${f.season} E${f.episode}" +
                 (if (f.episodeEnd != null) "-${f.episodeEnd}" else "")
         } else {
-            f.fileName.substringBeforeLast('.').take(40)
+            com.moon.moonstream.index.parse.FilenameParser.cleanDisplayName(
+                f.fileName.substringBeforeLast('.')
+            ).take(40)
         }
 
     /** Switch playback to another file of the same entry. */

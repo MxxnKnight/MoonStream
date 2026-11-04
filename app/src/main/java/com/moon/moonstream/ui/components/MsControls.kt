@@ -704,18 +704,18 @@ fun MsDropdown(
                 tint = if (expanded) MsColors.Accent else MsColors.TextSecondary,
             )
         }
-        // iOS action sheet instead of dropdown (moon's request 2026-11-04)
-        if (expanded) {
-            IosActionSheet(
-                onDismiss = { expanded = false },
-                buttons = options.map { option ->
-                    IosSheetButton(
-                        label = option,
-                        onClick = { onSelect(option); expanded = false },
-                    )
-                },
-            )
-        }
+        // iOS context menu instead of bottom sheet (moon's request 2026-11-04):
+        // popup near the button, like the channel ⋮ menu.
+        IosContextMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            buttons = options.map { option ->
+                IosSheetButton(
+                    label = option,
+                    onClick = { onSelect(option); expanded = false },
+                )
+            },
+        )
     }
 }
 
