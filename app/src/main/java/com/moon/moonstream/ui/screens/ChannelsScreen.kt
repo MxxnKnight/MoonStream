@@ -996,7 +996,6 @@ private fun ChannelRow(
                             ),
                             IosSheetButton(
                                 label = if (channel.isAnime) "Unmark as anime channel" else "Mark as anime channel",
-                                icon = Icons.Filled.Star,
                                 onClick = { onMenuClose(); onToggleAnime() },
                             ),
                             IosSheetButton(
@@ -1007,7 +1006,6 @@ private fun ChannelRow(
                             IosSheetButton(
                                 "Remove channel",
                                 isDestructive = true,
-                                icon = Icons.Filled.Delete,
                                 onClick = { onMenuClose(); onRemove() },
                             ),
                         ),
