@@ -1041,9 +1041,16 @@ private fun ContinueWatchingRow(
     // Started (>10s) and not finished (<90%), newest file per show, 10 max.
     // Rows arrive playedAt DESC, so distinctBy keeps the most recent file.
     val items = remember(rows) {
-        rows.filter {
+        // DIAGNOSTIC (moon's 2026-11-05): row exists in DB but not showing
+        com.moon.moonstream.util.AppLog.i("CW", "Flow returned ${rows.size} rows")
+        rows.forEach {
+            com.moon.moonstream.util.AppLog.i("CW", "Row: mediaId=${it.mediaId} pos=${it.positionMs} dur=${it.durationMs} title='${it.title}'")
+        }
+        val filtered = rows.filter {
             it.positionMs > 10_000L && (it.durationMs <= 0L || it.positionMs < it.durationMs * 0.9f)
         }.distinctBy { it.mediaId }.take(10)
+        com.moon.moonstream.util.AppLog.i("CW", "After filter: ${filtered.size} items")
+        filtered
     }
     if (items.isEmpty()) return
     Column(modifier = Modifier.fillMaxWidth()) {
