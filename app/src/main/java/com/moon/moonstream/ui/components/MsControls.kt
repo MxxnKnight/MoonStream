@@ -202,10 +202,11 @@ fun MsCard(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    // iOS-style grouped card (moon's iOS rebuild 2026-11-04): 14dp, #1C1C1E.
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(MsRadii.Card),
-        color = MsColors.Surface,
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFF1C1C1E),
         shadowElevation = 0.dp,
         tonalElevation = 0.dp,
         border = androidx.compose.foundation.BorderStroke(1.dp, MsColors.CardBorder),
