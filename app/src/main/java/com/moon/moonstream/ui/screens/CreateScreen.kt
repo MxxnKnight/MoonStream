@@ -625,7 +625,7 @@ fun CreateScreen(
                     color = MsColors.TextSecondary,
                 )
             }
-            androidx.compose.material3.Switch(
+            MsToggle(
                 checked = isSplit,
                 onCheckedChange = {
                     isSplit = it
@@ -634,10 +634,7 @@ fun CreateScreen(
                         splitLinks.add("")
                     }
                 },
-                colors = androidx.compose.material3.SwitchDefaults.colors(
-                    checkedThumbColor = MsColors.Accent,
-                    checkedTrackColor = MsColors.Accent.copy(alpha = 0.4f),
-                ),
+            )
             )
         }
         if (isSplit) {

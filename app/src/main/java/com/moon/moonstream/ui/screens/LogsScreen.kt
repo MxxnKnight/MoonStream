@@ -196,9 +196,10 @@ fun LogsScreen(onBack: () -> Unit) {
             contentAlignment = Alignment.BottomEnd,
         ) {
             // iOS-style small circular button (not M3 FAB) — less overlap.
+            // Positioned above the floating bottom pill (moon's fix 2026-11-04).
             Box(
                 modifier = Modifier
-                    .padding(20.dp)
+                    .padding(end = 20.dp, bottom = 110.dp)
                     .size(44.dp)
                     .clip(CircleShape)
                     .background(Color(0xFF0A84FF))

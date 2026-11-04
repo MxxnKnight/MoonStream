@@ -1466,17 +1466,35 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
 
     // --- OTA update dialog ---
     updateInfo?.let { info ->
-        AlertDialog(
-            onDismissRequest = { if (updateState !is UpdateState.Downloading) updateInfo = null },
-            title = {
-                Text(
-                    "Update available: ${info.version}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MsColors.TextPrimary,
-                )
-            },
-            text = {
+        // iOS dialog (moon's request 2026-11-04) — dynamic buttons for Download → Install flow.
+        val dialogButtons = buildList {
+            add(IosSheetButton(
+                label = "Later",
+                onClick = { if (updateState !is UpdateState.Downloading) updateInfo = null },
+            ))
+            when (val s = updateState) {
+                is UpdateState.Done -> add(IosSheetButton(
+                    label = "Install",
+                    onClick = {
+                        ApkInstaller.install(context, s.apk)
+                        updateInfo = null
+                    },
+                ))
+                is UpdateState.Downloading -> add(IosSheetButton(
+                    label = "Downloading…",
+                    onClick = {},
+                ))
+                else -> add(IosSheetButton(
+                    label = "Download",
+                    onClick = { downloadAndInstall(info) },
+                ))
+            }
+        }
+        IosDialog(
+            onDismiss = { if (updateState !is UpdateState.Downloading) updateInfo = null },
+            title = "Update available: ${info.version}",
+            buttons = dialogButtons,
+            content = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     // Changelog (moon's request 2026-11-03): show release notes,
                     // not install instructions. No separate changelog button needed.
@@ -1519,48 +1537,6 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     }
                 }
             },
-            confirmButton = {
-                // Two-step: Download → Install (moon's request 2026-11-03).
-                // If user leaves mid-download, they come back to an Install button.
-                when (val s = updateState) {
-                    is UpdateState.Done -> {
-                        LimePillButton(
-                            text = "Install",
-                            fontSize = 14,
-                            onClick = {
-                                ApkInstaller.install(context, s.apk)
-                                updateInfo = null
-                            },
-                        )
-                    }
-                    is UpdateState.Downloading -> {
-                        LimePillButton(
-                            text = "Downloading…",
-                            fontSize = 14,
-                            enabled = false,
-                            onClick = {},
-                        )
-                    }
-                    else -> {
-                        LimePillButton(
-                            text = "Download",
-                            fontSize = 14,
-                            onClick = { downloadAndInstall(info) },
-                        )
-                    }
-                }
-            },
-            dismissButton = {
-                MsOutlinePill(
-                    text = "Later",
-                    fontSize = 14,
-                    enabled = updateState !is UpdateState.Downloading,
-                    onClick = { updateInfo = null },
-                )
-            },
-            containerColor = MsColors.Surface,
-            titleContentColor = MsColors.TextPrimary,
-            textContentColor = MsColors.TextSecondary,
         )
     }
 }
