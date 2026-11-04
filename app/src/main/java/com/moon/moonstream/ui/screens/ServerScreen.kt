@@ -72,6 +72,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -374,8 +375,8 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                     modifier = Modifier.fillMaxSize().background(
                         Brush.radialGradient(
                             colors = listOf(
-                                MsColors.GlowDeep.copy(alpha = 0.25f * progress),
-                                MsColors.GlowDeep.copy(alpha = 0.08f * progress),
+                                MsColors.GlowDeep.copy(alpha = 0.45f * progress),
+                                MsColors.GlowDeep.copy(alpha = 0.15f * progress),
                                 Color.Transparent,
                             ),
                             center = Offset(0.3f, 0.2f),
@@ -471,12 +472,24 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceEvenly,
-                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(24.dp),
                                 ) {
-                                    Text("session ${formatBytes(ServerTelemetry.sessionBytes)}", style = MaterialTheme.typography.bodyMedium, color = MsColors.TextSecondary)
-                                    Text("·", style = MaterialTheme.typography.bodyMedium, color = MsColors.TextSecondary)
-                                    Text("all-time ${formatBytes(ServerTelemetry.totalBytes)}", style = MaterialTheme.typography.bodyMedium, color = MsColors.TextSecondary)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            formatBytes(ServerTelemetry.sessionBytes),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = Color.White,
+                                        )
+                                        Text("session", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            formatBytes(ServerTelemetry.totalBytes),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = Color.White,
+                                        )
+                                        Text("all-time", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
+                                    }
                                 }
                             }
                         }
@@ -484,6 +497,12 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 }
 
                 // The pill — the light edge.
+                // Color blends slowly from white to accent (moon's point 4).
+                val pillColor = androidx.compose.ui.graphics.lerp(
+                    Color.White.copy(alpha = 0.92f),
+                    MsColors.Accent,
+                    progress.coerceIn(0f, 1f),
+                )
                 Box(
                     modifier = Modifier
                         .offset { IntOffset(pillOffsetPx.roundToInt(), 0) }
@@ -491,10 +510,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                         .fillMaxHeight()
                         .padding(vertical = 10.dp, horizontal = 8.dp)
                         .clip(RoundedCornerShape(34.dp))
-                        .background(
-                            if (progress > 0.5f) MsColors.Accent
-                            else Color.White.copy(alpha = 0.92f)
-                        )
+                        .background(pillColor)
                         .draggable(
                             state = dragState,
                             orientation = Orientation.Horizontal,
@@ -522,7 +538,21 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                 }
                             },
                         ),
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // > icon that rotates to < when ON (moon's point 2).
+                    // Rotation follows the swipe progress: 0° (>) → 180° (<).
+                    androidx.compose.material3.Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Filled.ChevronRight,
+                        contentDescription = if (progress > 0.5f) "Swipe to stop" else "Swipe to awaken",
+                        tint = if (progress > 0.5f) Color.White else Color.Black.copy(alpha = 0.7f),
+                        modifier = Modifier
+                            .size(32.dp)
+                            .graphicsLayer {
+                                rotationZ = progress * 180f
+                            },
+                    )
+                }
             }
         }
 
