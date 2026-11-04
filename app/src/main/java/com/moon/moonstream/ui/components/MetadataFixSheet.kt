@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.Outlined
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.CircularProgressIndicator
@@ -432,7 +431,7 @@ private fun MetaResultRow(
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 ) {
                     Icon(
-                        Icons.Outlined.Check,
+                        Icons.Filled.Check,
                         contentDescription = "In library",
                         tint = MsColors.Accent,
                         modifier = Modifier.size(12.dp),
@@ -466,7 +465,7 @@ private fun MetaResultRow(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    Icons.Outlined.Check,
+                    Icons.Filled.Check,
                     contentDescription = "Picked",
                     tint = MsColors.OnAccent,
                     modifier = Modifier.size(14.dp),

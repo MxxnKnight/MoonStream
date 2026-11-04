@@ -38,8 +38,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.Outlined
-import androidx.compose.material.icons.automirrored.Outlined
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -1014,7 +1012,7 @@ fun PlayerScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PlayerIconButton(
-                    icon = Icons.AutoMirrored.Outlined.ArrowBack,
+                    icon = Icons.Filled.ArrowBack,
                     contentDescription = "Back",
                     onClick = onClose,
                 )
@@ -1065,7 +1063,7 @@ fun PlayerScreen(
                         onClick = { takeScreenshot() },
                     )
                     PlayerIconButton(
-                        icon = Icons.Outlined.Lock,
+                        icon = Icons.Filled.Lock,
                         contentDescription = "Lock controls",
                         onClick = {
                             controlsLocked = true
@@ -1152,7 +1150,7 @@ fun PlayerScreen(
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         PlayerIconButton(
-                            icon = Icons.Outlined.ClosedCaption,
+                            icon = Icons.Filled.ClosedCaption,
                             contentDescription = "Subtitles",
                             onClick = { openTrackSheet(PlayerSheet.SUBS) },
                         )
@@ -2192,7 +2190,7 @@ private fun UnlockSlider(
                 .padding(start = 52.dp),
         ) {
             Icon(
-                Icons.Outlined.Lock,
+                Icons.Filled.Lock,
                 contentDescription = null,
                 tint = Color.White.copy(alpha = 0.65f),
                 modifier = Modifier.size(18.dp),
@@ -2215,7 +2213,7 @@ private fun UnlockSlider(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Outlined.ChevronRight,
+                Icons.Filled.ChevronRight,
                 contentDescription = "Slide",
                 tint = Color.Black,
                 modifier = Modifier.size(26.dp),
@@ -2281,7 +2279,7 @@ private fun TrackRow(label: String, selected: Boolean, onClick: () -> Unit) {
         )
         if (selected) {
             Icon(
-                Icons.Outlined.Check,
+                Icons.Filled.Check,
                 contentDescription = "Selected",
                 tint = MsColors.Accent,
                 modifier = Modifier.size(20.dp),

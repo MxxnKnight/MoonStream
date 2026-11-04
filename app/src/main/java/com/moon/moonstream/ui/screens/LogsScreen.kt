@@ -17,8 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.Outlined
-import androidx.compose.material.icons.automirrored.Outlined
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material3.FloatingActionButton
@@ -86,7 +84,7 @@ fun LogsScreen(onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BareIconButton(
-                icon = Icons.AutoMirrored.Outlined.ArrowBack,
+                icon = Icons.Filled.ArrowBack,
                 contentDescription = "Back",
                 onClick = onBack,
             )
@@ -207,7 +205,7 @@ fun LogsScreen(onBack: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.ArrowDownward,
+                    imageVector = Icons.Filled.ArrowDownward,
                     contentDescription = "Scroll to bottom",
                     tint = Color.White,
                     modifier = Modifier.size(22.dp),

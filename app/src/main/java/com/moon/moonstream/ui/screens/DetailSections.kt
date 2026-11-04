@@ -51,7 +51,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.Outlined
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.filled.ExpandLess
@@ -358,7 +357,7 @@ fun FileRow(
                     onClick = onPlay,
                 )
                 BareIconButton(
-                    icon = Icons.Outlined.ContentCopy,
+                    icon = Icons.Filled.ContentCopy,
                     contentDescription = "Copy Link",
                     onClick = onCopy,
                 )
@@ -440,7 +439,7 @@ fun StreamRow(
                     onClick = onPlay,
                 )
                 BareIconButton(
-                    icon = Icons.Outlined.ContentCopy,
+                    icon = Icons.Filled.ContentCopy,
                     contentDescription = "Copy Link",
                     onClick = onCopy,
                 )

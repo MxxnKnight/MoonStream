@@ -37,8 +37,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.Outlined
-import androidx.compose.material.icons.automirrored.Outlined
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
@@ -491,7 +489,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 modifier = Modifier.weight(1f),
             )
             Icon(
-                imageVector = Icons.Outlined.ChevronRight,
+                imageVector = Icons.Filled.ChevronRight,
                 contentDescription = null,
                 tint = MsColors.TextSecondary,
             )
@@ -1344,7 +1342,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 BareIconButton(
-                    icon = Icons.AutoMirrored.Outlined.ArrowBack,
+                    icon = Icons.Filled.ArrowBack,
                     contentDescription = "Back",
                     onClick = { AppUiState.settingsRoute = null },
                 )

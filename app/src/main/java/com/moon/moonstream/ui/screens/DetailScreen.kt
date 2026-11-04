@@ -29,8 +29,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.Outlined
-import androidx.compose.material.icons.automirrored.Outlined
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -453,7 +451,7 @@ fun DetailScreen(
                     ),
             )
             BareIconButton(
-                icon = Icons.AutoMirrored.Outlined.ArrowBack,
+                icon = Icons.Filled.ArrowBack,
                 contentDescription = "Back",
                 tint = Color.White,
                 onClick = onBack,
@@ -462,7 +460,7 @@ fun DetailScreen(
                     .padding(8.dp),
             )
             BareIconButton(
-                icon = if (m.hidden) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
+                icon = if (m.hidden) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
                 contentDescription = if (m.hidden) "Unhide entry" else "Hide entry",
                 tint = Color.White,
                 onClick = { toggleHide() },

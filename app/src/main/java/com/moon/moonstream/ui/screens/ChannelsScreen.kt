@@ -39,7 +39,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.Outlined
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -773,7 +772,7 @@ private fun ScanResultsPanel(
                         letterSpacing = 2.sp,
                     )
                     BareIconButton(
-                        icon = Icons.Outlined.Close,
+                        icon = Icons.Filled.Close,
                         contentDescription = "Dismiss",
                         onClick = onClose,
                     )
@@ -788,7 +787,7 @@ private fun ScanResultsPanel(
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                Icons.Outlined.Check,
+                                Icons.Filled.Check,
                                 contentDescription = null,
                                 tint = MsColors.OnAccent,
                                 modifier = Modifier.size(14.dp),
@@ -1063,7 +1062,7 @@ private fun DoneCheck(modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.Outlined.Check,
+            imageVector = Icons.Filled.Check,
             contentDescription = "Scan done",
             tint = MsColors.OnAccent,
             modifier = Modifier.size(18.dp),
@@ -1125,7 +1124,7 @@ private fun UnmatchedFileRow(
                     onClick = onPlay,
                 )
                 BareIconButton(
-                    icon = Icons.Outlined.ContentCopy,
+                    icon = Icons.Filled.ContentCopy,
                     contentDescription = "Copy Link",
                     onClick = onCopyLink,
                 )

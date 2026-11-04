@@ -69,7 +69,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.Outlined
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
@@ -698,7 +697,7 @@ fun MsDropdown(
                 )
             }
             Icon(
-                imageVector = Icons.Outlined.ArrowDropDown,
+                imageVector = Icons.Filled.ArrowDropDown,
                 contentDescription = "Open options",
                 tint = if (expanded) MsColors.Accent else MsColors.TextSecondary,
             )
@@ -722,7 +721,7 @@ fun MsDropdown(
                             )
                             if (isSel) {
                                 Icon(
-                                    imageVector = Icons.Outlined.Check,
+                                    imageVector = Icons.Filled.Check,
                                     contentDescription = "Selected",
                                     tint = MsColors.Accent,
                                     modifier = Modifier.size(18.dp),
@@ -840,7 +839,7 @@ fun CopyMorphButton(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.Check,
+                    imageVector = Icons.Filled.Check,
                     contentDescription = "Copied",
                     tint = MsColors.OnAccent,
                     modifier = Modifier.size(18.dp),
@@ -856,7 +855,7 @@ fun CopyMorphButton(
             }
         } else {
             Icon(
-                imageVector = Icons.Outlined.ContentCopy,
+                imageVector = Icons.Filled.ContentCopy,
                 contentDescription = "Copy",
                 tint = tint,
                 modifier = Modifier.size(24.dp),
@@ -968,7 +967,7 @@ fun ScanActionButton(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.Check,
+                            imageVector = Icons.Filled.Check,
                             contentDescription = "Done",
                             tint = MsColors.OnAccent,
                             modifier = Modifier.size(14.dp),
