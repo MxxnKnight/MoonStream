@@ -55,6 +55,7 @@ import androidx.compose.material3.Text
 import com.moon.moonstream.server.ServerTelemetry
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -985,35 +986,34 @@ private fun RecentlyAddedRow(
 }
 
 /**
- * Continue Watching row: horizontal poster strip with progress bars,
- * under Recently Added (moon's request 2026-11-04).
+ * Continue Watching row: horizontal poster strip with a progress line and an
+ * SxxExx chip on the poster, under Recently Added (moon's request 2026-11-04).
+ *
+ * Fixed 2026-11-05 — see docs/FIXES-2026-11-05.md:
+ * - LIVE data: collected from Room as a Flow. The old version reloaded only on
+ *   the *Activity's* ON_RESUME, which never fires here (screens are swapped
+ *   inside one Activity) — the strip could stay stale or empty after watching.
+ * - One poster per SHOW, not per file (E01 + E02 no longer both appear).
+ * - Poster/title come from a JOIN, so a re-index can't leave a blank tile.
+ * - SxxExx moved onto the poster (top-left chip), as designed.
+ * - Progress line always has a visible track, even before duration is known.
  */
 @Composable
 private fun ContinueWatchingRow(
     onOpenDetail: (Long) -> Unit,
 ) {
     val context = LocalContext.current
-    var items by remember { mutableStateOf<List<com.moon.moonstream.index.db.WatchProgressEntity>>(emptyList()) }
-    var refreshTick by remember { mutableStateOf(0) }
-    // Reload on every resume (moon's bug 2026-11-04: row didn't refresh after watching).
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-    val lifecycle = lifecycleOwner.lifecycle
-    androidx.compose.runtime.DisposableEffect(lifecycle) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refreshTick++
-        }
-        lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer) }
-    }
-    LaunchedEffect(refreshTick) {
-        withContext(Dispatchers.IO) {
-            val db = com.moon.moonstream.index.db.MsDatabase.get(context)
-            // Only items with actual progress (position > 10s, not finished)
-            val recent = db.watchProgressDao().recent(15).filter {
-                it.positionMs > 10_000L && (it.durationMs <= 0L || it.positionMs < it.durationMs * 0.9f)
-            }.take(10)
-            withContext(Dispatchers.Main) { items = recent }
-        }
+    val db = remember(context) { com.moon.moonstream.index.db.MsDatabase.get(context) }
+    val rows by remember(db) {
+        db.watchProgressDao().observeContinueWatching()
+    }.collectAsState(initial = emptyList())
+
+    // Started (>10s) and not finished (<90%), newest file per show, 10 max.
+    // Rows arrive playedAt DESC, so distinctBy keeps the most recent file.
+    val items = remember(rows) {
+        rows.filter {
+            it.positionMs > 10_000L && (it.durationMs <= 0L || it.positionMs < it.durationMs * 0.9f)
+        }.distinctBy { it.mediaId }.take(10)
     }
     if (items.isEmpty()) return
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -1059,18 +1059,39 @@ private fun ContinueWatchingRow(
                                 )
                             }
                         }
-                        // Progress line at bottom of poster (moon's design)
+                        // SxxExx chip, top-left of the poster (moon's design
+                        // 2026-11-04; it used to be a grey line under the
+                        // title, where it was easy to miss).
+                        val ep = w.episodeLabel
+                        if (!ep.isNullOrBlank()) {
+                            Text(
+                                ep,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(6.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color.Black.copy(alpha = 0.72f))
+                                    .padding(horizontal = 5.dp, vertical = 2.dp),
+                            )
+                        }
+                        // Progress line at the bottom of the poster. The track
+                        // is always drawn (3dp) so the poster shows where you
+                        // are even when the duration isn't known yet; the old
+                        // version drew nothing at all in that case.
                         val progress = if (w.durationMs > 0L) {
                             (w.positionMs.toFloat() / w.durationMs.toFloat()).coerceIn(0f, 1f)
                         } else 0f
-                        if (progress > 0f) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                                    .height(4.dp)
-                                    .background(Color.Black.copy(alpha = 0.5f)),
-                            ) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .background(Color.Black.copy(alpha = 0.45f)),
+                        ) {
+                            if (progress > 0f) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth(progress)
@@ -1089,15 +1110,6 @@ private fun ContinueWatchingRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (!w.episodeLabel.isNullOrBlank()) {
-                        Text(
-                            w.episodeLabel,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MsColors.TextSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
                 }
             }
         }

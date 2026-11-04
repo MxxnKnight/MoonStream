@@ -1304,6 +1304,13 @@ fun PlayerScreen(
                         ) {
                             // Buffer track (moon's request): white/gray behind the blue progress.
                             // Fixed-height container so the buffer aligns with the Slider's track.
+                            // Visibility fix 2026-11-05: the old 25% → 50% white step on a
+                            // 4dp line over a dark player was effectively invisible, and on a
+                            // LAN/local stream `bufferedPosition` reaches 100% within a second,
+                            // so the whole track became one flat grey. The buffer now sits far
+                            // enough above the base track to read at a glance. Height stays 4dp
+                            // because Material3 1.1.1's slider track is exactly 4dp
+                            // (SliderTokens.ActiveTrackHeight) — both are centred in this 24dp box.
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1318,7 +1325,7 @@ fun PlayerScreen(
                                             .fillMaxWidth()
                                             .height(4.dp)
                                             .clip(RoundedCornerShape(2.dp))
-                                            .background(Color.White.copy(alpha = 0.25f)),
+                                            .background(Color.White.copy(alpha = 0.20f)),
                                     )
                                     // Buffer fill (white/gray, behind the blue progress)
                                     Box(
@@ -1331,7 +1338,7 @@ fun PlayerScreen(
                                             modifier = Modifier
                                                 .fillMaxWidth(bufferFrac)
                                                 .fillMaxHeight()
-                                                .background(Color.White.copy(alpha = 0.5f)),
+                                                .background(Color.White.copy(alpha = 0.62f)),
                                         )
                                     }
                                 }

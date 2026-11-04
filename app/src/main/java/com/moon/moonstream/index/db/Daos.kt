@@ -308,6 +308,29 @@ interface WatchProgressDao {
     @Query("SELECT * FROM watch_progress ORDER BY playedAt DESC LIMIT :limit")
     suspend fun recent(limit: Int = 15): List<WatchProgressEntity>
 
+    /**
+     * Live data for the Home "Continue watching" strip (fix 2026-11-05).
+     *
+     * A Flow, not a one-shot read: the old version reloaded only on the
+     * *Activity's* ON_RESUME, which never fires here because screens are
+     * swapped inside a single Activity — the strip could stay stale or empty
+     * after watching. Room now pushes every position save to the UI.
+     *
+     * Joined to media_items so a re-index can't leave a blank poster/title.
+     */
+    @Query(
+        """SELECT wp.mediaId AS mediaId, wp.streamFileId AS streamFileId,
+                  COALESCE(m.title, wp.title) AS title,
+                  wp.episodeLabel AS episodeLabel,
+                  COALESCE(m.posterUrl, wp.posterUrl) AS posterUrl,
+                  wp.playedAt AS playedAt, wp.positionMs AS positionMs,
+                  wp.durationMs AS durationMs
+           FROM watch_progress wp
+           LEFT JOIN media_items m ON m.id = wp.mediaId
+           ORDER BY wp.playedAt DESC"""
+    )
+    fun observeContinueWatching(): Flow<List<ContinueWatchingItem>>
+
     @Query("SELECT * FROM watch_progress WHERE mediaId = :mediaId")
     fun observeByMedia(mediaId: Long): Flow<List<WatchProgressEntity>>
 
