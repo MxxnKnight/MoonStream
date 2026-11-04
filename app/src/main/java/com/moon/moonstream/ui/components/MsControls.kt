@@ -123,7 +123,7 @@ fun LimePillButton(
         modifier = modifier,
         enabled = enabled,
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color(0xFF0A84FF),
+            containerColor = MsColors.Accent,
             contentColor = Color.White,
             disabledContainerColor = Color(0xFF38383A),
             disabledContentColor = MsColors.TextSecondary,
@@ -157,7 +157,7 @@ fun MsOutlinePill(
         enabled = enabled,
         colors = ButtonDefaults.buttonColors(
             containerColor = Color(0xFF1C1C1E),
-            contentColor = Color(0xFF0A84FF),
+            contentColor = MsColors.Accent,
             disabledContainerColor = Color(0xFF1C1C1E),
             disabledContentColor = MsColors.TextSecondary,
         ),
@@ -1263,7 +1263,7 @@ fun IosActionSheet(
                                 text = btn.label,
                                 fontSize = 17.sp,
                                 fontWeight = if (btn.isDestructive) FontWeight.Normal else FontWeight.Normal,
-                                color = if (btn.isDestructive) Color(0xFFFF453A) else Color(0xFF0A84FF),
+                                color = if (btn.isDestructive) Color(0xFFFF453A) else MsColors.Accent,
                             )
                         }
                     }
@@ -1283,7 +1283,7 @@ fun IosActionSheet(
                     text = "Cancel",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF0A84FF),
+                    color = MsColors.Accent,
                 )
             }
         }
@@ -1451,7 +1451,7 @@ fun IosDialog(
                             text = btn.label,
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Normal,
-                            color = if (btn.isDestructive) Color(0xFFFF453A) else Color(0xFF0A84FF),
+                            color = if (btn.isDestructive) Color(0xFFFF453A) else MsColors.Accent,
                         )
                     }
                 }

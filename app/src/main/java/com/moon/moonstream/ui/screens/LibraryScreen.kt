@@ -439,7 +439,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     Text(
                         text = if (selectedIds.size == filtered.size && filtered.isNotEmpty()) "Deselect" else "Select All",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF0A84FF),
+                        color = MsColors.Accent,
                     )
                 }
                 // iOS red pill for Hide/Unhide.
@@ -479,7 +479,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
-                            .background(if (selectedIds.isNotEmpty()) Color(0xFF0A84FF) else Color(0xFF39393B))
+                            .background(if (selectedIds.isNotEmpty()) MsColors.Accent else Color(0xFF39393B))
                             .clickable(enabled = selectedIds.isNotEmpty()) { startMergeTo() }
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         contentAlignment = Alignment.Center,
@@ -495,7 +495,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
-                            .background(if (selectedIds.isNotEmpty()) Color(0xFF0A84FF) else Color(0xFF39393B))
+                            .background(if (selectedIds.isNotEmpty()) MsColors.Accent else Color(0xFF39393B))
                             .clickable(enabled = selectedIds.isNotEmpty()) { confirmMerge() }
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         contentAlignment = Alignment.Center,

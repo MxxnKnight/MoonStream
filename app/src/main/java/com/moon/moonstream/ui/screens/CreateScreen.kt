@@ -808,7 +808,7 @@ fun CreateScreen(
                 Text(
                     text = "Cancel",
                     style = MaterialTheme.typography.bodyLarge,
-                    color = Color(0xFF0A84FF),
+                    color = MsColors.Accent,
                 )
             }
             LimePillButton(
@@ -950,7 +950,7 @@ private fun SegmentOption(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) Color(0xFF0A84FF) else Color(0xFF1C1C1E))
+            .background(if (selected) MsColors.Accent else Color(0xFF1C1C1E))
             .clickable(onClick = onClick)
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,

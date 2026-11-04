@@ -355,14 +355,16 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 )
                 // iOS-style tab bar (moon's iOS rebuild 2026-11-04): icon + label,
                 // blue selected, gray unselected. Keeps floating pill + swipe.
+                // Frosted glass look (moon's request 2026-11-04): lower alpha so
+                // content shows through + subtle top highlight like iOS blur.
                 var dragAccum by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(start = 24.dp, end = 24.dp, bottom = 22.dp)
                         .clip(RoundedCornerShape(24.dp))
-                        .background(Color(0xFF1C1C1E).copy(alpha = 0.94f))
-                        .border(0.5.dp, Color(0xFF38383A), RoundedCornerShape(24.dp))
+                        .background(Color(0xFF1C1C1E).copy(alpha = 0.72f))
+                        .border(0.5.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(24.dp))
                         .draggable(
                             state = rememberDraggableState { delta ->
                                 dragAccum += delta
@@ -393,14 +395,14 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             Icon(
                                 if (selected) tab.iconFilled else tab.iconOutlined,
                                 contentDescription = tab.label,
-                                tint = if (selected) Color(0xFF0A84FF) else Color(0xFF98989F),
+                                tint = if (selected) MsColors.Accent else Color(0xFF98989F),
                                 modifier = Modifier.size(24.dp),
                             )
                             Text(
                                 text = tab.label,
                                 fontSize = 10.sp,
                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (selected) Color(0xFF0A84FF) else Color(0xFF98989F),
+                                color = if (selected) MsColors.Accent else Color(0xFF98989F),
                             )
                         }
                     }

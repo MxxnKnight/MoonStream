@@ -211,7 +211,7 @@ fun LogsScreen(onBack: () -> Unit) {
                     .padding(end = 20.dp, bottom = 110.dp)
                     .size(44.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF0A84FF))
+                    .background(MsColors.Accent)
                     .clickable {
                         scope.launch {
                             if (lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1)

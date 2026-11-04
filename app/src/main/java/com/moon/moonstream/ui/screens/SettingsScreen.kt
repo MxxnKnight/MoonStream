@@ -1521,7 +1521,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                                 .fillMaxWidth()
                                 .height(8.dp)
                                 .clip(RoundedCornerShape(4.dp)),
-                            color = Color(0xFF0A84FF),
+                            color = MsColors.Accent,
                             trackColor = Color(0xFF38383A),
                         )
                     } else if (updateState is UpdateState.Done) {
