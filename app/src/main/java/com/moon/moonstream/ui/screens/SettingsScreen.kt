@@ -79,6 +79,8 @@ import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.backend.MsProfile
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.InfoDot
+import com.moon.moonstream.ui.components.IosGroup
+import com.moon.moonstream.ui.components.IosNavRow
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.MsCard
 import com.moon.moonstream.ui.components.MsDropdown
@@ -1298,19 +1300,22 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
 
             AccountCard(onLoggedOut = onLoggedOut)
 
-            SettingsNavRow("Server") { AppUiState.settingsRoute = "Server" }
-            SettingsNavRow("Scanning & Matching") { AppUiState.settingsRoute = "Scanning & Matching" }
-            SettingsNavRow("Metadata") { AppUiState.settingsRoute = "Metadata" }
-            SettingsNavRow("Streaming & Storage") { AppUiState.settingsRoute = "Streaming & Storage" }
-            SettingsNavRow("Playback") { AppUiState.settingsRoute = "Playback" }
-            SettingsNavRow("Languages") { AppUiState.settingsRoute = "Languages" }
-            SettingsNavRow("Appearance & Library") { AppUiState.settingsRoute = "Appearance & Library" }
-            SettingsNavRow("Library Tools") { AppUiState.settingsRoute = "Library Tools" }
-            SettingsNavRow("Cloud Backup") { AppUiState.settingsRoute = "Cloud Backup" }
-            SettingsNavRow("Update") { AppUiState.settingsRoute = "Update" }
-            SettingsNavRow("Logs") { onOpenLogs() }
-            SettingsNavRow("App") { AppUiState.settingsRoute = "App" }
-            SettingsNavRow("Support") { AppUiState.settingsRoute = "Support" }
+            // iOS-style grouped settings (moon's iOS rebuild 2026-11-04).
+            IosGroup {
+                IosNavRow("Server") { AppUiState.settingsRoute = "Server" }
+                IosNavRow("Scanning & Matching") { AppUiState.settingsRoute = "Scanning & Matching" }
+                IosNavRow("Metadata") { AppUiState.settingsRoute = "Metadata" }
+                IosNavRow("Streaming & Storage") { AppUiState.settingsRoute = "Streaming & Storage" }
+                IosNavRow("Playback") { AppUiState.settingsRoute = "Playback" }
+                IosNavRow("Languages") { AppUiState.settingsRoute = "Languages" }
+                IosNavRow("Appearance & Library") { AppUiState.settingsRoute = "Appearance & Library" }
+                IosNavRow("Library Tools") { AppUiState.settingsRoute = "Library Tools" }
+                IosNavRow("Cloud Backup") { AppUiState.settingsRoute = "Cloud Backup" }
+                IosNavRow("Update") { AppUiState.settingsRoute = "Update" }
+                IosNavRow("Logs") { onOpenLogs() }
+                IosNavRow("App") { AppUiState.settingsRoute = "App" }
+                IosNavRow("Support", showDivider = false) { AppUiState.settingsRoute = "Support" }
+            }
 
             // Version footer (moon's request 2026-11-03): small, one line at bottom.
             Text(

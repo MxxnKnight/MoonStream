@@ -1121,3 +1121,69 @@ fun IosSpinner(
         }
     }
 }
+
+/**
+ * iOS-style grouped card: rounded 14dp, dark fill, thin dividers between rows.
+ * moon's iOS rebuild 2026-11-04.
+ */
+@Composable
+fun IosGroup(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF1C1C1E)),
+    ) {
+        Column {
+            content()
+        }
+    }
+}
+
+/**
+ * iOS-style settings row: label left, chevron right, thin divider handled by parent.
+ */
+@Composable
+fun IosNavRow(
+    title: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    showDivider: Boolean = true,
+) {
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Normal,
+                fontSize = 16.sp,
+                color = Color.White,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = "›",
+                fontSize = 22.sp,
+                color = Color(0xFF3A3A3C),
+                fontWeight = FontWeight.Light,
+            )
+        }
+        if (showDivider) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp)
+                    .height(0.5.dp)
+                    .background(Color(0xFF38383A)),
+            )
+        }
+    }
+}
