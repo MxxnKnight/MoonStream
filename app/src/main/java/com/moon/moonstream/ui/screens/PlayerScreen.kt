@@ -85,6 +85,8 @@ import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.ui.components.IosSpinner
+import com.moon.moonstream.ui.components.MsOutlinePill
+import com.moon.moonstream.ui.components.MsSlider
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.player.MsDataSourceFactory
 import com.moon.moonstream.ui.player.PlayerUrls
@@ -871,6 +873,7 @@ fun PlayerScreen(
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
+    var bufferedPosition by remember { mutableLongStateOf(0L) }
     // Playback state UI (moon's bug 2026-11-02: black screen, no feedback).
     var isBuffering by remember { mutableStateOf(true) }
     var playerError by remember { mutableStateOf<String?>(null) }
@@ -921,6 +924,7 @@ fun PlayerScreen(
         try {
             while (true) {
                 currentPosition = player.currentPosition.coerceAtLeast(0L)
+                bufferedPosition = player.bufferedPosition.coerceAtLeast(0L)
                 if (duration <= 0L) duration = player.duration.coerceAtLeast(0L)
                 delay(500)
             }
@@ -1290,16 +1294,39 @@ fun PlayerScreen(
                                 .padding(vertical = 2.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Slider(
-                                value = currentPosition.toFloat(),
-                                onValueChange = { player.seekTo(it.toLong()) },
-                                valueRange = 0f..duration.toFloat(),
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MsColors.Accent,
-                                    activeTrackColor = MsColors.Accent,
-                                ),
-                            )
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                // Buffer track (moon's point 3: show buffered amount in gray/white).
+                                // Drawn behind the Slider; Slider's inactive track is transparent.
+                                if (duration > 0L) {
+                                    val bufferFrac = (bufferedPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(4.dp)
+                                            .align(Alignment.Center)
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(Color.White.copy(alpha = 0.25f)),
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth(bufferFrac)
+                                                .fillMaxHeight()
+                                                .background(Color.White.copy(alpha = 0.45f)),
+                                        )
+                                    }
+                                }
+                                Slider(
+                                    value = currentPosition.toFloat(),
+                                    onValueChange = { player.seekTo(it.toLong()) },
+                                    valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = MsColors.Accent,
+                                        activeTrackColor = MsColors.Accent,
+                                        inactiveTrackColor = Color.Transparent,
+                                    ),
+                                )
+                            }
                         }
                         Text(
                             if (showRemaining) {
@@ -1709,25 +1736,31 @@ fun PlayerScreen(
                                         color = MsColors.TextPrimary,
                                         modifier = Modifier.weight(1f),
                                     )
-                                    IconButton(onClick = { adjustDelay(-250) }) {
-                                        Icon(
-                                            Icons.Filled.Remove,
-                                            contentDescription = "Delay -250ms",
-                                            tint = MsColors.TextPrimary,
+                                    MsOutlinePill(
+                                        onClick = { adjustDelay(-250) },
+                                        modifier = Modifier.height(36.dp),
+                                    ) {
+                                        Text(
+                                            "−250ms",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MsColors.Accent,
                                         )
                                     }
                                     Text(
                                         formatDelay(delayMs),
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MsColors.Accent,
+                                        color = MsColors.TextPrimary,
                                         textAlign = TextAlign.Center,
                                         modifier = Modifier.width(80.dp),
                                     )
-                                    IconButton(onClick = { adjustDelay(250) }) {
-                                        Icon(
-                                            Icons.Filled.Add,
-                                            contentDescription = "Delay +250ms",
-                                            tint = MsColors.TextPrimary,
+                                    MsOutlinePill(
+                                        onClick = { adjustDelay(250) },
+                                        modifier = Modifier.height(36.dp),
+                                    ) {
+                                        Text(
+                                            "+250ms",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MsColors.Accent,
                                         )
                                     }
                                 }
@@ -1856,7 +1889,7 @@ fun PlayerScreen(
                                         color = MsColors.TextPrimary,
                                         modifier = Modifier.weight(1f),
                                     )
-                                    Slider(
+                                    MsSlider(
                                         value = subPosition,
                                         onValueChange = {
                                             subPosition = it
@@ -1865,10 +1898,6 @@ fun PlayerScreen(
                                         },
                                         valueRange = 0f..0.4f,
                                         modifier = Modifier.weight(1.6f),
-                                        colors = SliderDefaults.colors(
-                                            thumbColor = MsColors.Accent,
-                                            activeTrackColor = MsColors.Accent,
-                                        ),
                                     )
                                 }
                             }
@@ -2074,9 +2103,9 @@ fun PlayerScreen(
             ) {
                 // iOS spinner loader (moon's pick 2026-11-04 — replaces Expressive morphing).
                 IosSpinner(
-                    modifier = Modifier.size(96.dp),
+                    modifier = Modifier.size(48.dp),
                     color = Color.White,
-                    size = 72.dp,
+                    size = 32.dp,
                 )
             }
         }
