@@ -38,6 +38,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.verticalScroll
@@ -83,6 +84,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -387,19 +389,36 @@ fun MsToggle(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Switch(
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        modifier = modifier,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = MsColors.OnAccent,
-            checkedTrackColor = MsColors.Accent,
-            checkedBorderColor = Color.Transparent,
-            uncheckedThumbColor = MsColors.TextSecondary,
-            uncheckedTrackColor = MsColors.TrackOff,
-            uncheckedBorderColor = Color.Transparent,
-        ),
+    // iOS-style switch (moon's pick 2026-11-04): 51x31, green when on.
+    val trackColor by androidx.compose.animation.animateColorAsState(
+        targetValue = if (checked) Color(0xFF30D158) else Color(0xFF39393B),
+        label = "iosTrack",
     )
+    val knobOffset by androidx.compose.animation.core.animateDpAsState(
+        targetValue = if (checked) 20.dp else 0.dp,
+        label = "iosKnob",
+    )
+    Box(
+        modifier = modifier
+            .size(51.dp, 31.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(trackColor)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onCheckedChange(!checked) },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(
+            Modifier
+                .offset(x = knobOffset)
+                .padding(start = 2.dp)
+                .size(27.dp)
+                .shadow(2.dp, CircleShape)
+                .clip(CircleShape)
+                .background(Color.White),
+        )
+    }
 }
 
 /** Mockup slider: lime. */
