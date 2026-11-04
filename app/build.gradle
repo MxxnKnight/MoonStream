@@ -123,6 +123,10 @@ dependencies {
     implementation 'androidx.compose.material3:material3:1.1.1'
     implementation 'androidx.compose.material:material-icons-extended:1.5.0'
 
+    // Cloudy: backdrop blur for the bottom nav pill (moon's request 2026-11-04).
+    // Classic frosted glass, not liquid glass.
+    implementation 'com.github.skydoves:cloudy:1.0.0-alpha01'
+
     // Room: on-phone library database (Phase 3 indexing)
     implementation 'androidx.room:room-runtime:2.6.1'
     implementation 'androidx.room:room-ktx:2.6.1'

@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.graphics.Brush
+import com.skydoves.cloudy.cloudy
+import com.skydoves.cloudy.sky
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -158,6 +160,8 @@ class MainActivity : ComponentActivity() {
 fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     val authState by telegramManager.authState.collectAsState()
     val context = LocalContext.current
+    // Cloudy sky for the bottom pill's backdrop blur (moon's request 2026-11-04).
+    val sky = com.skydoves.cloudy.rememberSky()
 
     // Warm the library list at launch so the Library tab opens instantly.
     LaunchedEffect(Unit) { com.moon.moonstream.index.db.LibraryCache.items(context) }
@@ -216,6 +220,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
             // Screens keep their own bottom insets inside their scrollables
             // so the last item can still scroll fully into view.
             // AnimatedContent gives fast, fluid tab switches (180ms slide).
+            // sky() marks this as the blur source for the pill (Cloudy).
             AnimatedContent(
                 targetState = current,
                 transitionSpec = {
@@ -226,7 +231,9 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     fadeIn(tween(110)) togetherWith ExitTransition.None
                 },
                 label = "screenSwitch",
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .sky(sky),
             ) { screen ->
                 when (screen) {
                     AppScreen.Splash -> SplashScreen(
@@ -355,25 +362,22 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 )
                 // iOS-style tab bar (moon's iOS rebuild 2026-11-04): icon + label,
                 // blue selected, gray unselected. Keeps floating pill + swipe.
-                // Frosted glass (moon's request 2026-11-04): semi-transparent so
-                // content shows through, with a subtle top-light gradient like
-                // iOS frosted glass catching light. True backdrop blur isn't
-                // available in Compose — this is the closest approximation.
+                // Frosted glass via Cloudy backdrop blur (moon's request 2026-11-04):
+                // classic frosted blur of the content behind, not liquid glass.
                 var dragAccum by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
+                val pillShape = RoundedCornerShape(24.dp)
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(start = 24.dp, end = 24.dp, bottom = 22.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(
-                            androidx.compose.ui.graphics.Brush.verticalGradient(
-                                colors = listOf(
-                                    Color(0xFF2C2C2E).copy(alpha = 0.78f),
-                                    Color(0xFF1C1C1E).copy(alpha = 0.72f),
-                                )
-                            )
+                        .clip(pillShape)
+                        .cloudy(
+                            sky = sky,
+                            radius = 25,
+                            shape = pillShape,
+                            tint = Color(0xFF1C1C1E).copy(alpha = 0.55f),
                         )
-                        .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(24.dp))
+                        .border(0.5.dp, Color.White.copy(alpha = 0.14f), pillShape)
                         .draggable(
                             state = rememberDraggableState { delta ->
                                 dragAccum += delta
