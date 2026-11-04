@@ -1303,3 +1303,39 @@ data class IosSheetButton(
     val onClick: () -> Unit,
     val isDestructive: Boolean = false,
 )
+
+/**
+ * iOS-style bottom sheet wrapper: grabber handle, rounded top, dark fill.
+ * moon's iOS rebuild 2026-11-04. Wraps M3 ModalBottomSheet.
+ */
+@Composable
+fun IosBottomSheet(
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+    )
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        modifier = modifier,
+        containerColor = Color(0xFF1C1C1E),
+        contentColor = Color.White,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        dragHandle = {
+            // iOS grabber: small rounded bar, centered.
+            Box(
+                Modifier
+                    .padding(top = 8.dp, bottom = 4.dp)
+                    .width(36.dp)
+                    .height(5.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color(0xFF48484A)),
+            )
+        },
+    ) {
+        content()
+    }
+}

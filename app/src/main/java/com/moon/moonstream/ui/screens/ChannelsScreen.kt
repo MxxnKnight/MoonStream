@@ -2,6 +2,7 @@ package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
+import com.moon.moonstream.ui.components.IosBottomSheet
 import com.moon.moonstream.ui.components.MsTextField
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -54,10 +55,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -1181,17 +1180,13 @@ private fun AddChannelSheet(
     onAdd: (id: Long, title: String, isAnime: Boolean) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var channelId by remember { mutableStateOf("") }
     var isAnime by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
+    IosBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
     ) {
         MsSheetContent(title = "Add Channel") {
             Text(

@@ -1,6 +1,7 @@
 package com.moon.moonstream.ui.screens
 
 import com.moon.moonstream.ui.components.MsToast
+import com.moon.moonstream.ui.components.IosBottomSheet
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.rememberCoroutineScope
@@ -61,10 +62,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -616,7 +615,6 @@ fun AddStreamSheet(
     onFetchFileName: suspend (link: String) -> String?,
     isSeries: Boolean = false,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var link by remember { mutableStateOf("") }
     var quality by remember { mutableStateOf("1080p") }
@@ -650,11 +648,8 @@ fun AddStreamSheet(
         }
     }
 
-    ModalBottomSheet(
+    IosBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
     ) {
         MsSheetContent(title = "Add Custom Stream") {
             Text(
@@ -738,7 +733,6 @@ fun AddSubtitleSheet(
     onFetchFileName: suspend (link: String) -> String?,
     onSaveLink: (link: String, language: String, fileName: String, season: Int?, episode: Int?) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var link by remember { mutableStateOf("") }
     var language by remember { mutableStateOf("Mal") }
@@ -748,11 +742,8 @@ fun AddSubtitleSheet(
     var fetching by remember { mutableStateOf(false) }
     var seasonText by remember { mutableStateOf("") }
     var episodeText by remember { mutableStateOf("") }
-    ModalBottomSheet(
+    IosBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
     ) {
         MsSheetContent(title = "Add Subtitle") {
             if (unlinked.isNotEmpty()) {

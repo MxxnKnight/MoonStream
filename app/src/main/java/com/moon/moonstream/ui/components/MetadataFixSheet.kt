@@ -23,9 +23,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -99,9 +97,7 @@ fun MetadataFixSheet(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var query by remember { mutableStateOf(initialQuery) }
-    var results by remember { mutableStateOf<List<EnrichedMeta>>(emptyList()) }
     // IMDb IDs + normalized titles already in the library — for the "In library" badge
     // (moon's request 2026-11-01: know when an entry already exists).
     var libraryKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -150,11 +146,8 @@ fun MetadataFixSheet(
         }
     }
 
-    ModalBottomSheet(
+    IosBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
     ) {
         MsSheetContent(title = heading) {
             Text(

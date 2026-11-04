@@ -17,9 +17,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,7 +48,6 @@ fun FilePickerSheet(
     onDismiss: () -> Unit,
     onPick: (List<PrefillFile>) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selected by remember { mutableStateOf(setOf<Long>()) }
     // In subtitle mode, only show subtitle files (.srt/.vtt/.ass/.ssa),
     // not video files (moon's bug 2026-11-01: picker showed 250MB+ videos).
@@ -63,11 +60,8 @@ fun FilePickerSheet(
         }
     }
 
-    ModalBottomSheet(
+    IosBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MsColors.Surface,
-        contentColor = MsColors.TextPrimary,
     ) {
         MsSheetContent(
             title = if (subtitleMode) "Pick subtitle files" else "Pick files",
