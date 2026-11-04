@@ -1030,21 +1030,22 @@ fun BackgroundToolButton(
         else -> idleText
     }
 
+    // iOS style (moon's 2026-11-05): #1C1C1E pill, 14dp radius, Apple spinner when running
     Box(
         modifier = modifier
             .heightIn(min = 40.dp)
-            .clip(CircleShape)
-            .border(1.dp, MsColors.TextSecondary.copy(alpha = 0.55f), CircleShape)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF1C1C1E))
             .clickable(enabled = !anyRunning) { onStart() }
             .padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         if (running) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
+                IosSpinner(
+                    modifier = Modifier.size(20.dp),
                     color = MsColors.Accent,
-                    strokeWidth = 2.dp,
+                    size = 16.dp,
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
