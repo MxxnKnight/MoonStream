@@ -745,6 +745,39 @@ fun PlayerScreen(
         }
     }
 
+    // Create the watch-progress row on playback start (moon's bug 2026-11-04:
+    // updatePosition is UPDATE-only, so without this the row never exists and
+    // Continue Watching stays empty).
+    LaunchedEffect(streamFileId) {
+        if (streamFileId == 0L || mediaId == 0L) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            try {
+                val media = db.mediaDao().getById(mediaId)
+                val file = orderedFiles.firstOrNull { it.id == streamFileId }
+                val season = currentGroup?.season ?: file?.season
+                val episode = currentGroup?.episode ?: file?.episode
+                val epLabel = if (season != null && episode != null) {
+                    "S%02dE%02d".format(season, episode)
+                } else null
+                // Only create if it doesn't exist yet (don't overwrite position).
+                if (db.watchProgressDao().get(mediaId, streamFileId) == null) {
+                    db.watchProgressDao().upsert(
+                        com.moon.moonstream.index.db.WatchProgressEntity(
+                            mediaId = mediaId,
+                            streamFileId = streamFileId,
+                            title = media?.title ?: mediaTitle,
+                            episodeLabel = epLabel,
+                            posterUrl = media?.posterUrl,
+                            playedAt = System.currentTimeMillis(),
+                            positionMs = 0L,
+                            durationMs = 0L,
+                        )
+                    )
+                }
+            } catch (e: Exception) { /* never break playback */ }
+        }
+    }
+
     // Save position every 5s while playing (for Resume + "watched X ago").
     LaunchedEffect(streamFileId) {
         if (streamFileId == 0L) return@LaunchedEffect
