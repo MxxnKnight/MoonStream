@@ -16,7 +16,6 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -36,7 +35,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.matchParentSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -86,6 +85,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * Server home screen.
@@ -286,7 +286,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
         if (maxOffset <= 0f) return@LaunchedEffect
         val target = if (on) maxOffset else 0f
         if (pillOffsetPx != target) {
-            animate(pillOffsetPx, target, tween(300)) { v, _ -> pillOffsetPx = v }
+            Animatable(pillOffsetPx).animateTo(target, tween(300)) { pillOffsetPx = value }
         }
     }
 
@@ -306,7 +306,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
         // Ambient background layers (kept from v1).
         Box(
             modifier = Modifier
-                .matchParentSize()
+                .fillMaxSize()
                 .clip(RoundedCornerShape(26.5.dp))
                 .background(Color(0xFF131316)),
         ) {
@@ -441,7 +441,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 // The pill — the power button.
                 Box(
                     modifier = Modifier
-                        .offset { IntOffset(pillOffsetPx.roundToPx(), 0) }
+                        .offset { IntOffset(pillOffsetPx.roundToInt(), 0) }
                         .width(68.dp)
                         .fillMaxHeight()
                         .padding(vertical = 10.dp, horizontal = 8.dp)
@@ -456,20 +456,20 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                     if (!on) {
                                         // Turning ON: 70% to complete.
                                         if (fraction >= 0.7f) {
-                                            animate(pillOffsetPx, maxOffset, tween(300)) { v, _ -> pillOffsetPx = v }
+                                            Animatable(pillOffsetPx).animateTo(maxOffset, tween(300)) { pillOffsetPx = value }
                                             onToggle()
                                         } else {
                                             // Snap back; magnetic catch if in the left 20%.
                                             val duration = if (fraction <= 0.2f) 150 else 300
-                                            animate(pillOffsetPx, 0f, tween(duration)) { v, _ -> pillOffsetPx = v }
+                                            Animatable(pillOffsetPx).animateTo(0f, tween(duration)) { pillOffsetPx = value }
                                         }
                                     } else {
                                         // Turning OFF: 70% toward the left (fraction <= 0.3).
                                         if (fraction <= 0.3f) {
-                                            animate(pillOffsetPx, 0f, tween(300)) { v, _ -> pillOffsetPx = v }
+                                            Animatable(pillOffsetPx).animateTo(0f, tween(300)) { pillOffsetPx = value }
                                             onToggle()
                                         } else {
-                                            animate(pillOffsetPx, maxOffset, tween(300)) { v, _ -> pillOffsetPx = v }
+                                            Animatable(pillOffsetPx).animateTo(maxOffset, tween(300)) { pillOffsetPx = value }
                                         }
                                     }
                                 }
