@@ -20,8 +20,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.graphics.Brush
-import com.skydoves.cloudy.cloudy
-import com.skydoves.cloudy.sky
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -160,8 +158,6 @@ class MainActivity : ComponentActivity() {
 fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     val authState by telegramManager.authState.collectAsState()
     val context = LocalContext.current
-    // Cloudy sky for the bottom pill's backdrop blur (moon's request 2026-11-04).
-    val sky = com.skydoves.cloudy.rememberSky()
 
     // Warm the library list at launch so the Library tab opens instantly.
     LaunchedEffect(Unit) { com.moon.moonstream.index.db.LibraryCache.items(context) }
@@ -220,7 +216,6 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
             // Screens keep their own bottom insets inside their scrollables
             // so the last item can still scroll fully into view.
             // AnimatedContent gives fast, fluid tab switches (180ms slide).
-            // sky() marks this as the blur source for the pill (Cloudy).
             AnimatedContent(
                 targetState = current,
                 transitionSpec = {
@@ -231,9 +226,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     fadeIn(tween(110)) togetherWith ExitTransition.None
                 },
                 label = "screenSwitch",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .sky(sky),
+                modifier = Modifier.fillMaxSize(),
             ) { screen ->
                 when (screen) {
                     AppScreen.Splash -> SplashScreen(
@@ -362,29 +355,54 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 )
                 // iOS-style tab bar (moon's iOS rebuild 2026-11-04): icon + label,
                 // blue selected, gray unselected. Keeps floating pill + swipe.
-                // Frosted glass via Cloudy backdrop blur (moon's request 2026-11-04):
-                // classic frosted blur of the content behind, not liquid glass.
+                // Frosted glass via BlurView (moon's request 2026-11-04):
+                // real backdrop blur of the scrolling content behind.
                 var dragAccum by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
                 val pillShape = RoundedCornerShape(24.dp)
-                Row(
+                val blurView = androidx.compose.runtime.remember {
+                    eightbitlab.com.blurview.BlurView(context).apply {
+                        // Rounded corners via outline provider
+                        outlineProvider = object : android.view.ViewOutlineProvider() {
+                            override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                                val r = 24 * resources.displayMetrics.density
+                                outline.setRoundRect(0, 0, view.width, view.height, r)
+                            }
+                        }
+                        clipToOutline = true
+                    }
+                }
+                // Setup BlurView against the activity's root view (once).
+                androidx.compose.runtime.LaunchedEffect(blurView) {
+                    val activity = context as? android.app.Activity
+                    val decorView = activity?.window?.decorView as? android.view.ViewGroup
+                    if (decorView != null) {
+                        blurView.setupWith(decorView, eightbitlab.com.blurview.RenderScriptBlur(context))
+                            .setBlurRadius(18f)
+                            .setOverlayColor(android.graphics.Color.argb(140, 0x1C, 0x1C, 0x1E))
+                    }
+                }
+                Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(start = 24.dp, end = 24.dp, bottom = 22.dp)
                         .clip(pillShape)
-                        .cloudy(
-                            sky = sky,
-                            radius = 25,
-                            shape = pillShape,
-                            tint = Color(0xFF1C1C1E).copy(alpha = 0.55f),
-                        )
-                        .border(0.5.dp, Color.White.copy(alpha = 0.14f), pillShape)
-                        .draggable(
-                            state = rememberDraggableState { delta ->
-                                dragAccum += delta
-                            },
-                            orientation = Orientation.Horizontal,
-                            onDragStopped = {
-                                val idx = tabs.indexOfFirst { it.screen == selectedTab }
+                        .border(0.5.dp, Color.White.copy(alpha = 0.14f), pillShape),
+                ) {
+                    // Blur background layer
+                    androidx.compose.ui.viewinterop.AndroidView(
+                        factory = { blurView },
+                        modifier = Modifier.matchParentSize(),
+                    )
+                    // Tab buttons on top
+                    Row(
+                        modifier = Modifier
+                            .draggable(
+                                state = rememberDraggableState { delta ->
+                                    dragAccum += delta
+                                },
+                                orientation = Orientation.Horizontal,
+                                onDragStopped = {
+                                    val idx = tabs.indexOfFirst { it.screen == selectedTab }
                                 if (dragAccum < -80 && idx < tabs.size - 1) {
                                     goTab(tabs[idx + 1].screen)
                                 } else if (dragAccum > 80 && idx > 0) {
