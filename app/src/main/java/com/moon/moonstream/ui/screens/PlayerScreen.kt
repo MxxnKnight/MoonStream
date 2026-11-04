@@ -163,6 +163,15 @@ private fun buildRenderersFactory(context: android.content.Context): DefaultRend
                 "eac3/ac3/dca/truehd in software",
         )
     } else {
+        // Diagnostic: why did FFmpeg fail to load? (moon's bug 2026-11-04)
+        try {
+            System.loadLibrary("ffmpegJNI")
+            AppLog.w("PLAYER", "FFmpeg .so loads manually but FfmpegLibrary.isAvailable() is false — version check failed")
+        } catch (e: UnsatisfiedLinkError) {
+            AppLog.e("PLAYER", "FFmpeg .so load failed: ${e.message}")
+        } catch (e: Exception) {
+            AppLog.e("PLAYER", "FFmpeg load error: ${e.message}")
+        }
         AppLog.w("PLAYER", "FFmpeg extension not available — hardware decoders only")
     }
     return DefaultRenderersFactory(context).setExtensionRendererMode(

@@ -58,17 +58,24 @@ fun LogsScreen(onBack: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val lines = com.moon.moonstream.util.AppLog.lines
     val listState = rememberLazyListState()
+    var initialScrollDone by remember { mutableStateOf(false) }
 
     // Auto-scroll to the newest line whenever the log grows — but only if
     // the user is already near the bottom. Uses instant scrollToItem (not
     // animated) so rapid log bursts during audits don't stack animations
     // and kill the app (moon's crash).
+    // On first load, ALWAYS scroll to bottom (moon's bug 2026-11-04: black screen).
     LaunchedEffect(lines.size) {
         if (lines.isNotEmpty()) {
-            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            // If user is within 5 items of the bottom, follow the tail.
-            if (lastVisible >= lines.size - 6) {
+            if (!initialScrollDone) {
                 listState.scrollToItem(lines.size - 1)
+                initialScrollDone = true
+            } else {
+                val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                // If user is within 5 items of the bottom, follow the tail.
+                if (lastVisible >= lines.size - 6) {
+                    listState.scrollToItem(lines.size - 1)
+                }
             }
         }
     }
