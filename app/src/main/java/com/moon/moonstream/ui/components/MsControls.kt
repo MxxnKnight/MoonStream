@@ -1306,14 +1306,14 @@ fun IosContextMenu(
     onDismissRequest: () -> Unit,
     buttons: List<IosSheetButton>,
 ) {
+    // Transparent container so the rounded background below is the only
+    // thing visible (moon's bug 2026-11-04: sharp corners behind rounded menu).
     androidx.compose.material3.DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = Modifier
-            .background(
-                Color(0xFF1C1C1E).copy(alpha = 0.95f),
-                RoundedCornerShape(14.dp),
-            )
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF1C1C1E).copy(alpha = 0.95f))
             .widthIn(min = 200.dp),
     ) {
         buttons.forEachIndexed { index, button ->
