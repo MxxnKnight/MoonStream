@@ -1104,25 +1104,19 @@ fun PlayerScreen(
             Row(
                 modifier = Modifier.align(Alignment.Center),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(48.dp),
+                horizontalArrangement = Arrangement.spacedBy(64.dp),
             ) {
-                // iOS-style seek buttons (moon's request 2026-11-04): clean icon, no heavy circle.
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(CircleShape)
-                        .clickable {
-                            player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0L))
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Replay10,
-                        contentDescription = "Back 10s",
-                        tint = Color.White,
-                        modifier = Modifier.size(32.dp),
-                    )
-                }
+                // Seek buttons with round overlay like other player icons
+                // (moon's request 2026-11-04: too close to pause, add the circle).
+                PlayerIconButton(
+                    icon = Icons.Filled.Replay10,
+                    contentDescription = "Back 10s",
+                    onClick = {
+                        player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0L))
+                    },
+                    size = 52.dp,
+                    iconSize = 32.dp,
+                )
                 // Big play/pause: 76dp circle, no border (mpvex-style).
                 Surface(
                     onClick = { if (isPlaying) player.pause() else player.play() },
@@ -1139,26 +1133,20 @@ fun PlayerScreen(
                         )
                     }
                 }
-                // iOS-style seek buttons (moon's request 2026-11-04): clean icon, no heavy circle.
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(CircleShape)
-                        .clickable {
-                            player.seekTo(
-                                (player.currentPosition + 10_000)
-                                    .coerceAtMost(duration.coerceAtLeast(0L))
-                            )
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Forward10,
-                        contentDescription = "Forward 10s",
-                        tint = Color.White,
-                        modifier = Modifier.size(32.dp),
-                    )
-                }
+                // Seek buttons with round overlay like other player icons
+                // (moon's request 2026-11-04: too close to pause, add the circle).
+                PlayerIconButton(
+                    icon = Icons.Filled.Forward10,
+                    contentDescription = "Forward 10s",
+                    onClick = {
+                        player.seekTo(
+                            (player.currentPosition + 10_000)
+                                .coerceAtMost(duration.coerceAtLeast(0L))
+                        )
+                    },
+                    size = 52.dp,
+                    iconSize = 32.dp,
+                )
             }
         }
 
@@ -1389,30 +1377,16 @@ fun PlayerScreen(
                     contentAlignment =
                         if (forward) Alignment.CenterEnd else Alignment.CenterStart,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .padding(horizontal = 56.dp)
-                            .background(
-                                Color.Black.copy(alpha = 0.62f),
-                                CircleShape,
-                            )
-                            .border(
-                                1.dp,
-                                Color.White.copy(alpha = 0.2f),
-                                CircleShape,
-                            )
-                            .padding(horizontal = 22.dp, vertical = 14.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "${if (forward) "+" else "-"}${secs}s",
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                            ),
-                        )
-                    }
+                    // Text only, no background or outline (moon's request 2026-11-04).
+                    Text(
+                        "${if (forward) "+" else "-"}${secs}s",
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        modifier = Modifier.padding(horizontal = 56.dp),
+                    )
                 }
             }
         }
