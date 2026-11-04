@@ -81,6 +81,8 @@ import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.InfoDot
 import com.moon.moonstream.ui.components.IosGroup
 import com.moon.moonstream.ui.components.IosNavRow
+import com.moon.moonstream.ui.components.IosDialog
+import com.moon.moonstream.ui.components.IosSheetButton
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.MsCard
 import com.moon.moonstream.ui.components.MsDropdown
@@ -1467,7 +1469,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     // --- OTA update dialog ---
     updateInfo?.let { info ->
         // iOS dialog (moon's request 2026-11-04) — dynamic buttons for Download → Install flow.
-        val dialogButtons = buildList {
+        val dialogButtons = buildList<IosSheetButton> {
             add(IosSheetButton(
                 label = "Later",
                 onClick = { if (updateState !is UpdateState.Downloading) updateInfo = null },
