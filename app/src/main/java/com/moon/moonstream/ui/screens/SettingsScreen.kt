@@ -1553,6 +1553,7 @@ private fun AccountCard(onLoggedOut: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showLogout by remember { mutableStateOf(false) }
+    var showLogoutFinal by remember { mutableStateOf(false) }
     var profile by remember { mutableStateOf<MsProfile?>(null) }
 
     LaunchedEffect(Unit) {
@@ -1660,6 +1661,43 @@ private fun AccountCard(onLoggedOut: () -> Unit) {
             },
             confirmButton = {
                 LimePillButton(
+                    text = "Yes, log out",
+                    fontSize = 14,
+                    onClick = {
+                        showLogout = false
+                        showLogoutFinal = true
+                    },
+                )
+            },
+            dismissButton = {
+                MsOutlinePill(text = "Cancel", fontSize = 14, onClick = { showLogout = false })
+            },
+            containerColor = MsColors.Surface,
+            titleContentColor = MsColors.TextPrimary,
+            textContentColor = MsColors.TextSecondary,
+        )
+    }
+    // Second confirmation (moon's request 2026-11-04): double-confirm logout.
+    if (showLogoutFinal) {
+        AlertDialog(
+            onDismissRequest = { showLogoutFinal = false },
+            title = {
+                Text(
+                    "Really log out?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MsColors.TextPrimary,
+                )
+            },
+            text = {
+                Text(
+                    "This will stop the server and delete your local library. This can't be undone.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MsColors.TextSecondary,
+                )
+            },
+            confirmButton = {
+                LimePillButton(
                     text = "Log out",
                     fontSize = 14,
                     onClick = {
@@ -1681,7 +1719,7 @@ private fun AccountCard(onLoggedOut: () -> Unit) {
                                 db.clearAllTables()
                             } catch (_: Exception) {}
                             AppUiState.setLoggedOut(context)
-                            showLogout = false
+                            showLogoutFinal = false
                             MsToast.show("Logged out")
                             onLoggedOut()
                         }
@@ -1689,7 +1727,7 @@ private fun AccountCard(onLoggedOut: () -> Unit) {
                 )
             },
             dismissButton = {
-                MsOutlinePill(text = "Cancel", fontSize = 14, onClick = { showLogout = false })
+                MsOutlinePill(text = "Cancel", fontSize = 14, onClick = { showLogoutFinal = false })
             },
             containerColor = MsColors.Surface,
             titleContentColor = MsColors.TextPrimary,
