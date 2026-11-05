@@ -33,6 +33,7 @@ object BackupManager {
         val media: Int,
         val files: Int,
         val subtitles: Int,
+        val progress: Int,
         val settingsApplied: Boolean,
     )
 
@@ -89,6 +90,8 @@ object BackupManager {
                     .put("type", m.type)
                     .put("imdbId", m.imdbId)
                     .put("tmdbId", m.tmdbId)
+                    .put("kitsuId", m.kitsuId)
+                    .put("anilistId", m.anilistId)
                     .put("stremioId", m.stremioId)
                     .put("posterUrl", m.posterUrl)
                     .put("overview", m.overview)
@@ -123,6 +126,17 @@ object BackupManager {
                     .put("season", s.season)
                     .put("episode", s.episode)
                     .put("language", s.language)
+            }))
+            .put("watch_progress", arr(db.watchProgressDao().getAll().map { w ->
+                JSONObject()
+                    .put("mediaId", w.mediaId)
+                    .put("streamFileId", w.streamFileId)
+                    .put("title", w.title)
+                    .put("episodeLabel", w.episodeLabel)
+                    .put("posterUrl", w.posterUrl)
+                    .put("playedAt", w.playedAt)
+                    .put("positionMs", w.positionMs)
+                    .put("durationMs", w.durationMs)
             }))
             .put("unmatched_files", arr(db.unmatchedDao().getAll().map { u ->
                 JSONObject()
@@ -201,6 +215,8 @@ object BackupManager {
                     type = o.optString("type", "movie"),
                     imdbId = o.optString("imdbId", null),
                     tmdbId = if (o.isNull("tmdbId")) null else o.optInt("tmdbId"),
+                    kitsuId = o.optString("kitsuId", null),
+                    anilistId = o.optString("anilistId", null),
                     // Preserved from the backup when present; old backups
                     // (or hand-edited ones) fall back to the deterministic
                     // synthetic ID — never null after this point.
@@ -276,6 +292,35 @@ object BackupManager {
             }
         }
 
+        // Watch progress (resume spots, moon's 2026-11-06): remap the media
+        // id through mediaIdMap; when a row already exists for the same file,
+        // the newer playedAt wins — a restore never rewinds a newer spot.
+        var progress = 0
+        json.optJSONArray("watch_progress")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val mediaId = mediaIdMap[o.getLong("mediaId")] ?: continue
+                val streamFileId = o.getLong("streamFileId")
+                val playedAt = o.optLong("playedAt", 0)
+                val existing = db.watchProgressDao().get(mediaId, streamFileId)
+                if (existing != null && existing.playedAt >= playedAt) continue
+                db.watchProgressDao().upsert(
+                    com.moon.moonstream.index.db.WatchProgressEntity(
+                        id = existing?.id ?: 0,
+                        mediaId = mediaId,
+                        streamFileId = streamFileId,
+                        title = o.optString("title", ""),
+                        episodeLabel = o.optString("episodeLabel", null),
+                        posterUrl = o.optString("posterUrl", null),
+                        playedAt = playedAt,
+                        positionMs = o.optLong("positionMs", 0),
+                        durationMs = o.optLong("durationMs", 0),
+                    ),
+                )
+                progress++
+            }
+        }
+
         // Unmatched: insert-ignore handles dupes.
         json.optJSONArray("unmatched_files")?.let { arr ->
             for (i in 0 until arr.length()) {
@@ -310,7 +355,7 @@ object BackupManager {
             settingsApplied = true
         }
 
-        return RestoreSummary(channels, media, files, subtitles, settingsApplied)
+        return RestoreSummary(channels, media, files, subtitles, progress, settingsApplied)
     }
 
     // ------------------------------------------------------------ gzip

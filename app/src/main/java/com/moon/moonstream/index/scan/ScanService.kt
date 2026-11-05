@@ -106,7 +106,13 @@ class ScanService : Service() {
                         val json = com.moon.moonstream.backup.BackupManager.buildBackupJson(this@ScanService)
                         val gz = com.moon.moonstream.backup.BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
                         val name = com.moon.moonstream.backup.BackupManager.backupFileName()
-                        BackendProvider.backend.uploadBackup(gz, name)
+                        val msgId = BackendProvider.backend.uploadBackup(gz, name)
+                        // Stamp "Last backup" too (moon's 2026-11-06: the screen
+                        // showed only the manual push while auto-backups ran).
+                        if (msgId != null) {
+                            prefs.edit().putLong("last_backup_at", System.currentTimeMillis()).apply()
+                            Log.i(TAG, "Post-scan auto backup pushed (msg $msgId)")
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Post-scan auto backup failed", e)

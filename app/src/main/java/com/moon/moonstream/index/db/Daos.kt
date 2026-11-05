@@ -336,6 +336,10 @@ interface WatchProgressDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entry: WatchProgressEntity)
 
+    /** All resume rows — for the library backup (moon's 2026-11-06). */
+    @Query("SELECT * FROM watch_progress")
+    suspend fun getAll(): List<WatchProgressEntity>
+
     @Query("SELECT * FROM watch_progress ORDER BY playedAt DESC LIMIT :limit")
     suspend fun recent(limit: Int = 15): List<WatchProgressEntity>
 

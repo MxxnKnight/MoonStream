@@ -181,7 +181,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     var autoBackupSync by remember {
         mutableStateOf(
             context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
-                .getBoolean("auto_backup_sync", false)
+                .getBoolean("auto_backup_sync", true)
         )
     }
 
@@ -259,7 +259,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 com.moon.moonstream.index.scan.ScanUiState.bumpChannelListVersion()
                 withContext(Dispatchers.Main) {
                     markBackedUp()
-                    MsToast.show("Restored from Telegram: ${summary.channels} channels, ${summary.media} titles, ${summary.files} files")
+                    MsToast.show("Restored from Telegram: ${summary.channels} channels, ${summary.media} titles, ${summary.files} files, ${summary.progress} resume spots")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -361,7 +361,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 com.moon.moonstream.index.scan.ScanUiState.bumpChannelListVersion()
                 withContext(Dispatchers.Main) {
                     markBackedUp()
-                    MsToast.show("Restored: ${summary.channels} channels, ${summary.media} titles, " + "${summary.files} files, ${summary.subtitles} subtitles")
+                    MsToast.show("Restored: ${summary.channels} channels, ${summary.media} titles, " + "${summary.files} files, ${summary.subtitles} subtitles, ${summary.progress} resume spots")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
