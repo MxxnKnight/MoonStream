@@ -435,6 +435,7 @@ fun DetailScreen(
                     model = com.moon.moonstream.util.PosterStyle.displayUrl(
                         m.posterUrl, m.imdbId,
                         com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
+                        com.moon.moonstream.index.scan.ScanPrefs.getPosterTemplate(context),
                     ),
                     contentDescription = m.title,
                     contentScale = ContentScale.Crop,

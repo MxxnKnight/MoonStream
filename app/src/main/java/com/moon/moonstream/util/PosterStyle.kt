@@ -26,20 +26,51 @@ object PosterStyle {
     const val BETTER_POSTERS = 1
     const val FANART = 2
 
-    /** BetterPosters default poster URL — free, keyless, IMDb id only. */
-    fun betterPostersUrl(imdbId: String?): String? {
+    /** BetterPosters poster URL — free, keyless, IMDb id only. With a custom
+     *  style address (moon's 2026-11-06, from btttr.cc/configure), the IMDb id
+     *  is swapped into its {imdb_id} placeholder; otherwise the default look.
+     *  Accepts {imdb_id} / {imdbId}, raw or percent-encoded (iOS clipboard
+     *  can encode the braces). Falls back to the default on any bad input. */
+    fun betterPostersUrl(imdbId: String?, template: String? = null): String? {
         val id = imdbId?.takeIf { it.startsWith("tt") } ?: return null
+        val tpl = template?.trim().orEmpty()
+        if (tpl.isNotEmpty() && (tpl.startsWith("http://") || tpl.startsWith("https://"))) {
+            val decoded = normalizeTemplate(tpl)
+            if (decoded.contains("{imdb_id}")) {
+                return decoded.replace("{imdb_id}", id)
+            }
+        }
         return "https://btttr.cc/poster/imdb/poster-default/$id.jpg"
     }
+
+    /** Blank = use the default look; otherwise needs an http(s) address with
+     *  the {imdb_id} placeholder in it. */
+    fun isValidTemplate(template: String?): Boolean {
+        val t = template?.trim().orEmpty()
+        if (t.isEmpty()) return true
+        if (!t.startsWith("http://") && !t.startsWith("https://")) return false
+        return normalizeTemplate(t).contains("{imdb_id}")
+    }
+
+    private fun normalizeTemplate(tpl: String): String =
+        tpl
+            .replace("%7Bimdb_id%7D", "{imdb_id}", ignoreCase = true)
+            .replace("%7BimdbId%7D", "{imdb_id}", ignoreCase = true)
+            .replace("{imdbId}", "{imdb_id}")
 
     /**
      * Effective poster for display: BetterPosters rewrites from the IMDb id
      * (falling back to the stored poster for titles without one); every
      * other style shows the stored poster as-is.
      */
-    fun displayUrl(storedPosterUrl: String?, imdbId: String?, style: Int): String? {
+    fun displayUrl(
+        storedPosterUrl: String?,
+        imdbId: String?,
+        style: Int,
+        template: String? = null,
+    ): String? {
         if (style == BETTER_POSTERS) {
-            return betterPostersUrl(imdbId) ?: storedPosterUrl
+            return betterPostersUrl(imdbId, template) ?: storedPosterUrl
         }
         return storedPosterUrl
     }

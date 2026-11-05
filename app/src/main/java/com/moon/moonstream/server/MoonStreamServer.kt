@@ -596,6 +596,7 @@ class MoonStreamServer(
         val poster = com.moon.moonstream.util.PosterStyle.displayUrl(
             m.posterUrl, m.imdbId,
             com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(appContext),
+            com.moon.moonstream.index.scan.ScanPrefs.getPosterTemplate(appContext),
         )
         if (!poster.isNullOrBlank()) {
             o.put("poster", poster)

@@ -640,6 +640,7 @@ private fun PosterCell(
                         model = com.moon.moonstream.util.PosterStyle.displayUrl(
                             item.posterUrl, item.imdbId,
                             com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
+                            com.moon.moonstream.index.scan.ScanPrefs.getPosterTemplate(context),
                         ),
                         contentDescription = item.title,
                         contentScale = ContentScale.Crop,

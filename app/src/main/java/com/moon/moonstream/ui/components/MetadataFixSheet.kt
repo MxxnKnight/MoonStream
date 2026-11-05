@@ -395,6 +395,7 @@ private fun MetaResultRow(
                     model = com.moon.moonstream.util.PosterStyle.displayUrl(
                         result.posterUrl, result.imdbId,
                         com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
+                        com.moon.moonstream.index.scan.ScanPrefs.getPosterTemplate(context),
                     ),
                     contentDescription = result.title,
                     contentScale = ContentScale.Crop,

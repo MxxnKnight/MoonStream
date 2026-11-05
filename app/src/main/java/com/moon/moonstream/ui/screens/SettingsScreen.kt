@@ -150,7 +150,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     // The key that is actually saved — the Fanart.tv option is gated on
     // this, not on the (possibly unsaved) text field above.
     var fanartKeySaved by remember { mutableStateOf(ScanPrefs.getFanartKey(context)) }
-    var posterTemplate by remember { mutableStateOf("") }
+    var posterTemplate by remember { mutableStateOf(ScanPrefs.getPosterTemplate(context)) }
     var posterStyle by remember { mutableStateOf(ScanPrefs.getPosterStyle(context)) }
     var animeNumbering by remember { mutableStateOf(if (ScanPrefs.isAnimeAbsolute(context)) 1 else 0) }
 
@@ -748,22 +748,31 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 )
             }
             SettingBlock(
-                title = "Custom poster template",
-                info = "Optional: a URL pattern for your own poster source. {title} and {year} get replaced for each lookup.",
+                title = "BetterPosters custom style",
+                info = "Optional: your own poster style address from btttr.cc/configure (AIOMetadata / Other Addon) — it must contain {imdb_id}. The app swaps each title's IMDb number into it. Leave it empty to use the default BetterPosters look. Only used when Poster style is BetterPosters.",
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MsTextField(
                         value = posterTemplate,
                         onValueChange = { posterTemplate = it },
-                        hint = "https://…",
+                        hint = "https://btttr.cc/poster-…/{imdb_id}.jpg",
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(10.dp))
                     MsOutlinePill(
-                        text = "See Template",
+                        text = "Save",
                         fontSize = 13,
                         onClick = {
-                            MsToast.show("Example: https://my-posters.example/{title}-{year}.jpg")
+                            val t = posterTemplate.trim()
+                            if (t.isEmpty()) {
+                                ScanPrefs.setPosterTemplate(context, "")
+                                MsToast.show("Saved — using the default BetterPosters look")
+                            } else if (com.moon.moonstream.util.PosterStyle.isValidTemplate(t)) {
+                                ScanPrefs.setPosterTemplate(context, t)
+                                MsToast.show("Saved")
+                            } else {
+                                MsToast.show("That address needs {imdb_id} in it — copy the pattern from btttr.cc/configure")
+                            }
                         },
                     )
                 }

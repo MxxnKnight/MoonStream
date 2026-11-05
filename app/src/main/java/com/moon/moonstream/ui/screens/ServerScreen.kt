@@ -964,6 +964,7 @@ private fun RecentlyAddedRow(
                                 model = com.moon.moonstream.util.PosterStyle.displayUrl(
                                     m.posterUrl, m.imdbId,
                                     com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
+                                    com.moon.moonstream.index.scan.ScanPrefs.getPosterTemplate(context),
                                 ),
                                 contentDescription = m.title,
                                 modifier = Modifier.fillMaxSize(),
@@ -1071,6 +1072,7 @@ private fun ContinueWatchingRow(
                                 model = com.moon.moonstream.util.PosterStyle.displayUrl(
                                     w.posterUrl, w.imdbId,
                                     com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
+                                    com.moon.moonstream.index.scan.ScanPrefs.getPosterTemplate(context),
                                 ),
                                 contentDescription = w.title,
                                 modifier = Modifier.fillMaxSize(),

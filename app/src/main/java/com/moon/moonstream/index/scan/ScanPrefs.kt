@@ -18,6 +18,9 @@ object ScanPrefs {
     // free, no key, IMDb id only), 2 = Fanart.tv (free key required).
     private const val KEY_POSTER_STYLE = "poster_style"
     private const val KEY_FANART = "fanart_key"
+    // Custom BetterPosters style address (moon's 2026-11-06): a btttr.cc URL
+    // pattern with {imdb_id} in it, e.g. from btttr.cc/configure.
+    private const val KEY_POSTER_TEMPLATE = "poster_template"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -41,6 +44,14 @@ object ScanPrefs {
 
     fun setPosterStyle(context: Context, style: Int) {
         prefs(context).edit().putInt(KEY_POSTER_STYLE, style).apply()
+    }
+
+    /** Custom BetterPosters style address ({imdb_id} pattern), or "" for default. */
+    fun getPosterTemplate(context: Context): String =
+        prefs(context).getString(KEY_POSTER_TEMPLATE, "") ?: ""
+
+    fun setPosterTemplate(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_POSTER_TEMPLATE, value.trim()).apply()
     }
 
     /** Fanart.tv personal API key (free, from fanart.tv/get-an-api-key). */
