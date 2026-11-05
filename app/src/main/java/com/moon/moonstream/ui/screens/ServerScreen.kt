@@ -389,6 +389,10 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 )
             }
 
+            // The swipe track + URL inside the card (moon's 2026-11-05:
+            // old style — URL below a divider, part of the card, not a
+            // separate box sliding from behind).
+            Column(modifier = Modifier.fillMaxWidth()) {
             // The swipe track.
             Box(
                 modifier = Modifier
@@ -575,29 +579,24 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
             }
         }
 
-        // URL: part of the card, slides from behind (moon's point 1).
-        // Rounded bottom corners like the card, top tucked behind.
-        AnimatedVisibility(
-            visible = urlVisible,
-            enter = fadeIn(tween(250)) + slideInVertically(tween(350)) { -it },
-            exit = fadeOut(tween(200)) + slideOutVertically(tween(300)) { -it },
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp)
-                    .offset(y = (-8).dp)
-                    .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
-                    .background(Color(0xFF1A1A1E))
-                    .border(
-                        1.dp,
-                        Color.White.copy(alpha = 0.08f),
-                        RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
-                    ),
+            // URL row INSIDE the card, below a divider (old style).
+            // Shows when ON, fades in — no slide-from-behind.
+            AnimatedVisibility(
+                visible = urlVisible,
+                enter = fadeIn(tween(250)),
+                exit = fadeOut(tween(200)),
             ) {
-                ManifestDrawer()
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(Color.White.copy(alpha = 0.08f)),
+                    )
+                    ManifestDrawer()
+                }
             }
-        }
+            } // end Column (track + URL)
     }
 }
 
