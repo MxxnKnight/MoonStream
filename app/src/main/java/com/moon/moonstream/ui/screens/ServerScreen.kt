@@ -356,8 +356,10 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
 
     // Fixed card height.
     val cardHeight = 240.dp
-    // URL visibility: slides from behind once the swipe is mostly complete.
-    val urlVisible = progress > 0.85f || cardState == ServerCardState.RUNNING
+    // URL visibility (moon's 2026-11-05): part of the card, ONLY visible
+    // on pill swipe — appears as the pill moves past halfway, fades in
+    // with progress (not a pop-in at 85%).
+    val urlVisible = progress > 0.5f || cardState == ServerCardState.RUNNING
 
     Column(modifier = Modifier.fillMaxWidth()) {
         // Main card (z-index above URL).
@@ -586,7 +588,11 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 enter = fadeIn(tween(250)),
                 exit = fadeOut(tween(200)),
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer { alpha = progress.coerceIn(0f, 1f) },
+                ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -610,22 +616,21 @@ private fun ScrambleUrlText(url: String, modifier: Modifier = Modifier) {
     var display by remember { mutableStateOf(url) }
     LaunchedEffect(url) {
         if (url.isEmpty()) { display = ""; return@LaunchedEffect }
+        // Scramble ALL chars from "http:" onward (moon's 2026-11-05: the old
+        // version kept : / . fixed, so only the numbers scrambled — and it
+        // was too fast at 10x60ms). Now 14 steps x 100ms = 1.4s, every char
+        // randomizes until its turn to resolve.
         val pool = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-        val structural = setOf(':', '/', '.', '-', '_', '?', '=', '&', '%', '#')
-        val steps = 10
+        val steps = 14
         repeat(steps) { step ->
             val progress = (step + 1) / steps.toFloat()
             val resolved = (url.length * progress).toInt()
             display = buildString {
                 url.forEachIndexed { i, c ->
-                    when {
-                        i < resolved -> append(c)
-                        c in structural -> append(c)
-                        else -> append(pool.random())
-                    }
+                    if (i < resolved) append(c) else append(pool.random())
                 }
             }
-            delay(60)
+            delay(100)
         }
         display = url
     }
