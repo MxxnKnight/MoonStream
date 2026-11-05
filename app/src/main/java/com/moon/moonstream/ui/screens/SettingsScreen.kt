@@ -134,7 +134,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     var serverOffMode by remember { mutableStateOf(false) }
 
     // --- Scanning & Matching state ---
-    var autoScan by remember { mutableStateOf(true) }
+    var autoScan by remember { mutableStateOf(ScanPrefs.isAutoScan(context)) }
     var scanInterval by remember { mutableStateOf("30") }
     var animeMode by remember { mutableStateOf(true) }
     var showCatalogs by remember { mutableStateOf(true) }
@@ -588,7 +588,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 title = "Auto-scan new content",
                 info = "When on, the app quietly checks your channels for new files in the background and adds them to the library by itself.",
             ) {
-                MsToggle(checked = autoScan, onCheckedChange = { autoScan = it; MsToast.show("Saved") })
+                MsToggle(checked = autoScan, onCheckedChange = { autoScan = it; ScanPrefs.setAutoScan(context, it); MsToast.show("Saved") })
             }
             SettingRow(
                 title = "Scan interval (seconds)",

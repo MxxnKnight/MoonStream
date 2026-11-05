@@ -40,6 +40,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -162,6 +164,13 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     // Warm the library list at launch so the Library tab opens instantly.
     LaunchedEffect(Unit) { com.moon.moonstream.index.db.LibraryCache.items(context) }
 
+    // Auto-scan on app open (moon's pick 2026-11-06, option 1): once per
+    // launch, when Telegram is Ready, quietly run an incremental scan of all
+    // channels so new files appear in the library by themselves. Guarded by
+    // the Settings toggle (ScanPrefs.isAutoScan, default on) and by
+    // ScanService's own running flag, so a second start is ignored.
+    var autoScanDone by remember { mutableStateOf(false) }
+
     // Automatically install real backend whenever Telegram becomes Ready
     LaunchedEffect(authState) {
         if (authState is com.moon.moonstream.tdlib.AuthState.Ready) {
@@ -170,6 +179,32 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 telegramManager = telegramManager
             )
             com.moon.moonstream.backend.BackendProvider.install(realBackend)
+            if (!autoScanDone && com.moon.moonstream.index.scan.ScanPrefs.isAutoScan(context)) {
+                autoScanDone = true
+                withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        val db = com.moon.moonstream.index.db.MsDatabase.get(context)
+                        val targets = db.channelConfigDao().all()
+                            .filter { !it.removed }
+                            .map {
+                                com.moon.moonstream.index.scan.ScanTarget(
+                                    it.channelId, it.title, it.isAnime,
+                                )
+                            }
+                        if (targets.isNotEmpty()) {
+                            com.moon.moonstream.util.AppLog.i(
+                                "SCAN", "Auto-scan on open: ${targets.size} channel(s)",
+                            )
+                            com.moon.moonstream.index.scan.ScanService.start(
+                                context, targets,
+                                com.moon.moonstream.index.scan.ScanMode.INCREMENTAL,
+                            )
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("MainActivity", "auto-scan failed: ${e.message}")
+                    }
+                }
+            }
         }
     }
     val backStack = remember { mutableStateListOf<AppScreen>(AppScreen.Splash) }

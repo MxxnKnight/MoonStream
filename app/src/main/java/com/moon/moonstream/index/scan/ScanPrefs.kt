@@ -12,6 +12,7 @@ object ScanPrefs {
     private const val KEY_TMDB = "tmdb_key"
     private const val KEY_TVDB = "tvdb_key"
     private const val KEY_ANIME_NUMBERING = "anime_numbering" // 0 = seasonal, 1 = absolute
+    private const val KEY_AUTO_SCAN = "auto_scan_on_open" // scan on app open (moon's pick 2026-11-06)
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -35,5 +36,12 @@ object ScanPrefs {
 
     fun setAnimeNumbering(context: Context, absolute: Boolean) {
         prefs(context).edit().putInt(KEY_ANIME_NUMBERING, if (absolute) 1 else 0).apply()
+    }
+
+    fun isAutoScan(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AUTO_SCAN, true)
+
+    fun setAutoScan(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUTO_SCAN, value).apply()
     }
 }
