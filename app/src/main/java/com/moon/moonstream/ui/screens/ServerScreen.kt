@@ -574,7 +574,8 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
-                        .align(Alignment.Center)
+                        .fillMaxSize()
+                        .wrapContentSize(Alignment.Center)
                         .padding(start = 100.dp, end = 16.dp)
                         .softWipeInverse(pillOffsetPx, featherPx, widthPxF)
                         .alpha((1f - progress).coerceIn(0f, 1f)),
@@ -589,12 +590,9 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
         }
 
             // URL row INSIDE the card, below a divider (old style).
-            // Shows when ON, fades in — no slide-from-behind.
-            AnimatedVisibility(
-                visible = urlVisible,
-                enter = fadeIn(tween(250)),
-                exit = fadeOut(tween(200)),
-            ) {
+            // Shows when ON (plain if — AnimatedVisibility breaks in this
+            // Column scope). Fades with swipe progress via graphicsLayer.
+            if (urlVisible) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
