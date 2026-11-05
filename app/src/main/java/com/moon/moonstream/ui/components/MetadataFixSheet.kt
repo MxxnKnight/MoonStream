@@ -371,6 +371,7 @@ private fun MetaResultRow(
     inLibrary: Boolean = false,
     onPick: () -> Unit,
 ) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()

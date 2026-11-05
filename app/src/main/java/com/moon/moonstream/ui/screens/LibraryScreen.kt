@@ -611,6 +611,7 @@ private fun PosterCell(
     onLongPress: () -> Unit,
     onToggleHide: () -> Unit,
 ) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier.combinedClickable(
             onClick = onClick,

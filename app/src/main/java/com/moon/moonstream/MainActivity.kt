@@ -199,6 +199,9 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                 context, targets,
                                 com.moon.moonstream.index.scan.ScanMode.INCREMENTAL,
                             )
+                        } else {
+                            // No enabled channels — nothing to scan.
+                            com.moon.moonstream.util.AppLog.i("SCAN", "Auto-scan on open: no channels")
                         }
                     } catch (e: Exception) {
                         android.util.Log.e("MainActivity", "auto-scan failed: ${e.message}")
