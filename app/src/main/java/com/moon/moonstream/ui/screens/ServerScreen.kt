@@ -492,20 +492,22 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                     }
                                 }
                                 Spacer(Modifier.height(12.dp))
-                                // Single-line pill (moon's old style — full width
-                                // so "session 0 B · all-time 1022 MB" fits; the
-                                // text is centred so it never runs under the pill).
+                                // Single-line pill (moon's old style). Clears the
+                                // swipe pill with end padding (moon's 2026-11-05:
+                                // it ran under the pill) and uses bodyMedium so
+                                // "session 0 B · all-time 1022 MB" fits.
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .padding(end = 84.dp)
                                         .clip(RoundedCornerShape(14.dp))
                                         .background(Color.Black.copy(alpha = 0.35f))
-                                        .padding(vertical = 10.dp, horizontal = 16.dp),
+                                        .padding(vertical = 10.dp, horizontal = 14.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Text(
                                         "session ${formatBytes(ServerTelemetry.sessionBytes)}  \u00b7  all-time ${formatBytes(ServerTelemetry.totalBytes)}",
-                                        style = MaterialTheme.typography.bodyLarge,
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = Color.White,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
