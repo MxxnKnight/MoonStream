@@ -378,35 +378,22 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 .background(borderBrush)
                 .padding(1.5.dp)
                 .clip(RoundedCornerShape(26.5.dp))
-                .background(Color(0xFF131316)),
+                .background(
+                    // Inner gradient as the card's OWN background (moon's
+                    // 2026-11-05: "still no gradient inside" — the child
+                    // gradient Boxes weren't rendering). Accent blended over
+                    // #131316, top-strong, fading down; OFF = plain #131316.
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            MsColors.Accent.copy(alpha = 0.38f * progress)
+                                .compositeOver(Color(0xFF131316)),
+                            MsColors.Accent.copy(alpha = 0.14f * progress)
+                                .compositeOver(Color(0xFF131316)),
+                            Color(0xFF131316),
+                        ),
+                    ),
+                ),
         ) {
-            // Inner gradient when ON (moon's 2026-11-05: bright Accent so the
-            // colour is unmistakable inside the card, not just the border).
-            if (progress > 0.02f) {
-                Box(
-                    modifier = Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MsColors.Accent.copy(alpha = 0.22f * progress),
-                                MsColors.Accent.copy(alpha = 0.08f * progress),
-                                Color.Transparent,
-                            ),
-                        ),
-                    ),
-                )
-                Box(
-                    modifier = Modifier.fillMaxSize().background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                MsColors.Accent.copy(alpha = 0.35f * progress),
-                                Color.Transparent,
-                            ),
-                            center = Offset(0.5f, 0.0f),
-                            radius = 900f,
-                        ),
-                    ),
-                )
-            }
 
             // Content: track on top, URL below it — all inside the card.
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -492,10 +479,9 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                     }
                                 }
                                 Spacer(Modifier.height(12.dp))
-                                // Single-line pill (moon's old style). Clears the
-                                // swipe pill with end padding (moon's 2026-11-05:
-                                // it ran under the pill) and uses bodyMedium so
-                                // "session 0 B · all-time 1022 MB" fits.
+                                // Session-only pill (moon's 2026-11-05: "remove
+                                // that all time data transfer, just session wise
+                                // only needed"). Clears the swipe pill.
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -506,7 +492,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Text(
-                                        "session ${formatBytes(ServerTelemetry.sessionBytes)}  \u00b7  all-time ${formatBytes(ServerTelemetry.totalBytes)}",
+                                        "session ${formatBytes(ServerTelemetry.sessionBytes)}",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = Color.White,
                                         maxLines = 1,
