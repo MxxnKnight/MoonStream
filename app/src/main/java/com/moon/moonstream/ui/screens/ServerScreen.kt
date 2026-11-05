@@ -371,19 +371,19 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 .clip(RoundedCornerShape(26.5.dp))
                 .background(Color(0xFF131316)),
         ) {
-            // Static mesh-style gradient (no drift animation — moon's point 3).
-            // Intensity follows progress.
+            // Inner gradient when ON (moon's 2026-11-05: "color effect is only
+            // outside" — was too subtle at 0.45/0.15). Fills the card, not just border.
             if (progress > 0.02f) {
                 Box(
                     modifier = Modifier.fillMaxSize().background(
                         Brush.radialGradient(
                             colors = listOf(
-                                MsColors.GlowDeep.copy(alpha = 0.45f * progress),
-                                MsColors.GlowDeep.copy(alpha = 0.15f * progress),
+                                MsColors.GlowDeep.copy(alpha = 0.65f * progress),
+                                MsColors.GlowDeep.copy(alpha = 0.30f * progress),
                                 Color.Transparent,
                             ),
-                            center = Offset(0.3f, 0.2f),
-                            radius = 800f,
+                            center = Offset(0.5f, 0.0f),
+                            radius = 900f,
                         ),
                     ),
                 )
@@ -472,34 +472,22 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                 }
                             }
                             Spacer(Modifier.height(12.dp))
+                            // Single-line pill (moon's 2026-11-05: old style —
+                            // "session 0 B · all-time 1022 MB" on one line, centered).
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(14.dp))
                                     .background(Color.Black.copy(alpha = 0.35f))
                                     .padding(vertical = 10.dp, horizontal = 16.dp),
+                                contentAlignment = Alignment.Center,
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(24.dp),
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            formatBytes(ServerTelemetry.sessionBytes),
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = Color.White,
-                                        )
-                                        Text("session", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
-                                    }
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            formatBytes(ServerTelemetry.totalBytes),
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = Color.White,
-                                        )
-                                        Text("all-time", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
-                                    }
-                                }
+                                Text(
+                                    "session ${formatBytes(ServerTelemetry.sessionBytes)}  ·  all-time ${formatBytes(ServerTelemetry.totalBytes)}",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                )
                             }
                         }
                     }
@@ -566,25 +554,21 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
 
             // Swipe hint overlay (moon's 2026-11-05): shown when IDLE, outside the
             // trackWidthPx guard so it always appears.
-            // Fades progressively as the pill moves over it (alpha = 1 - progress).
+            // Uses softWipeInverse (like the ON text uses softWipe) so it wipes
+            // progressively as the pill covers it — NOT a whole-alpha fade.
+            // Arrow removed (moon's 2026-11-05: Doto doesn't render it, text only).
             if (cardState == ServerCardState.IDLE || cardState == ServerCardState.STARTING) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier
                         .align(Alignment.Center)
                         .padding(start = 100.dp, end = 16.dp)
-                        .graphicsLayer { alpha = (1f - progress).coerceIn(0f, 1f) },
+                        .softWipeInverse(pillOffsetPx, featherPx, widthPxF)
+                        .alpha((1f - progress).coerceIn(0f, 1f)),
                 ) {
                     Text(
                         "Swipe to awaken",
                         style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
-                        color = MsColors.TextPrimary,
-                    )
-                    // Doto dotted arrow (moon's 2026-11-05: "doto or dotted arrow")
-                    Text(
-                        "\u2192",
-                        style = MaterialTheme.typography.headlineMedium.copy(fontFamily = Doto),
                         color = MsColors.TextPrimary,
                     )
                 }
