@@ -209,6 +209,12 @@ object ScanManager {
         // Subtitles can arrive before their video files (newest-first paging),
         // so take a second pass over anything still unlinked.
         relinkSubtitles(db, channelId)
+        // Backfill (moon's 2026-11-05 Reacher case): stream rows with NULL
+        // season/episode stay NULL forever because re-scans skip existing
+        // rows — and Skip Intro needs S/E to query IntroDB. Re-parse those
+        // filenames and fill what the parser finds; rows that already have
+        // S/E are never touched.
+        backfillMissingSeasonEpisode(db, channelId, target.isAnime)
         // Stamp the relative "Synced …" time shown under the channel.
         db.channelConfigDao().setLastSynced(channelId, System.currentTimeMillis())
         // Report any remainder not yet pushed per-page (avoids double-counting).
@@ -383,6 +389,35 @@ object ScanManager {
             if (mediaId != null) {
                 db.subtitleDao().attach(s.id, mediaId, parsed.season, parsed.episode)
             }
+        }
+    }
+
+    /**
+     * One pass over stream rows that still lack season/episode: re-parse
+     * the filename and fill what the parser finds. Idempotent — after the
+     * first run only unparseable names remain NULL, so later scans are a
+     * single cheap query. Episode counts are refreshed for touched entries.
+     */
+    private suspend fun backfillMissingSeasonEpisode(
+        db: MsDatabase,
+        channelId: Long,
+        isAnime: Boolean,
+    ) {
+        val missing = db.streamDao().listMissingSeasonEpisode(channelId)
+        if (missing.isEmpty()) return
+        val touched = mutableSetOf<Long>()
+        var filled = 0
+        for (f in missing) {
+            val parsed = FilenameParser.parse(f.fileName, isAnime)
+            if (parsed.season == null && parsed.episode == null) continue
+            db.streamDao().updateSeasonEpisode(f.id, parsed.season, parsed.episode)
+            touched.add(f.mediaId)
+            filled++
+        }
+        if (filled > 0) {
+            val now = System.currentTimeMillis()
+            for (mediaId in touched) db.mediaDao().refreshAggregates(mediaId, now)
+            Log.i(TAG, "ch=$channelId backfilled S/E for $filled files")
         }
     }
 }

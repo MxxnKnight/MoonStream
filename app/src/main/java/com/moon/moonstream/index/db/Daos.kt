@@ -183,6 +183,17 @@ interface StreamDao {
     @Query("UPDATE stream_files SET season = :season, episode = :episode WHERE id = :fileId")
     suspend fun updateSeasonEpisode(fileId: Long, season: Int?, episode: Int?)
 
+    /** Stream files of series/anime entries still missing season/episode
+     *  (moon's 2026-11-05 Reacher case: a row can sit in the DB with NULL S/E
+     *  while its filename clearly has S04E01, and re-scans skip existing rows
+     *  so it never gets repaired). */
+    @Query(
+        """SELECT s.* FROM stream_files s JOIN media_items m ON m.id = s.mediaId
+           WHERE s.channelId = :channelId AND s.season IS NULL AND s.episode IS NULL
+           AND m.type IN ('series', 'anime')""",
+    )
+    suspend fun listMissingSeasonEpisode(channelId: Long): List<StreamFileEntity>
+
     /** Media id of the entry in this channel whose title matches AND that
      *  already has a file for the given season/episode — the strongest
      *  subtitle-mapping signal. */
