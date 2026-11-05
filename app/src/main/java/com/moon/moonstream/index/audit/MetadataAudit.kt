@@ -58,7 +58,10 @@ object MetadataAudit {
             for (f in files) {
                 checked++
                 val parsed = try {
-                    FilenameParser.parse(f.fileName, media.type == "anime")
+                    FilenameParser.parse(
+                        f.fileName, media.type == "anime", "",
+                        com.moon.moonstream.index.scan.ScanPrefs.isAnimeAbsolute(context),
+                    )
                 } catch (e: Exception) { continue }
 
                 var badReason: String? = null

@@ -90,6 +90,7 @@ import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.index.db.UnmatchedFileEntity
 import com.moon.moonstream.index.StremioIds
 import com.moon.moonstream.index.parse.FilenameParser
+import com.moon.moonstream.index.scan.ScanPrefs
 import com.moon.moonstream.index.parse.normalizeTitle
 import com.moon.moonstream.index.scan.ScanMode
 import com.moon.moonstream.index.scan.ScanService
@@ -597,7 +598,11 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 scope.launch {
                     val norm = normalizeTitle(picked.title)
                     val now = System.currentTimeMillis()
-                    val parsed = FilenameParser.parse(f.fileName)
+                    val chAnime = channels.find { it.id == f.channelId }?.isAnime ?: false
+                    val parsed = FilenameParser.parse(
+                        f.fileName, chAnime, "",
+                        ScanPrefs.isAnimeAbsolute(context),
+                    )
                     // ONE path for every button: reuse the entry that already
                     // exists (same IMDb id anywhere, else same title in this
                     // channel) and only create a new one if there is none.
@@ -693,7 +698,11 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                     // Link every selected file.
                     var linked = 0
                     for (f in linkFileBulk) {
-                        val parsed = FilenameParser.parse(f.fileName)
+                        val chAnime = channels.find { it.id == f.channelId }?.isAnime ?: false
+                        val parsed = FilenameParser.parse(
+                            f.fileName, chAnime, "",
+                            ScanPrefs.isAnimeAbsolute(context),
+                        )
                         db.streamDao().insert(
                             StreamFileEntity(
                                 mediaId = mediaId,

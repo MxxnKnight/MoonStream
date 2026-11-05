@@ -846,7 +846,10 @@ fun DetailScreen(
                         return@launch
                     }
                     val (chId, msgId) = parsed
-                    val p = com.moon.moonstream.index.parse.FilenameParser.parse(fileName)
+                    val p = com.moon.moonstream.index.parse.FilenameParser.parse(
+                        fileName, m.type == "anime", "",
+                        com.moon.moonstream.index.scan.ScanPrefs.isAnimeAbsolute(context),
+                    )
                     val useSeason = season ?: p.season
                     val useEpisode = episode ?: p.episode
                     val mediaId = ScanManager.resolveSubtitleMedia(

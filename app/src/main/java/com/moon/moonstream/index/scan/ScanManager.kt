@@ -64,6 +64,9 @@ object ScanManager {
         if (targets.isEmpty()) return
         val db = MsDatabase.get(context)
         val tmdbKey = ScanPrefs.getTmdbKey(context)
+        // Anime numbering mode (moon's 2026-11-06 setting): Absolute counts
+        // One Piece 1..1012, Seasonal uses S/E. Read once per run.
+        val absoluteAnime = ScanPrefs.isAnimeAbsolute(context)
         // Metadata lookups are cached per run: one title = one set of API calls.
         val metaCache = mutableMapOf<String, EnrichedMeta?>()
 
@@ -72,7 +75,7 @@ object ScanManager {
         try {
             targets.forEachIndexed { index, target ->
                 try {
-                    scanOneChannel(db, backend, target, mode, tmdbKey, metaCache)
+                    scanOneChannel(db, backend, target, mode, tmdbKey, metaCache, absoluteAnime)
                 } catch (e: Exception) {
                     Log.e(TAG, "channel ${target.channelId} failed: ${e.message}")
                     com.moon.moonstream.util.AppLog.e("SCAN", "Channel ${target.title} failed: ${e.message}")
@@ -106,6 +109,7 @@ object ScanManager {
         mode: ScanMode,
         tmdbKey: String,
         metaCache: MutableMap<String, EnrichedMeta?>,
+        absoluteAnime: Boolean,
     ) {
         val channelId = target.channelId
 
@@ -175,11 +179,11 @@ object ScanManager {
                 }
                 // Subtitle files take the subtitle path, not the video path.
                 if (isSubtitleFile(msg.fileName)) {
-                    indexSubtitle(db, target, msg.id, msg.fileName, msg.fileSize)
+                    indexSubtitle(db, target, msg.id, msg.fileName, msg.fileSize, absoluteAnime)
                     indexed++
                     continue
                 }
-                val parsed = FilenameParser.parse(msg.fileName, target.isAnime, msg.caption)
+                val parsed = FilenameParser.parse(msg.fileName, target.isAnime, msg.caption, absoluteAnime)
                 if (parsed.title.isBlank()) {
                     db.unmatchedDao().insert(
                         UnmatchedFileEntity(
@@ -224,13 +228,13 @@ object ScanManager {
         }
         // Subtitles can arrive before their video files (newest-first paging),
         // so take a second pass over anything still unlinked.
-        relinkSubtitles(db, channelId)
+        relinkSubtitles(db, channelId, target.isAnime, absoluteAnime)
         // Backfill (moon's 2026-11-05 Reacher case): stream rows with NULL
         // season/episode stay NULL forever because re-scans skip existing
         // rows — and Skip Intro needs S/E to query IntroDB. Re-parse those
         // filenames and fill what the parser finds; rows that already have
         // S/E are never touched.
-        backfillMissingSeasonEpisode(db, channelId, target.isAnime)
+        backfillMissingSeasonEpisode(db, channelId, target.isAnime, absoluteAnime)
         // Stamp the relative "Synced …" time shown under the channel.
         db.channelConfigDao().setLastSynced(channelId, System.currentTimeMillis())
         // Report any remainder not yet pushed per-page (avoids double-counting).
@@ -348,8 +352,9 @@ object ScanManager {
         messageId: Long,
         fileName: String,
         fileSize: Long,
+        absoluteAnime: Boolean,
     ) {
-        val parsed = FilenameParser.parse(fileName, target.isAnime)
+        val parsed = FilenameParser.parse(fileName, target.isAnime, "", absoluteAnime)
         val norm = normalizeTitle(parsed.title)
         val mediaId = if (norm.isBlank()) {
             null
@@ -397,10 +402,15 @@ object ScanManager {
     }
 
     /** Retries mapping for every still-unlinked subtitle in the channel. */
-    private suspend fun relinkSubtitles(db: MsDatabase, channelId: Long) {
+    private suspend fun relinkSubtitles(
+        db: MsDatabase,
+        channelId: Long,
+        isAnime: Boolean,
+        absoluteAnime: Boolean,
+    ) {
         val pending = db.subtitleDao().unlinkedByChannel(channelId)
         for (s in pending) {
-            val parsed = FilenameParser.parse(s.fileName)
+            val parsed = FilenameParser.parse(s.fileName, isAnime, "", absoluteAnime)
             val norm = normalizeTitle(parsed.title)
             if (norm.isBlank()) continue
             val mediaId = resolveSubtitleMedia(db, channelId, norm, parsed.season, parsed.episode)
@@ -451,13 +461,14 @@ object ScanManager {
         db: MsDatabase,
         channelId: Long,
         isAnime: Boolean,
+        absoluteAnime: Boolean,
     ) {
         val missing = db.streamDao().listMissingSeasonEpisode(channelId)
         if (missing.isEmpty()) return
         val touched = mutableSetOf<Long>()
         var filled = 0
         for (f in missing) {
-            val parsed = FilenameParser.parse(f.fileName, isAnime)
+            val parsed = FilenameParser.parse(f.fileName, isAnime, "", absoluteAnime)
             if (parsed.season == null && parsed.episode == null) continue
             db.streamDao().updateSeasonEpisode(f.id, parsed.season, parsed.episode)
             touched.add(f.mediaId)

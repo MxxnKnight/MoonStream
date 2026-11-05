@@ -102,6 +102,21 @@ object FilenameParser {
     private val trailingNumRe =
         Regex("""^([A-Za-z0-9\s._\-+]+?)\s+0*(\d{1,4})\s*$""")
 
+    /** Cut from the first quality word to end of string ("One Piece 1012
+     *  1080p x264" -> "One Piece 1012"). Used by the title cleanup AND by
+     *  the absolute-episode probe, so both agree on where quality starts. */
+    private val qualityCutRe = Regex(
+        """(?i)\b(2160p|1080p|720p|480p|4k|uhd|hdr|hevc|x264|x265|aac|dts|bluray|web-?dl|web-?rip|hd-?rip|hdtv|hdtc|hdcam|dvd-?rip|br-?rip|bd-?rip|cam-?rip|amzn|dsnp|hmax|atvp|zee5|hotstar|sonyliv|10bit|esubs?|msubs?|dd[p+]?\d|atmos|remux|proper|repack|hq)\b.*$""",
+    )
+
+    /** File-size token ("450MB", "1.2 GB") — stripped by the absolute probe
+     *  so it can't hide the episode number at the end of a name. */
+    private val sizeTokenRe = Regex("""(?i)\s*\d+(\.\d+)?\s*(GB|MB|KB)\b""")
+
+    /** One trailing bracket group ("[Tam + Eng]", "(2026)") — the absolute
+     *  probe strips these repeatedly from the end of a name. */
+    private val trailingBracketRe = Regex("""\s*[\(\[][^\]\)]*[\)\]]\s*$""")
+
     private val qualityPatterns = listOf(
         Regex("""(?i)\b(2160p|4k|uhd)\b""") to "4K 2160p",
         Regex("""(?i)\b(1080p|fhd)\b""") to "1080p",
@@ -217,7 +232,17 @@ object FilenameParser {
         return if (videoExtRe.containsMatchIn(capText)) capText else capText + (ext ?: ".mkv")
     }
 
-    fun parse(rawFileName: String, isAnime: Boolean = false, caption: String = ""): ParsedMedia {
+    /**
+     * @param absoluteAnime honours the Settings "Anime numbering" switch:
+     *  true = Absolute (One Piece counts 1..1012), false = Seasonal (S/E).
+     *  Only matters when [isAnime] is true.
+     */
+    fun parse(
+        rawFileName: String,
+        isAnime: Boolean = false,
+        caption: String = "",
+        absoluteAnime: Boolean = false,
+    ): ParsedMedia {
         val name = bestName(rawFileName, caption)
         // An explicit IMDb id (filename OR caption) wins over any title
         // guessing; remove it so it never pollutes the title.
@@ -343,20 +368,44 @@ object FilenameParser {
                 val first = minOf(sOnly.range.first, eOnly.range.first)
                 title = work.substring(0, first).trim(' ', '.', '_', '-', '[', ']', '(', ')', '\t')
             } else if (isAnime) {
-                // Anime absolute numbering: trailing bare number.
-                trailingNumRe.find(work)?.let { m ->
-                    season = 1
-                    episode = m.groupValues[2].toIntOrNull()
-                    title = m.groupValues[1].trim()
+                // Anime absolute numbering (moon's 2026-11-06 setting).
+                if (absoluteAnime) {
+                    // Strengthened probe: the bare number is often NOT last
+                    // ("One Piece 1012 1080p x264", "One Piece 1012 450MB",
+                    // "One Piece 1012 [Tam + Eng]") — strip trailing bracket
+                    // groups, sizes and everything from the first quality
+                    // word, then take the trailing number. Never the year.
+                    var probe = work
+                    var prev: String
+                    do {
+                        prev = probe
+                        probe = trailingBracketRe.replace(probe, "")
+                    } while (probe != prev)
+                    probe = sizeTokenRe.replace(probe, "")
+                    probe = qualityCutRe.replace(probe, "")
+                    probe = probe.replace(Regex("""[\s._\-]+$"""), "").trim()
+                    trailingNumRe.find(probe)?.let { m ->
+                        val ep = m.groupValues[2].toIntOrNull()
+                        if (ep != null && ep > 0 && ep.toString() != year) {
+                            season = 1
+                            episode = ep
+                            title = m.groupValues[1].trim()
+                        }
+                    }
+                } else {
+                    // Seasonal (default): trailing bare number only.
+                    trailingNumRe.find(work)?.let { m ->
+                        season = 1
+                        episode = m.groupValues[2].toIntOrNull()
+                        title = m.groupValues[1].trim()
+                    }
                 }
             }
         }
 
         // Strip year, quality words and leftover delimiters from the title.
         year?.let { y -> title = title.replace(y, "") }
-        title = Regex(
-            """(?i)\b(2160p|1080p|720p|480p|4k|uhd|hdr|hevc|x264|x265|aac|dts|bluray|web-?dl|web-?rip|hd-?rip|hdtv|hdtc|hdcam|dvd-?rip|br-?rip|bd-?rip|cam-?rip|amzn|dsnp|hmax|atvp|zee5|hotstar|sonyliv|10bit|esubs?|msubs?|dd[p+]?\d|atmos|remux|proper|repack|hq)\b.*$""",
-        ).replace(title, "")
+        title = qualityCutRe.replace(title, "")
         title = title.replace(Regex("""[._()\[\]\-]+"""), " ").trim()
         title = title.replace(Regex("""^[:\s._\-~·•]+"""), "")
         title = title.replace(Regex("""[:\s._\-~·•]+$"""), "")
