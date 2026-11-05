@@ -381,15 +381,26 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 .clip(RoundedCornerShape(26.5.dp))
                 .background(Color(0xFF131316)),
         ) {
-            // Inner gradient when ON (moon's 2026-11-05: "color effect is only
-            // outside" — was too subtle at 0.45/0.15). Fills the card, not just border.
+            // Inner gradient when ON (moon's 2026-11-05: "where is it?" — GlowDeep
+            // is too dark to see on #131316). Uses the bright Accent as a top
+            // wash + radial glow so the colour is unmistakable inside the card.
             if (progress > 0.02f) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                MsColors.Accent.copy(alpha = 0.22f * progress),
+                                MsColors.Accent.copy(alpha = 0.08f * progress),
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
+                )
                 Box(
                     modifier = Modifier.fillMaxSize().background(
                         Brush.radialGradient(
                             colors = listOf(
-                                MsColors.GlowDeep.copy(alpha = 0.65f * progress),
-                                MsColors.GlowDeep.copy(alpha = 0.30f * progress),
+                                MsColors.Accent.copy(alpha = 0.35f * progress),
                                 Color.Transparent,
                             ),
                             center = Offset(0.5f, 0.0f),
@@ -501,6 +512,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = Color.White,
                                     maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
@@ -572,19 +584,20 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
             // progressively as the pill covers it — NOT a whole-alpha fade.
             // Arrow removed (moon's 2026-11-05: Doto doesn't render it, text only).
             if (cardState == ServerCardState.IDLE || cardState == ServerCardState.STARTING) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                // Full-size overlay Box, content centered (robust — no
+                // fillMaxSize/wrapContentSize/align tricks on the Row itself).
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .wrapContentSize(Alignment.Center)
-                        .padding(start = 100.dp, end = 16.dp)
                         .softWipeInverse(pillOffsetPx, featherPx, widthPxF)
                         .alpha((1f - progress).coerceIn(0f, 1f)),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         "Swipe to awaken",
                         style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
                         color = MsColors.TextPrimary,
+                        modifier = Modifier.padding(start = 100.dp, end = 16.dp),
                     )
                 }
             }
