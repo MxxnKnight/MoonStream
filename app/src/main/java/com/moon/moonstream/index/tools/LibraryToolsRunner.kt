@@ -92,7 +92,10 @@ object LibraryToolsRunner {
                 for ((idx, f) in files.withIndex()) {
                     progressText = "Checking ${idx + 1}/${files.size}"
                     try {
-                        val msg = backend.fetchMessages(f.channelId, f.messageId, 1)
+                        // FIX 2026-11-05: fetchMessages is EXCLUSIVE of fromMessageId,
+                        // so to fetch message N you must pass N+1 (was passing N,
+                        // which fetched N-1 and always missed → all 500 marked dead).
+                        val msg = backend.fetchMessages(f.channelId, f.messageId + 1, 1)
                             .firstOrNull { it.id == f.messageId }
                         if (msg == null) {
                             dead++
