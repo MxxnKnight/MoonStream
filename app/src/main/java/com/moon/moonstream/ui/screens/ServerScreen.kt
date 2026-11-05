@@ -317,7 +317,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
     val density = LocalDensity.current
     var trackWidthPx by remember { mutableIntStateOf(0) }
     var pillOffsetPx by remember { mutableFloatStateOf(0f) }
-    val pillWidthPx = with(density) { 68.dp.toPx() }
+    val pillWidthPx = with(density) { 84.dp.toPx() }
     val featherPx = with(density) { 48.dp.toPx() }
     val maxOffset = (trackWidthPx - pillWidthPx).coerceAtLeast(0f)
 
@@ -515,7 +515,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 Box(
                     modifier = Modifier
                         .offset { IntOffset(pillOffsetPx.roundToInt(), 0) }
-                        .width(68.dp)
+                        .width(84.dp)
                         .fillMaxHeight()
                         .padding(vertical = 10.dp, horizontal = 8.dp)
                         .clip(RoundedCornerShape(34.dp))
@@ -556,7 +556,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                         contentDescription = if (progress > 0.5f) "Swipe to stop" else "Swipe to awaken",
                         tint = if (progress > 0.5f) Color.White else Color.Black.copy(alpha = 0.7f),
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(40.dp)
                             .graphicsLayer {
                                 rotationZ = progress * 180f
                             },
@@ -565,25 +565,27 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
             }
 
             // Swipe hint overlay (moon's 2026-11-05): shown when IDLE, outside the
-            // trackWidthPx guard so it always appears. Simple, no wipe effects.
-            if (cardState == ServerCardState.IDLE) {
+            // trackWidthPx guard so it always appears.
+            // Fades progressively as the pill moves over it (alpha = 1 - progress).
+            if (cardState == ServerCardState.IDLE || cardState == ServerCardState.STARTING) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier
                         .align(Alignment.Center)
-                        .padding(start = 84.dp, end = 16.dp),
+                        .padding(start = 100.dp, end = 16.dp)
+                        .graphicsLayer { alpha = (1f - progress).coerceIn(0f, 1f) },
                 ) {
                     Text(
                         "Swipe to awaken",
                         style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
                         color = MsColors.TextPrimary,
                     )
-                    androidx.compose.material3.Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Filled.ArrowForward,
-                        contentDescription = null,
-                        tint = MsColors.TextPrimary,
-                        modifier = Modifier.size(28.dp),
+                    // Doto dotted arrow (moon's 2026-11-05: "doto or dotted arrow")
+                    Text(
+                        "\u2192",
+                        style = MaterialTheme.typography.headlineMedium.copy(fontFamily = Doto),
+                        color = MsColors.TextPrimary,
                     )
                 }
             }
