@@ -73,6 +73,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
@@ -259,9 +260,13 @@ private fun MsSectionEyebrow(text: String) {
  */
 private enum class ServerCardState { IDLE, STARTING, RUNNING, STOPPING }
 
-/** Soft horizontal wipe: content fades in left of [revealX], out right of it. */
+/** Soft horizontal wipe: content fades in left of [revealX], out right of it.
+ *  Offscreen compositing isolates the DstIn blend so it can't punch through
+ *  to the card background (moon's 2026-11-05: recents thumbnail showed the
+ *  wallpaper through the card). */
 private fun Modifier.softWipe(revealX: Float, featherPx: Float, widthPx: Float) =
-    this.drawWithContent {
+    this.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
         drawContent()
         if (widthPx <= 0f) return@drawWithContent
         val startFrac = ((revealX - featherPx) / widthPx).coerceIn(0f, 1f)
@@ -277,9 +282,11 @@ private fun Modifier.softWipe(revealX: Float, featherPx: Float, widthPx: Float) 
         )
     }
 
-/** Inverse soft wipe: content fades in right of [revealX], out left of it. */
+/** Inverse soft wipe: content fades in right of [revealX], out left of it.
+ *  Offscreen compositing isolates the DstIn blend (same recents fix). */
 private fun Modifier.softWipeInverse(revealX: Float, featherPx: Float, widthPx: Float) =
-    this.drawWithContent {
+    this.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
         drawContent()
         if (widthPx <= 0f) return@drawWithContent
         val startFrac = ((revealX - featherPx) / widthPx).coerceIn(0f, 1f)
