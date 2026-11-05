@@ -1117,10 +1117,10 @@ private fun ContinueWatchingRow(
                                     .padding(horizontal = 5.dp, vertical = 2.dp),
                             )
                         }
-                        // Progress line at the bottom of the poster. The track
-                        // is always drawn (3dp) so the poster shows where you
-                        // are even when the duration isn't known yet; the old
-                        // version drew nothing at all in that case.
+                        // Progress line at the bottom of the poster. Track is
+                        // white 0.30 alpha so it's visible on dark posters
+                        // (moon's 2026-11-05: black track was invisible).
+                        // 4dp thick, accent fill shows watched fraction.
                         val progress = if (w.durationMs > 0L) {
                             (w.positionMs.toFloat() / w.durationMs.toFloat()).coerceIn(0f, 1f)
                         } else 0f
@@ -1128,8 +1128,8 @@ private fun ContinueWatchingRow(
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
                                 .fillMaxWidth()
-                                .height(3.dp)
-                                .background(Color.Black.copy(alpha = 0.45f)),
+                                .height(4.dp)
+                                .background(Color.White.copy(alpha = 0.30f)),
                         ) {
                             if (progress > 0f) {
                                 Box(
