@@ -354,6 +354,7 @@ interface WatchProgressDao {
                   COALESCE(m.title, wp.title) AS title,
                   wp.episodeLabel AS episodeLabel,
                   COALESCE(m.posterUrl, wp.posterUrl) AS posterUrl,
+                  m.imdbId AS imdbId,
                   wp.playedAt AS playedAt, wp.positionMs AS positionMs,
                   wp.durationMs AS durationMs
            FROM watch_progress wp

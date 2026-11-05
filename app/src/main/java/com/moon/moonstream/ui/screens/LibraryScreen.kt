@@ -637,7 +637,10 @@ private fun PosterCell(
             ) {
                 if (item.posterUrl != null) {
                     AsyncImage(
-                        model = item.posterUrl,
+                        model = com.moon.moonstream.util.PosterStyle.displayUrl(
+                            item.posterUrl, item.imdbId,
+                            com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
+                        ),
                         contentDescription = item.title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),

@@ -102,6 +102,7 @@ data class ContinueWatchingItem(
     val title: String,
     val episodeLabel: String?,
     val posterUrl: String?,
+    val imdbId: String?,
     val playedAt: Long,
     val positionMs: Long,
     val durationMs: Long,

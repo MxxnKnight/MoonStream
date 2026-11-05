@@ -593,9 +593,13 @@ class MoonStreamServer(
         o.put("name", m.title)
         if (!m.year.isNullOrBlank()) o.put("year", m.year)
         if (!m.overview.isNullOrBlank()) o.put("description", m.overview)
-        if (!m.posterUrl.isNullOrBlank()) {
-            o.put("poster", m.posterUrl)
-            o.put("background", m.posterUrl)
+        val poster = com.moon.moonstream.util.PosterStyle.displayUrl(
+            m.posterUrl, m.imdbId,
+            com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(appContext),
+        )
+        if (!poster.isNullOrBlank()) {
+            o.put("poster", poster)
+            o.put("background", poster)
         }
         return o
     }

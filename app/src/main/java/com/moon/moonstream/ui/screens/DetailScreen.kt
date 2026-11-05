@@ -432,7 +432,10 @@ fun DetailScreen(
         ) {
             if (m.posterUrl != null) {
                 AsyncImage(
-                    model = m.posterUrl,
+                    model = com.moon.moonstream.util.PosterStyle.displayUrl(
+                        m.posterUrl, m.imdbId,
+                        com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
+                    ),
                     contentDescription = m.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),

@@ -13,6 +13,11 @@ object ScanPrefs {
     private const val KEY_TVDB = "tvdb_key"
     private const val KEY_ANIME_NUMBERING = "anime_numbering" // 0 = seasonal, 1 = absolute
     private const val KEY_AUTO_SCAN = "auto_scan_on_open" // scan on app open (moon's pick 2026-11-06)
+    // Poster style (moon's 2026-11-06 — free providers only, RPDB removed):
+    // 0 = Provider (TMDB / Cinemeta / Kitsu), 1 = BetterPosters (btttr.cc,
+    // free, no key, IMDb id only), 2 = Fanart.tv (free key required).
+    private const val KEY_POSTER_STYLE = "poster_style"
+    private const val KEY_FANART = "fanart_key"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -29,6 +34,21 @@ object ScanPrefs {
 
     fun setTvdbKey(context: Context, value: String) {
         prefs(context).edit().putString(KEY_TVDB, value.trim()).apply()
+    }
+
+    fun getPosterStyle(context: Context): Int =
+        prefs(context).getInt(KEY_POSTER_STYLE, 0)
+
+    fun setPosterStyle(context: Context, style: Int) {
+        prefs(context).edit().putInt(KEY_POSTER_STYLE, style).apply()
+    }
+
+    /** Fanart.tv personal API key (free, from fanart.tv/get-an-api-key). */
+    fun getFanartKey(context: Context): String =
+        prefs(context).getString(KEY_FANART, "") ?: ""
+
+    fun setFanartKey(context: Context, key: String) {
+        prefs(context).edit().putString(KEY_FANART, key.trim()).apply()
     }
 
     fun isAnimeAbsolute(context: Context): Boolean =

@@ -961,7 +961,10 @@ private fun RecentlyAddedRow(
                     ) {
                         if (!m.posterUrl.isNullOrBlank()) {
                             coil.compose.AsyncImage(
-                                model = m.posterUrl,
+                                model = com.moon.moonstream.util.PosterStyle.displayUrl(
+                                    m.posterUrl, m.imdbId,
+                                    com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
+                                ),
                                 contentDescription = m.title,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop,
@@ -1065,7 +1068,10 @@ private fun ContinueWatchingRow(
                     ) {
                         if (!w.posterUrl.isNullOrBlank()) {
                             coil.compose.AsyncImage(
-                                model = w.posterUrl,
+                                model = com.moon.moonstream.util.PosterStyle.displayUrl(
+                                    w.posterUrl, w.imdbId,
+                                    com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
+                                ),
                                 contentDescription = w.title,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop,

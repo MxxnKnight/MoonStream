@@ -67,6 +67,11 @@ object ScanManager {
         // Anime numbering mode (moon's 2026-11-06 setting): Absolute counts
         // One Piece 1..1012, Seasonal uses S/E. Read once per run.
         val absoluteAnime = ScanPrefs.isAnimeAbsolute(context)
+        // Poster style (moon's 2026-11-06): read once per run. Fanart
+        // lookups are cached per run too, keyed by TMDB id.
+        val posterStyle = ScanPrefs.getPosterStyle(context)
+        val fanartKey = ScanPrefs.getFanartKey(context)
+        val fanartCache = mutableMapOf<Int, String?>()
         // Metadata lookups are cached per run: one title = one set of API calls.
         val metaCache = mutableMapOf<String, EnrichedMeta?>()
 
@@ -75,7 +80,7 @@ object ScanManager {
         try {
             targets.forEachIndexed { index, target ->
                 try {
-                    scanOneChannel(db, backend, target, mode, tmdbKey, metaCache, absoluteAnime)
+                    scanOneChannel(db, backend, target, mode, tmdbKey, metaCache, absoluteAnime, posterStyle, fanartKey, fanartCache)
                 } catch (e: Exception) {
                     Log.e(TAG, "channel ${target.channelId} failed: ${e.message}")
                     com.moon.moonstream.util.AppLog.e("SCAN", "Channel ${target.title} failed: ${e.message}")
@@ -110,6 +115,9 @@ object ScanManager {
         tmdbKey: String,
         metaCache: MutableMap<String, EnrichedMeta?>,
         absoluteAnime: Boolean,
+        posterStyle: Int,
+        fanartKey: String,
+        fanartCache: MutableMap<Int, String?>,
     ) {
         val channelId = target.channelId
 
@@ -196,7 +204,7 @@ object ScanManager {
                     unmatched++
                     continue
                 }
-                val matched = indexFile(db, target, msg.id, msg.fileName, msg.fileSize, parsed, tmdbKey, metaCache)
+                val matched = indexFile(db, target, msg.id, msg.fileName, msg.fileSize, parsed, tmdbKey, metaCache, posterStyle, fanartKey, fanartCache)
                 if (matched) {
                     indexed++
                 } else {
@@ -260,6 +268,9 @@ object ScanManager {
         parsed: ParsedMedia,
         tmdbKey: String,
         metaCache: MutableMap<String, EnrichedMeta?>,
+        posterStyle: Int,
+        fanartKey: String,
+        fanartCache: MutableMap<Int, String?>,
     ): Boolean {
         val type = if (target.isAnime) "anime" else parsed.type
         val norm = normalizeTitle(parsed.title)
@@ -296,6 +307,14 @@ object ScanManager {
         val now = System.currentTimeMillis()
         val media = db.mediaDao().findMatchAnyChannel(norm, meta?.year ?: parsed.year, type)
         val mediaId = if (media == null) {
+            // Poster style (moon's 2026-11-06): Fanart.tv is resolved here
+            // at match time (needs the TMDB id + key, throttled + cached);
+            // BetterPosters is a pure URL rewrite at display time, so the
+            // provider poster is stored. Existing entries keep their poster.
+            val posterUrl = com.moon.moonstream.util.PosterStyle.resolveForStore(
+                meta?.posterUrl, meta?.imdbId, meta?.tmdbId, type,
+                posterStyle, fanartKey, fanartCache,
+            )
             db.mediaDao().upsert(
                 MediaItemEntity(
                     channelId = target.channelId,
@@ -310,7 +329,7 @@ object ScanManager {
                     // Real tt ID when matched, else a stable synthetic tg ID —
                     // this is what Stremio clients (e.g. Nuvio) key on.
                     stremioId = StremioIds.forNewItem(target.channelId, norm, meta?.imdbId),
-                    posterUrl = meta?.posterUrl,
+                    posterUrl = posterUrl,
                     overview = meta?.overview,
                     totalSize = 0L,
                     episodeCount = 0,

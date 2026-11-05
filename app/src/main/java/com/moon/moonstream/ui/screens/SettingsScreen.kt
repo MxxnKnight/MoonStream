@@ -146,9 +146,12 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     // --- Metadata state (persisted via ScanPrefs so the scanner uses them) ---
     var tmdbKey by remember { mutableStateOf(ScanPrefs.getTmdbKey(context)) }
     var tvdbKey by remember { mutableStateOf(ScanPrefs.getTvdbKey(context)) }
-    var fanartKey by remember { mutableStateOf("") }
+    var fanartKey by remember { mutableStateOf(ScanPrefs.getFanartKey(context)) }
+    // The key that is actually saved — the Fanart.tv option is gated on
+    // this, not on the (possibly unsaved) text field above.
+    var fanartKeySaved by remember { mutableStateOf(ScanPrefs.getFanartKey(context)) }
     var posterTemplate by remember { mutableStateOf("") }
-    var posterStyle by remember { mutableStateOf(0) }
+    var posterStyle by remember { mutableStateOf(ScanPrefs.getPosterStyle(context)) }
     var animeNumbering by remember { mutableStateOf(if (ScanPrefs.isAnimeAbsolute(context)) 1 else 0) }
 
     // --- Streaming & Storage state ---
@@ -710,13 +713,19 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 modifier = Modifier.padding(vertical = 6.dp),
             )
             SettingBlock(
-                title = "Poster style in Stremio",
-                info = "Which artwork Stremio shows for your titles: the metadata provider's own posters, RPDB's posters with ratings baked in, or the BetterPosters set.",
+                title = "Poster style",
+                info = "Which posters the app library and Stremio show. Provider: the metadata source's own posters (TMDB / Cinemeta / Kitsu). BetterPosters: cleaner posters with ratings baked in — free, no key. Fanart.tv: community posters — needs your free key below; pick it only after saving one. Fanart applies to newly scanned movies; BetterPosters changes every poster instantly.",
             ) {
                 MsSegmented(
-                    options = listOf("Provider", "RPDB ratings", "BetterPosters"),
+                    options = listOf("Provider", "BetterPosters", "Fanart.tv"),
                     selected = posterStyle,
-                    onSelect = { posterStyle = it; MsToast.show("Saved") },
+                    // Fanart.tv is greyed out until a key is saved (moon's 2026-11-06).
+                    disabled = if (fanartKeySaved.isBlank()) setOf(2) else emptySet(),
+                    onSelect = {
+                        posterStyle = it
+                        ScanPrefs.setPosterStyle(context, it)
+                        MsToast.show("Saved")
+                    },
                 )
             }
             SettingBlock(
@@ -755,7 +764,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             }
             SettingBlock(
                 title = "Fanart.tv key",
-                info = "Optional key for Fanart.tv — extra backgrounds and logos for your library artwork.",
+                info = "Free personal key from fanart.tv/get-an-api-key — unlocks the Fanart.tv poster style above. Without a key that option stays greyed out.",
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MsTextField(
@@ -765,7 +774,19 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(10.dp))
-                    MsOutlinePill(text = "Save", fontSize = 13, onClick = { MsToast.show("Saved") })
+                    MsOutlinePill(
+                        text = "Save",
+                        fontSize = 13,
+                        onClick = {
+                            ScanPrefs.setFanartKey(context, fanartKey)
+                            fanartKeySaved = fanartKey.trim()
+                            if (fanartKeySaved.isBlank() && posterStyle == 2) {
+                                posterStyle = 0
+                                ScanPrefs.setPosterStyle(context, 0)
+                            }
+                            MsToast.show("Saved")
+                        },
+                    )
                 }
             }
         }

@@ -748,6 +748,9 @@ fun MsSegmented(
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    /** Indices that can't be picked (rendered greyed, taps ignored) — the
+     *  Fanart.tv poster option uses this until a key is saved. */
+    disabled: Set<Int> = emptySet(),
 ) {
     Row(
         modifier = modifier
@@ -760,12 +763,13 @@ fun MsSegmented(
     ) {
         options.forEachIndexed { i, label ->
             val isSel = i == selected
+            val isDisabled = i in disabled
             Box(
                 modifier = Modifier
                     .defaultMinSize(minWidth = 96.dp)
                     .clip(CircleShape)
                     .background(if (isSel) MsColors.Accent else Color.Transparent)
-                    .clickable { onSelect(i) }
+                    .clickable(enabled = !isDisabled) { onSelect(i) }
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -773,7 +777,11 @@ fun MsSegmented(
                     text = label,
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isSel) MsColors.OnAccent else MsColors.TextSecondary,
+                    color = when {
+                        isDisabled -> MsColors.TextSecondary.copy(alpha = 0.45f)
+                        isSel -> MsColors.OnAccent
+                        else -> MsColors.TextSecondary
+                    },
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,

@@ -392,7 +392,10 @@ private fun MetaResultRow(
         ) {
             if (result.posterUrl != null) {
                 AsyncImage(
-                    model = result.posterUrl,
+                    model = com.moon.moonstream.util.PosterStyle.displayUrl(
+                        result.posterUrl, result.imdbId,
+                        com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
+                    ),
                     contentDescription = result.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxWidth(),
