@@ -794,11 +794,13 @@ fun PlayerScreen(
         while (true) {
             delay(5000)
             val pos = player.currentPosition
+            // FIX 2026-11-05: capture duration on main thread (ExoPlayer is main-thread only)
+            val dur5 = player.duration.coerceAtLeast(0L)
             if (pos > 10_000L) {
                 withContext(Dispatchers.IO) {
                     try {
                         db.watchProgressDao().updatePosition(
-                            streamFileId, pos, player.duration.coerceAtLeast(0L), System.currentTimeMillis(),
+                            streamFileId, pos, dur5, System.currentTimeMillis(),
                         )
                     } catch (e: Exception) { /* never break playback */ }
                 }
@@ -834,8 +836,10 @@ fun PlayerScreen(
                             if (finished) "watched to the end" else "resume position saved",
                     )
                     try {
+                        // FIX 2026-11-05: use captured 'dur', NOT player.duration
+                        // (ExoPlayer must be accessed on main thread only)
                         val rows = db.watchProgressDao().updatePosition(
-                            streamFileId, finalPos, player.duration.coerceAtLeast(0L), System.currentTimeMillis(),
+                            streamFileId, finalPos, dur, System.currentTimeMillis(),
                         )
                         AppLog.i("PLAYER", "updatePosition: streamFileId=$streamFileId finalPos=$finalPos rowsAffected=$rows")
                     } catch (e: Exception) {
