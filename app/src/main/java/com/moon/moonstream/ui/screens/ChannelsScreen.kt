@@ -605,6 +605,11 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                     // so linking created duplicates.
                     val existing = picked.imdbId?.let { db.mediaDao().findByImdb(it) }
                         ?: db.mediaDao().findByTitle(f.channelId, norm)
+                    // FIX 2026-11-05: if linking to an existing entry that lacks
+                    // an IMDb ID, update it with the picked one (needed for Skip Intro)
+                    if (existing != null && existing.imdbId.isNullOrBlank() && !picked.imdbId.isNullOrBlank()) {
+                        db.mediaDao().updateImdbId(existing.id, picked.imdbId!!)
+                    }
                     val mediaId = existing?.id ?: db.mediaDao().upsert(
                         MediaItemEntity(
                             channelId = f.channelId,

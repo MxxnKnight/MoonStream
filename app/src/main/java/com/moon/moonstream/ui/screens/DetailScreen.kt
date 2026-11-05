@@ -375,6 +375,12 @@ fun DetailScreen(
             // applyFixTitle — a file moved to a series must match as series).
             val targetType = picked.type ?: m.type
             var target = db.mediaDao().findByTitle(m.channelId, norm)
+            // FIX 2026-11-05: if target exists but lacks IMDb ID, update it
+            // (needed for Skip Intro via IntroDB)
+            if (target != null && target.imdbId.isNullOrBlank() && !picked.imdbId.isNullOrBlank()) {
+                db.mediaDao().updateImdbId(target.id, picked.imdbId!!)
+                target = db.mediaDao().findByTitle(m.channelId, norm)
+            }
             if (target == null) {
                 val key = ScanPrefs.getTmdbKey(context)
                 val full = MetadataMatcher.match(picked.title, picked.year, targetType, isAnime, key)

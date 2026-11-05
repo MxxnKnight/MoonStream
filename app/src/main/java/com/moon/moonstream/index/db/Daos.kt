@@ -11,6 +11,10 @@ interface MediaDao {
     @Query("SELECT * FROM media_items ORDER BY updatedAt DESC")
     fun observeAll(): Flow<List<MediaItemEntity>>
 
+    /** Update IMDb ID for an existing entry (moon's 2026-11-05: manual link should save IDs). */
+    @Query("UPDATE media_items SET imdbId = :imdbId WHERE id = :mediaId")
+    suspend fun updateImdbId(mediaId: Long, imdbId: String)
+
     /** Delete entries with no streams AND no subtitles (moon's request 2026-11-04:
      *  "really we don't need a entry without any streams right!").
      *  Returns the number of deleted entries. */
