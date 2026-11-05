@@ -28,6 +28,47 @@ object BackupManager {
 
     const val BACKUP_VERSION = 1
 
+    /** SHA-256 of the last successfully pushed backup's content. */
+    const val PREF_LAST_BACKUP_HASH = "last_backup_hash"
+
+    /**
+     * Stable hash of a backup's CONTENT (the "timestamp" field is excluded —
+     * it changes on every build even when nothing else did, which would
+     * defeat the changed-only auto-backup gate).
+     */
+    fun contentHash(json: JSONObject): String {
+        val copy = JSONObject(json.toString())
+        copy.remove("timestamp")
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        return digest.digest(copy.toString().toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Push a backup, replacing the old ones (moon's 2026-11-06: Saved
+     * Messages was flooding — one new file per scan). Finds the existing
+     * backup messages FIRST, uploads the new file, then deletes the old
+     * messages. Upload first, so a failure never leaves zero backups.
+     * Delete failures are logged, never fatal. Returns the new message id.
+     */
+    suspend fun uploadBackupReplacingOld(
+        backend: com.moon.moonstream.backend.MoonStreamBackend,
+        gz: ByteArray,
+        fileName: String,
+    ): Long? {
+        val oldRefs = runCatching { backend.findAllBackups() }.getOrDefault(emptyList())
+        val msgId = backend.uploadBackup(gz, fileName) ?: return null
+        for (ref in oldRefs) {
+            runCatching { backend.deleteBackup(ref) }
+                .onFailure {
+                    android.util.Log.w(
+                        "Backup", "Could not delete old backup msg ${ref.messageId}: ${it.message}",
+                    )
+                }
+        }
+        return msgId
+    }
+
     data class RestoreSummary(
         val channels: Int,
         val media: Int,

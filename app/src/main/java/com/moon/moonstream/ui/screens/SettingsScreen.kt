@@ -215,9 +215,15 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 val json = BackupManager.buildBackupJson(context)
                 val gz = BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
                 val name = BackupManager.backupFileName()
-                val msgId = BackendProvider.backend.uploadBackup(gz, name)
+                val msgId = BackupManager.uploadBackupReplacingOld(
+                    BackendProvider.backend, gz, name,
+                )
                 withContext(Dispatchers.Main) {
                     if (msgId != null) {
+                        // Remember this content so the next auto-backup can
+                        // skip re-uploading the identical library.
+                        context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
+                            .edit().putString(BackupManager.PREF_LAST_BACKUP_HASH, BackupManager.contentHash(json)).apply()
                         markBackedUp()
                         MsToast.show("Cloud backup pushed to Saved Messages")
                         onDone()

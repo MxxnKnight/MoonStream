@@ -101,6 +101,12 @@ interface MoonStreamBackend {
     /** The newest #MoonStreamBackup document in Saved Messages, or null. */
     suspend fun findLatestBackup(): BackupRef?
 
+    /** ALL #MoonStreamBackup documents in Saved Messages (newest first). */
+    suspend fun findAllBackups(): List<BackupRef> = emptyList()
+
+    /** Delete one backup message from Saved Messages. */
+    suspend fun deleteBackup(ref: BackupRef): Boolean = false
+
     /** Download a backup document's full bytes. */
     suspend fun downloadBackup(ref: BackupRef): ByteArray?
 

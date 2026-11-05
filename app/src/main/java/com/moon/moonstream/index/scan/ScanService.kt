@@ -102,16 +102,31 @@ class ScanService : Service() {
                     // backup_to_telegram toggle removed — Telegram is the only
                     // destination now (moon's call 2026-11-03).
                     if (autoBackup) {
-                        Log.i(TAG, "Triggering post-scan automatic cloud backup")
+                        // Changed-only (moon's 2026-11-06): a scan that finds
+                        // nothing new must not push another copy to Saved
+                        // Messages. The content hash ignores the timestamp,
+                        // so an unchanged library hashes identically.
                         val json = com.moon.moonstream.backup.BackupManager.buildBackupJson(this@ScanService)
-                        val gz = com.moon.moonstream.backup.BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
-                        val name = com.moon.moonstream.backup.BackupManager.backupFileName()
-                        val msgId = BackendProvider.backend.uploadBackup(gz, name)
-                        // Stamp "Last backup" too (moon's 2026-11-06: the screen
-                        // showed only the manual push while auto-backups ran).
-                        if (msgId != null) {
-                            prefs.edit().putLong("last_backup_at", System.currentTimeMillis()).apply()
-                            Log.i(TAG, "Post-scan auto backup pushed (msg $msgId)")
+                        val hash = com.moon.moonstream.backup.BackupManager.contentHash(json)
+                        val lastHash = prefs.getString(
+                            com.moon.moonstream.backup.BackupManager.PREF_LAST_BACKUP_HASH, null,
+                        )
+                        if (hash == lastHash) {
+                            Log.i(TAG, "Library unchanged since last backup — skipping auto backup")
+                        } else {
+                            Log.i(TAG, "Library changed — pushing post-scan automatic cloud backup")
+                            val gz = com.moon.moonstream.backup.BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
+                            val name = com.moon.moonstream.backup.BackupManager.backupFileName()
+                            val msgId = com.moon.moonstream.backup.BackupManager.uploadBackupReplacingOld(
+                                BackendProvider.backend, gz, name,
+                            )
+                            if (msgId != null) {
+                                prefs.edit()
+                                    .putLong("last_backup_at", System.currentTimeMillis())
+                                    .putString(com.moon.moonstream.backup.BackupManager.PREF_LAST_BACKUP_HASH, hash)
+                                    .apply()
+                                Log.i(TAG, "Post-scan auto backup pushed (msg $msgId)")
+                            }
                         }
                     }
                 } catch (e: Exception) {

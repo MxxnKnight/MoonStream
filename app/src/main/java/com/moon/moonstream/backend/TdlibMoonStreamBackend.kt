@@ -328,6 +328,48 @@ class TdlibMoonStreamBackend(
         }
     }
 
+    override suspend fun findAllBackups(): List<BackupRef> {
+        val chatId = getSavedMessagesChatId() ?: return emptyList()
+        return try {
+            val query = TdApi.SearchChatMessages(
+                chatId,
+                null,
+                "#MoonStreamBackup",
+                null,
+                0L,
+                0,
+                100,
+                null
+            )
+            val res = telegramManager.send(query)
+            if (res.isFailure) return emptyList()
+            val found = res.getOrThrow()
+            (found.messages ?: emptyArray())
+                .filter { it.content is TdApi.MessageDocument }
+                .mapNotNull { msg ->
+                    val doc = (msg.content as TdApi.MessageDocument).document
+                    val fileId = doc.document?.id ?: return@mapNotNull null
+                    BackupRef(messageId = msg.id, fileId = fileId, date = msg.date.toLong())
+                }
+        } catch (e: Exception) {
+            Log.e("TdlibBackend", "findAllBackups failed", e)
+            emptyList()
+        }
+    }
+
+    override suspend fun deleteBackup(ref: BackupRef): Boolean {
+        val chatId = getSavedMessagesChatId() ?: return false
+        return try {
+            val res = telegramManager.send(
+                TdApi.DeleteMessages(chatId, longArrayOf(ref.messageId), true),
+            )
+            res.isSuccess
+        } catch (e: Exception) {
+            Log.e("TdlibBackend", "deleteBackup failed", e)
+            false
+        }
+    }
+
     override suspend fun downloadBackup(ref: BackupRef): ByteArray? {
         return try {
             val downloadQuery = TdApi.DownloadFile(ref.fileId, 1, 0L, 0L, true)
