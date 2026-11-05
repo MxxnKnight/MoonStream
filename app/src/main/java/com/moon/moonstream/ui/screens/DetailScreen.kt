@@ -374,12 +374,12 @@ fun DetailScreen(
             // Use the picked type, not the source entry's type (same fix as
             // applyFixTitle — a file moved to a series must match as series).
             val targetType = picked.type ?: m.type
-            var target = db.mediaDao().findByTitle(m.channelId, norm)
+            var target = db.mediaDao().findByNormAnyChannel(norm)
             // FIX 2026-11-05: if target exists but lacks IMDb ID, update it
             // (needed for Skip Intro via IntroDB)
             if (target != null && target.imdbId.isNullOrBlank() && !picked.imdbId.isNullOrBlank()) {
                 db.mediaDao().updateImdbId(target.id, picked.imdbId!!)
-                target = db.mediaDao().findByTitle(m.channelId, norm)
+                target = db.mediaDao().findByNormAnyChannel(norm)
             }
             if (target == null) {
                 val key = ScanPrefs.getTmdbKey(context)
@@ -405,7 +405,7 @@ fun DetailScreen(
                         updatedAt = now,
                     ),
                 )
-                target = db.mediaDao().findByTitle(m.channelId, norm) ?: return@launch
+                target = db.mediaDao().findByNormAnyChannel(norm) ?: return@launch
             }
             db.streamDao().moveToMedia(file.id, target.id)
             db.mediaDao().refreshAggregates(m.id, now)

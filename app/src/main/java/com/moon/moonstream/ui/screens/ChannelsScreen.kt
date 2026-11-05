@@ -335,8 +335,8 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
 
     fun removeChannel(ch: UiChannel) {
         scope.launch {
-            db.mediaDao().deleteByChannel(ch.id)
             db.streamDao().deleteByChannel(ch.id)
+            db.mediaDao().deleteEmpty()
             db.unmatchedDao().deleteByChannel(ch.id)
             db.scanCursorDao().clear(ch.id)
             db.channelConfigDao().get(ch.id)?.let { cfg ->
@@ -604,7 +604,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                     // Before this, "New entry/episode" always inserted a row,
                     // so linking created duplicates.
                     val existing = picked.imdbId?.let { db.mediaDao().findByImdb(it) }
-                        ?: db.mediaDao().findByTitle(f.channelId, norm)
+                        ?: db.mediaDao().findByNormAnyChannel(norm)
                     // FIX 2026-11-05: if linking to an existing entry that lacks
                     // an IMDb ID, update it with the picked one (needed for Skip Intro)
                     if (existing != null && existing.imdbId.isNullOrBlank() && !picked.imdbId.isNullOrBlank()) {
@@ -669,7 +669,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                     val now = System.currentTimeMillis()
                     // Find or create ONE entry for all files.
                     val existing = picked.imdbId?.let { db.mediaDao().findByImdb(it) }
-                        ?: db.mediaDao().findByTitle(first.channelId, norm)
+                        ?: db.mediaDao().findByNormAnyChannel(norm)
                     val mediaId = existing?.id ?: db.mediaDao().upsert(
                         MediaItemEntity(
                             channelId = first.channelId,

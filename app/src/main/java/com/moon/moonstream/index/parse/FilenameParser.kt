@@ -147,13 +147,20 @@ object FilenameParser {
     /**
      * Light cleanup for DISPLAY names (moon's request 2026-11-04): strips
      * @channel mentions and telegram/URLs but keeps everything else intact
-     * (emojis, quality tags, etc.).
+     * (emojis, quality tags, etc.). Also trims the separator junk a stripped
+     * mention leaves behind — "@Chan_Title..." leaves ",_Title..." — and the
+     * space before the extension ("750MB @Chan.mkv" -> "750MB.mkv").
      */
     fun cleanDisplayName(raw: String): String {
         var text = urlRe.replace(raw, " ")
         text = domainRe.replace(text, " ")
         text = mentionRe.replace(text, " ")
-        return text.replace(Regex("\\s+"), " ").trim()
+        text = text.replace(Regex("\\s+"), " ").trim()
+        text = text.replace(Regex("^[\\s,._\\-\u2013\u2014]+"), "").trim()
+        text = text.replace(
+            Regex("\\s+\\.(?i)(mkv|mp4|avi|ts|webm|m4v|mov|flv|wmv)$"), ".$1",
+        )
+        return text
     }
 
     // ---- caption-first naming (same idea as NoxMedia's extract_best_filename) ----

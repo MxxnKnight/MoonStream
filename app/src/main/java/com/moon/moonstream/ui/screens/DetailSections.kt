@@ -319,7 +319,7 @@ fun FileRow(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                stream.fileName,
+                com.moon.moonstream.index.parse.FilenameParser.cleanDisplayName(stream.fileName),
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextPrimary,
                 maxLines = 2,
@@ -412,7 +412,7 @@ fun StreamRow(
             QualityChip(stream.quality)
             Spacer(Modifier.height(8.dp))
             Text(
-                stream.fileName,
+                com.moon.moonstream.index.parse.FilenameParser.cleanDisplayName(stream.fileName),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MsColors.TextPrimary,
                 maxLines = 2,
@@ -526,7 +526,7 @@ fun SubtitleRow(
         }
         Spacer(Modifier.width(10.dp))
         Text(
-            sub.fileName,
+            com.moon.moonstream.index.parse.FilenameParser.cleanDisplayName(sub.fileName),
             style = MaterialTheme.typography.bodySmall,
             color = MsColors.TextPrimary,
             maxLines = 1,
@@ -574,7 +574,7 @@ fun AttachSubtitleDialog(
         content = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    sub.fileName,
+                    com.moon.moonstream.index.parse.FilenameParser.cleanDisplayName(sub.fileName),
                     style = MaterialTheme.typography.bodySmall,
                     color = MsColors.TextSecondary,
                     maxLines = 2,

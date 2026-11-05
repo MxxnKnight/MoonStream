@@ -81,6 +81,19 @@ object ScanManager {
                 if (index < targets.lastIndex) delay(CHANNEL_DELAY_MS)
             }
         } finally {
+            // Merge entries the old channel-scoped dedup split (moon's
+            // 2026-11-06: one entry per title + year + type, all channels).
+            // Idempotent — after the first run there is nothing to merge.
+            try {
+                val merged = mergeDuplicateTitles(db)
+                if (merged > 0) {
+                    com.moon.moonstream.util.AppLog.i(
+                        "SCAN", "Merged $merged duplicate entries into their titles",
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "merge duplicates failed: ${e.message}")
+            }
             ScanUiState.finishRun()
             com.moon.moonstream.util.AppLog.i("SCAN", "Scan complete")
         }
@@ -97,10 +110,13 @@ object ScanManager {
         val channelId = target.channelId
 
         if (mode == ScanMode.FROM_SCRATCH) {
-            db.mediaDao().deleteByChannel(channelId)
+            // Files first, then only entries left empty (moon's 2026-11-06
+            // grouping: an entry can hold files from several channels, so
+            // wiping one channel must not delete the shared entry).
             db.streamDao().deleteByChannel(channelId)
             db.subtitleDao().deleteByChannel(channelId)
             db.unmatchedDao().deleteByChannel(channelId)
+            db.mediaDao().deleteEmpty()
             db.scanCursorDao().clear(channelId)
         }
 
@@ -274,7 +290,7 @@ object ScanManager {
         }
 
         val now = System.currentTimeMillis()
-        val media = db.mediaDao().findMatch(target.channelId, norm, meta?.year ?: parsed.year, type)
+        val media = db.mediaDao().findMatchAnyChannel(norm, meta?.year ?: parsed.year, type)
         val mediaId = if (media == null) {
             db.mediaDao().upsert(
                 MediaItemEntity(
@@ -364,13 +380,15 @@ object ScanManager {
     ): Long? {
         // 1. Same title AND the episode already exists in the library.
         if (season != null && episode != null) {
-            db.streamDao().findMediaWithEpisode(channelId, normTitle, season, episode)
+            db.streamDao().findMediaWithEpisodeAnyChannel(normTitle, season, episode)
                 ?.let { return it }
         }
         // 2. Exact title match (movies, or series whose episode isn't indexed yet).
-        db.mediaDao().findByTitle(channelId, normTitle)?.let { return it.id }
-        // 3. Similarity fallback across the channel's entries.
-        val all = db.mediaDao().getAllByChannel(channelId)
+        // Cross-channel (moon's 2026-11-06 grouping): the entry may have
+        // been created from a different channel than this subtitle.
+        db.mediaDao().findByNormAnyChannel(normTitle)?.let { return it.id }
+        // 3. Similarity fallback across the whole library.
+        val all = db.mediaDao().listVisible()
         val best = all.maxByOrNull { MetadataMatcher.similarity(normTitle, it.normalizedTitle) }
         if (best != null && MetadataMatcher.similarity(normTitle, best.normalizedTitle) >= 0.6) {
             return best.id
@@ -390,6 +408,37 @@ object ScanManager {
                 db.subtitleDao().attach(s.id, mediaId, parsed.season, parsed.episode)
             }
         }
+    }
+
+    /**
+     * Merges entries the old channel-scoped dedup split: same
+     * (normalizedTitle, year, type) across channels, or twice in one
+     * channel. Keeps the richest entry (IMDb, then poster, then oldest),
+     * re-points the dupes' files + subtitles onto it and deletes the dupes.
+     * Returns how many duplicate entries were merged. Idempotent.
+     */
+    suspend fun mergeDuplicateTitles(db: MsDatabase): Int {
+        val groups = db.mediaDao().getAll()
+            .groupBy { Triple(it.normalizedTitle, it.year, it.type) }
+            .filter { it.value.size > 1 }
+        var merged = 0
+        val now = System.currentTimeMillis()
+        for ((_, items) in groups) {
+            val kept = items.sortedWith(
+                compareByDescending<MediaItemEntity> { !it.imdbId.isNullOrBlank() }
+                    .thenByDescending { !it.posterUrl.isNullOrBlank() }
+                    .thenBy { it.id },
+            ).first()
+            for (dupe in items.filter { it.id != kept.id }) {
+                db.streamDao().moveAllToMedia(dupe.id, kept.id)
+                db.subtitleDao().moveAllToMedia(dupe.id, kept.id)
+                db.mediaDao().deleteById(dupe.id)
+                merged++
+                Log.i(TAG, "merged '${dupe.title}' (${dupe.year}) into entry ${kept.id}")
+            }
+            db.mediaDao().refreshAggregates(kept.id, now)
+        }
+        return merged
     }
 
     /**

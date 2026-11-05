@@ -40,14 +40,16 @@ interface MediaDao {
     @Query("SELECT * FROM media_items WHERE channelId = :channelId ORDER BY title COLLATE NOCASE")
     fun observeByChannel(channelId: Long): Flow<List<MediaItemEntity>>
 
+    /** Cross-channel match (moon's 2026-11-06: one entry per title + year
+     *  + type across ALL channels — the same movie posted in two channels,
+     *  or twice in one channel months apart, must land in one entry). */
     @Query(
         """SELECT * FROM media_items
-           WHERE channelId = :channelId AND normalizedTitle = :norm
+           WHERE normalizedTitle = :norm
            AND type = :type AND (year = :year OR (year IS NULL AND :year IS NULL))
            LIMIT 1""",
     )
-    suspend fun findMatch(
-        channelId: Long,
+    suspend fun findMatchAnyChannel(
         norm: String,
         year: String?,
         type: String,
@@ -204,6 +206,20 @@ interface StreamDao {
     )
     suspend fun findMediaWithEpisode(
         channelId: Long,
+        norm: String,
+        season: Int,
+        episode: Int,
+    ): Long?
+
+    /** Any-channel version (moon's 2026-11-06 grouping: entries are shared
+     *  across channels, so a subtitle in channel B must find the entry
+     *  created from channel A). */
+    @Query(
+        """SELECT m.id FROM media_items m JOIN stream_files s ON s.mediaId = m.id
+           WHERE m.normalizedTitle = :norm
+           AND s.season = :season AND s.episode = :episode LIMIT 1""",
+    )
+    suspend fun findMediaWithEpisodeAnyChannel(
         norm: String,
         season: Int,
         episode: Int,
