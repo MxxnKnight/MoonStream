@@ -370,20 +370,18 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
     val urlVisible = progress > 0.5f || cardState == ServerCardState.RUNNING
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // Main card (z-index above URL).
+        // Main card.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .zIndex(1f)
                 .clip(RoundedCornerShape(28.dp))
                 .background(borderBrush)
                 .padding(1.5.dp)
                 .clip(RoundedCornerShape(26.5.dp))
                 .background(Color(0xFF131316)),
         ) {
-            // Inner gradient when ON (moon's 2026-11-05: "where is it?" — GlowDeep
-            // is too dark to see on #131316). Uses the bright Accent as a top
-            // wash + radial glow so the colour is unmistakable inside the card.
+            // Inner gradient when ON (moon's 2026-11-05: bright Accent so the
+            // colour is unmistakable inside the card, not just the border).
             if (progress > 0.02f) {
                 Box(
                     modifier = Modifier.fillMaxSize().background(
@@ -410,23 +408,116 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 )
             }
 
-            // The swipe track + URL inside the card (moon's 2026-11-05:
-            // old style — URL below a divider, part of the card, not a
-            // separate box sliding from behind).
+            // Content: track on top, URL below it — all inside the card.
             Column(modifier = Modifier.fillMaxWidth()) {
-            // The swipe track.
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(cardHeight)
-                    .onSizeChanged { trackWidthPx = it.width },
-            ) {
-                if (trackWidthPx > 0) {
-                    // OFF layer: fades out as the pill approaches (inverse wipe).
-                    // Overall alpha also tied to (1-progress) — no ghosting.
-                    // NOTE: "Swipe to awaken" hint is now OUTSIDE this guard (below),
-                    // so it shows even if trackWidthPx is 0.
-                    if (cardState != ServerCardState.IDLE || progress >= 0.1f) {
+                // The swipe track.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(cardHeight)
+                        .onSizeChanged { trackWidthPx = it.width },
+                ) {
+                    if (trackWidthPx > 0) {
+                        // OFF layer: Starting/Stopping labels (inverse wipe).
+                        if (cardState != ServerCardState.IDLE || progress >= 0.1f) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .softWipeInverse(pillOffsetPx, featherPx, widthPxF)
+                                    .alpha((1f - progress).coerceIn(0f, 1f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                val label = when (cardState) {
+                                    ServerCardState.STARTING -> "Starting\u2026"
+                                    ServerCardState.STOPPING -> "Stopping\u2026"
+                                    else -> null
+                                }
+                                if (label != null) {
+                                    Text(
+                                        label,
+                                        style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
+                                        color = MsColors.TextSecondary,
+                                        modifier = Modifier.padding(start = 84.dp, end = 16.dp),
+                                    )
+                                }
+                            }
+                        }
+
+                        // ON layer: fades in left-to-right as the pill moves.
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .softWipe(pillOffsetPx, featherPx, widthPxF)
+                                .alpha(progress.coerceIn(0f, 1f)),
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(22.dp),
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                val statusLabel = when (cardState) {
+                                    ServerCardState.STARTING -> "Server Starting"
+                                    ServerCardState.STOPPING -> "Server Stopping"
+                                    else -> "Server Awaked"
+                                }
+                                Text(
+                                    statusLabel,
+                                    style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
+                                    color = Color.White,
+                                    modifier = Modifier.padding(end = 84.dp),
+                                )
+                                Spacer(Modifier.height(14.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(end = 84.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                                ) {
+                                    Column(horizontalAlignment = Alignment.Start) {
+                                        Text(
+                                            formatUptime(uptimeSecs),
+                                            style = MaterialTheme.typography.headlineMedium.copy(fontFamily = Doto),
+                                            color = Color.White,
+                                        )
+                                        Text("uptime", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
+                                    }
+                                    Column(horizontalAlignment = Alignment.Start) {
+                                        Text(
+                                            formatBytes(ServerTelemetry.averageSpeedBps()) + "/s",
+                                            style = MaterialTheme.typography.headlineMedium.copy(fontFamily = Doto),
+                                            color = Color.White,
+                                        )
+                                        Text("speed", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
+                                    }
+                                }
+                                Spacer(Modifier.height(12.dp))
+                                // Single-line pill (moon's old style — full width
+                                // so "session 0 B · all-time 1022 MB" fits; the
+                                // text is centred so it never runs under the pill).
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(Color.Black.copy(alpha = 0.35f))
+                                        .padding(vertical = 10.dp, horizontal = 16.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        "session ${formatBytes(ServerTelemetry.sessionBytes)}  \u00b7  all-time ${formatBytes(ServerTelemetry.totalBytes)}",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Hint — INSIDE the track, full-size overlay, centred.
+                    // Drawn before the pill so the pill stays on top (draggable).
+                    if (cardState == ServerCardState.IDLE || cardState == ServerCardState.STARTING) {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -434,194 +525,90 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                 .alpha((1f - progress).coerceIn(0f, 1f)),
                             contentAlignment = Alignment.Center,
                         ) {
-                            val label = when (cardState) {
-                                ServerCardState.STARTING -> "Starting…"
-                                ServerCardState.STOPPING -> "Stopping…"
-                                else -> null
-                            }
-                            if (label != null) {
-                                Text(
-                                    label,
-                                    style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
-                                    color = MsColors.TextSecondary,
-                                    modifier = Modifier.padding(start = 84.dp, end = 16.dp),
-                                )
-                            }
+                            Text(
+                                "Swipe to awaken",
+                                style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
+                                color = MsColors.TextPrimary,
+                                modifier = Modifier.padding(start = 100.dp, end = 16.dp),
+                            )
                         }
                     }
 
-                    // ON layer: fades in left-to-right as the pill moves (soft wipe).
+                    // The pill — the light edge (on top, draggable).
+                    val pillColor = androidx.compose.ui.graphics.lerp(
+                        Color.White.copy(alpha = 0.92f),
+                        MsColors.Accent,
+                        progress.coerceIn(0f, 1f),
+                    )
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .softWipe(pillOffsetPx, featherPx, widthPxF)
-                            .alpha(progress.coerceIn(0f, 1f)),
+                            .offset { IntOffset(pillOffsetPx.roundToInt(), 0) }
+                            .width(84.dp)
+                            .fillMaxHeight()
+                            .padding(vertical = 10.dp, horizontal = 8.dp)
+                            .clip(RoundedCornerShape(34.dp))
+                            .background(pillColor)
+                            .draggable(
+                                state = dragState,
+                                orientation = Orientation.Horizontal,
+                                onDragStopped = {
+                                    val fraction = if (maxOffset > 0f) pillOffsetPx / maxOffset else 0f
+                                    scope.launch {
+                                        if (cardState == ServerCardState.IDLE) {
+                                            if (fraction >= 0.7f) {
+                                                cardState = ServerCardState.STARTING
+                                                Animatable(pillOffsetPx).animateTo(maxOffset, tween(300)) { pillOffsetPx = value }
+                                                onToggle()
+                                            } else {
+                                                val duration = if (fraction <= 0.2f) 150 else 300
+                                                Animatable(pillOffsetPx).animateTo(0f, tween(duration)) { pillOffsetPx = value }
+                                            }
+                                        } else if (cardState == ServerCardState.RUNNING) {
+                                            if (fraction <= 0.3f) {
+                                                cardState = ServerCardState.STOPPING
+                                                Animatable(pillOffsetPx).animateTo(0f, tween(300)) { pillOffsetPx = value }
+                                                onToggle()
+                                            } else {
+                                                Animatable(pillOffsetPx).animateTo(maxOffset, tween(300)) { pillOffsetPx = value }
+                                            }
+                                        }
+                                    }
+                                },
+                            ),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Column(
+                        androidx.compose.material3.Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Filled.ChevronRight,
+                            contentDescription = if (progress > 0.5f) "Swipe to stop" else "Swipe to awaken",
+                            tint = if (progress > 0.5f) Color.White else Color.Black.copy(alpha = 0.7f),
                             modifier = Modifier
-                                .fillMaxSize()
-                                .padding(22.dp)
-                                .padding(end = 84.dp),
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            val statusLabel = when (cardState) {
-                                ServerCardState.STARTING -> "Server Starting"
-                                ServerCardState.STOPPING -> "Server Stopping"
-                                else -> "Server Awaked"
-                            }
-                            Text(
-                                statusLabel,
-                                style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
-                                color = Color.White,
-                            )
-                            Spacer(Modifier.height(14.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(24.dp),
-                            ) {
-                                Column(horizontalAlignment = Alignment.Start) {
-                                    Text(
-                                        formatUptime(uptimeSecs),
-                                        style = MaterialTheme.typography.headlineMedium.copy(fontFamily = Doto),
-                                        color = Color.White,
-                                    )
-                                    Text("uptime", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
-                                }
-                                Column(horizontalAlignment = Alignment.Start) {
-                                    Text(
-                                        formatBytes(ServerTelemetry.averageSpeedBps()) + "/s",
-                                        style = MaterialTheme.typography.headlineMedium.copy(fontFamily = Doto),
-                                        color = Color.White,
-                                    )
-                                    Text("speed", style = MaterialTheme.typography.bodySmall, color = MsColors.TextSecondary)
-                                }
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            // Single-line pill (moon's 2026-11-05: old style —
-                            // "session 0 B · all-time 1022 MB" on one line, centered).
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(Color.Black.copy(alpha = 0.35f))
-                                    .padding(vertical = 10.dp, horizontal = 16.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    "session ${formatBytes(ServerTelemetry.sessionBytes)}  ·  all-time ${formatBytes(ServerTelemetry.totalBytes)}",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = Color.White,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
+                                .size(40.dp)
+                                .graphicsLayer {
+                                    rotationZ = progress * 180f
+                                },
+                        )
                     }
                 }
 
-                // The pill — the light edge.
-                // Color blends slowly from white to accent (moon's point 4).
-                val pillColor = androidx.compose.ui.graphics.lerp(
-                    Color.White.copy(alpha = 0.92f),
-                    MsColors.Accent,
-                    progress.coerceIn(0f, 1f),
-                )
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(pillOffsetPx.roundToInt(), 0) }
-                        .width(84.dp)
-                        .fillMaxHeight()
-                        .padding(vertical = 10.dp, horizontal = 8.dp)
-                        .clip(RoundedCornerShape(34.dp))
-                        .background(pillColor)
-                        .draggable(
-                            state = dragState,
-                            orientation = Orientation.Horizontal,
-                            onDragStopped = {
-                                val fraction = if (maxOffset > 0f) pillOffsetPx / maxOffset else 0f
-                                scope.launch {
-                                    if (cardState == ServerCardState.IDLE) {
-                                        if (fraction >= 0.7f) {
-                                            cardState = ServerCardState.STARTING
-                                            Animatable(pillOffsetPx).animateTo(maxOffset, tween(300)) { pillOffsetPx = value }
-                                            onToggle()
-                                        } else {
-                                            val duration = if (fraction <= 0.2f) 150 else 300
-                                            Animatable(pillOffsetPx).animateTo(0f, tween(duration)) { pillOffsetPx = value }
-                                        }
-                                    } else if (cardState == ServerCardState.RUNNING) {
-                                        if (fraction <= 0.3f) {
-                                            cardState = ServerCardState.STOPPING
-                                            Animatable(pillOffsetPx).animateTo(0f, tween(300)) { pillOffsetPx = value }
-                                            onToggle()
-                                        } else {
-                                            Animatable(pillOffsetPx).animateTo(maxOffset, tween(300)) { pillOffsetPx = value }
-                                        }
-                                    }
-                                }
-                            },
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    // > icon that rotates to < when ON (moon's point 2).
-                    // Rotation follows the swipe progress: 0° (>) → 180° (<).
-                    androidx.compose.material3.Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Filled.ChevronRight,
-                        contentDescription = if (progress > 0.5f) "Swipe to stop" else "Swipe to awaken",
-                        tint = if (progress > 0.5f) Color.White else Color.Black.copy(alpha = 0.7f),
+                // URL row INSIDE the card, below the track, behind a divider.
+                // Only visible on swipe (progress > 0.5 or RUNNING).
+                if (urlVisible) {
+                    Column(
                         modifier = Modifier
-                            .size(40.dp)
-                            .graphicsLayer {
-                                rotationZ = progress * 180f
-                            },
-                    )
-                }
-            }
-
-            // Swipe hint overlay (moon's 2026-11-05): shown when IDLE, outside the
-            // trackWidthPx guard so it always appears.
-            // Uses softWipeInverse (like the ON text uses softWipe) so it wipes
-            // progressively as the pill covers it — NOT a whole-alpha fade.
-            // Arrow removed (moon's 2026-11-05: Doto doesn't render it, text only).
-            if (cardState == ServerCardState.IDLE || cardState == ServerCardState.STARTING) {
-                // Full-size overlay Box, content centered (robust — no
-                // fillMaxSize/wrapContentSize/align tricks on the Row itself).
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .softWipeInverse(pillOffsetPx, featherPx, widthPxF)
-                        .alpha((1f - progress).coerceIn(0f, 1f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "Swipe to awaken",
-                        style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
-                        color = MsColors.TextPrimary,
-                        modifier = Modifier.padding(start = 100.dp, end = 16.dp),
-                    )
+                            .fillMaxWidth()
+                            .graphicsLayer { alpha = progress.coerceIn(0f, 1f) },
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(Color.White.copy(alpha = 0.08f)),
+                        )
+                        ManifestDrawer()
+                    }
                 }
             }
         }
-
-            // URL row INSIDE the card, below a divider (old style).
-            // Shows when ON (plain if — AnimatedVisibility breaks in this
-            // Column scope). Fades with swipe progress via graphicsLayer.
-            if (urlVisible) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { alpha = progress.coerceIn(0f, 1f) },
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(Color.White.copy(alpha = 0.08f)),
-                    )
-                    ManifestDrawer()
-                }
-            }
-            } // end Column (track + URL)
     }
 }
 
