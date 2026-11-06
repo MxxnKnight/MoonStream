@@ -215,11 +215,11 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 val json = BackupManager.buildBackupJson(context)
                 val gz = BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
                 val name = BackupManager.backupFileName()
-                val msgId = BackupManager.uploadBackupReplacingOld(
+                val result = BackupManager.uploadBackupReplacingOld(
                     BackendProvider.backend, gz, name,
                 )
                 withContext(Dispatchers.Main) {
-                    if (msgId != null) {
+                    if (result.messageId != null && result.verified) {
                         // Remember this content so the next auto-backup can
                         // skip re-uploading the identical library.
                         context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
@@ -227,6 +227,10 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         markBackedUp()
                         MsToast.show("Cloud backup pushed to Saved Messages")
                         onDone()
+                    } else if (result.messageId != null) {
+                        // Upload reported success but the file isn't findable
+                        // in Saved Messages — old backups were kept on purpose.
+                        MsToast.show("Backup uploaded but not found in Saved Messages — old backups kept")
                     } else {
                         MsToast.show("Telegram cloud backup failed")
                     }

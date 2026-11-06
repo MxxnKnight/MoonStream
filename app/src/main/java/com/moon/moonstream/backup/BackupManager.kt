@@ -44,29 +44,53 @@ object BackupManager {
             .joinToString("") { "%02x".format(it) }
     }
 
+    /** Result of a push: the new message id (null = upload failed) and
+     *  whether the new file was verified present in Saved Messages. */
+    data class PushResult(val messageId: Long?, val verified: Boolean)
+
     /**
      * Push a backup, replacing the old ones (moon's 2026-11-06: Saved
      * Messages was flooding — one new file per scan). Finds the existing
      * backup messages FIRST, uploads the new file, then deletes the old
-     * messages. Upload first, so a failure never leaves zero backups.
-     * Delete failures are logged, never fatal. Returns the new message id.
+     * messages — BUT only after verifying the new file is actually in Saved
+     * Messages (moon's 2026-11-06: uploads reported success yet no file was
+     * visible, and the old safety net was already gone). If the new file
+     * can't be confirmed, the old backups are KEPT and verified=false.
+     * Delete failures are logged, never fatal.
      */
     suspend fun uploadBackupReplacingOld(
         backend: com.moon.moonstream.backend.MoonStreamBackend,
         gz: ByteArray,
         fileName: String,
-    ): Long? {
+    ): PushResult {
+        val log = com.moon.moonstream.util.AppLog
         val oldRefs = runCatching { backend.findAllBackups() }.getOrDefault(emptyList())
-        val msgId = backend.uploadBackup(gz, fileName) ?: return null
-        for (ref in oldRefs) {
-            runCatching { backend.deleteBackup(ref) }
-                .onFailure {
-                    android.util.Log.w(
-                        "Backup", "Could not delete old backup msg ${ref.messageId}: ${it.message}",
-                    )
-                }
+        log.i("BACKUP", "Push: found ${oldRefs.size} old backup(s) in Saved Messages")
+        val msgId = backend.uploadBackup(gz, fileName)
+        if (msgId == null) {
+            log.e("BACKUP", "Push: upload failed")
+            return PushResult(null, false)
         }
-        return msgId
+        log.i("BACKUP", "Push: uploaded new backup msg $msgId, verifying it is in Saved Messages")
+        val latest = runCatching { backend.findLatestBackup() }.getOrNull()
+        if (latest?.messageId != msgId) {
+            log.e(
+                "BACKUP",
+                "Push: new backup msg $msgId NOT found in Saved Messages " +
+                    "(latest is ${latest?.messageId}) — keeping ${oldRefs.size} old backup(s)",
+            )
+            return PushResult(msgId, false)
+        }
+        var deleted = 0
+        for (ref in oldRefs) {
+            if (runCatching { backend.deleteBackup(ref) }.getOrDefault(false)) {
+                deleted++
+            } else {
+                log.w("BACKUP", "Push: could not delete old backup msg ${ref.messageId}")
+            }
+        }
+        log.i("BACKUP", "Push: verified msg $msgId, deleted $deleted old backup(s)")
+        return PushResult(msgId, true)
     }
 
     data class RestoreSummary(

@@ -117,15 +117,20 @@ class ScanService : Service() {
                             Log.i(TAG, "Library changed — pushing post-scan automatic cloud backup")
                             val gz = com.moon.moonstream.backup.BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
                             val name = com.moon.moonstream.backup.BackupManager.backupFileName()
-                            val msgId = com.moon.moonstream.backup.BackupManager.uploadBackupReplacingOld(
+                            val result = com.moon.moonstream.backup.BackupManager.uploadBackupReplacingOld(
                                 BackendProvider.backend, gz, name,
                             )
-                            if (msgId != null) {
+                            if (result.messageId != null && result.verified) {
                                 prefs.edit()
                                     .putLong("last_backup_at", System.currentTimeMillis())
                                     .putString(com.moon.moonstream.backup.BackupManager.PREF_LAST_BACKUP_HASH, hash)
                                     .apply()
-                                Log.i(TAG, "Post-scan auto backup pushed (msg $msgId)")
+                                Log.i(TAG, "Post-scan auto backup pushed (msg ${result.messageId})")
+                            } else if (result.messageId != null) {
+                                // Uploaded but unverified — old backups kept by
+                                // the helper; do NOT stamp last_backup_at/hash,
+                                // so the next scan retries the push.
+                                Log.w(TAG, "Post-scan auto backup uploaded msg ${result.messageId} but unverified")
                             }
                         }
                     }
