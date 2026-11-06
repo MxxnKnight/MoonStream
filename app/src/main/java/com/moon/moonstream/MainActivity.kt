@@ -465,8 +465,12 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         .clip(pillShape)
                         .hazeEffect(hazeState) {
                             style = HazeStyle(
-                                backgroundColor = Color.Black.copy(alpha = 0.55f),
-                                tint = HazeTint(Color.Black.copy(alpha = 0.20f)),
+                                // Black-tinted backdrop blur (moon's AMOLED
+                                // pick): darker base + stronger black tint
+                                // so the pill reads black-frosted, with the
+                                // blurred content still showing through.
+                                backgroundColor = Color.Black.copy(alpha = 0.68f),
+                                tint = HazeTint(Color.Black.copy(alpha = 0.35f)),
                                 blurRadius = 18.dp,
                             )
                             // Half-resolution blur input (25% of the pixels
