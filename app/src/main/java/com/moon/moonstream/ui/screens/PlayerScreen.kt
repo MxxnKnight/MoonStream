@@ -34,7 +34,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitHorizontalDragOrCancellation
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -2232,11 +2231,6 @@ private fun PlayerIconButton(
 }
 
 /**
- * Slide-to-unlock pill (mpvex-style): drag the thumb right to unlock.
- * Shown when controls are locked and the user taps the screen.
- */
-@Composable
-/**
  * Mpv-style seekbar (moon's 2026-11-06): thin (4dp) at rest, thick (10dp)
  * while pressing/dragging to seek, with three distinct shades — played
  * (Accent), buffered ahead (white 0.62, from the bytes actually downloaded
@@ -2286,10 +2280,21 @@ private fun MoonSeekBar(
                         if (w > 0f && durationMs > 0L) {
                             onSeek(((down.position.x / w).coerceIn(0f, 1f) * durationMs).toLong())
                         }
-                        awaitHorizontalDragOrCancellation(down.id) { change ->
-                            change.consume()
-                            if (w > 0f && durationMs > 0L) {
-                                onSeek(((change.position.x / w).coerceIn(0f, 1f) * durationMs).toLong())
+                        // Track the drag manually: awaitHorizontalDragOrCancellation
+                        // takes no drag callback in this Compose version, so read
+                        // pointer events until this finger lifts or cancels.
+                        var dragging = true
+                        while (dragging) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id }
+                                ?: continue
+                            if (change.changedToUpOrCanceled()) {
+                                dragging = false
+                            } else {
+                                change.consume()
+                                if (w > 0f && durationMs > 0L) {
+                                    onSeek(((change.position.x / w).coerceIn(0f, 1f) * durationMs).toLong())
+                                }
                             }
                         }
                         isScrubbing = false
@@ -2340,6 +2345,10 @@ private fun MoonSeekBar(
     }
 }
 
+/**
+ * Slide-to-unlock pill (mpvex-style): drag the thumb right to unlock.
+ * Shown when controls are locked and the user taps the screen.
+ */
 @Composable
 private fun UnlockSlider(
     onUnlock: () -> Unit,
