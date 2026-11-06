@@ -75,7 +75,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -806,18 +806,21 @@ private fun MsSegmentedControl(
             .padding(2.dp),
     ) {
         val tabWidth = maxWidth / segments.size
-        // The thumb's X is an Animatable (not animateDpAsState) so a drag
-        // can move it with the finger and it springs back on release.
+        val tabWidthPx = with(density) { tabWidth.toPx() }
+        // The thumb's X is a pixel Animatable (not animateDpAsState) so a
+        // drag can move it with the finger and it springs back on release.
         // Same bouncy spring as the original, same fixed thumb size, so
-        // a tap animates exactly like the original control.
-        val slideSpec = spring<Dp>(
+        // a tap animates exactly like the original control. Pixels (not
+        // Dp) because the drag deltas arrive in pixels — and Dp's
+        // VectorConverter won't resolve in this module's Compose version.
+        val slideSpec = spring<Float>(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMedium,
         )
-        val thumbX = remember { Animatable(0.dp, Dp.VectorConverter) }
+        val thumbX = remember { Animatable(0f) }
         var thumbReady by remember { mutableStateOf(false) }
-        LaunchedEffect(selected, tabWidth) {
-            val target = tabWidth * selected
+        LaunchedEffect(selected, tabWidthPx) {
+            val target = tabWidthPx * selected
             if (!thumbReady) {
                 thumbX.snapTo(target)
                 thumbReady = true
@@ -830,17 +833,14 @@ private fun MsSegmentedControl(
         // Taps still work (the segment clickables fire when no drag).
         val dragState = rememberDraggableState { delta ->
             scope.launch {
-                val minX = 0.dp
-                val maxX = tabWidth * (segments.size - 1)
-                thumbX.snapTo(
-                    (thumbX.value + with(density) { delta.toDp() }).coerceIn(minX, maxX)
-                )
+                val maxX = tabWidthPx * (segments.size - 1)
+                thumbX.snapTo((thumbX.value + delta).coerceIn(0f, maxX))
             }
         }
         // iOS-style: selected thumb is lighter gray (moon's pick 2026-11-04).
         Box(
             modifier = Modifier
-                .offset(x = thumbX.value)
+                .offset { IntOffset(thumbX.value.roundToInt(), 0) }
                 .size(width = tabWidth, height = 36.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xFF636366)),
@@ -855,13 +855,13 @@ private fun MsSegmentedControl(
                     state = dragState,
                     orientation = Orientation.Horizontal,
                     onDragStopped = {
-                        val nearest = ((thumbX.value / tabWidth).roundToInt())
+                        val nearest = ((thumbX.value / tabWidthPx).roundToInt())
                             .coerceIn(0, segments.size - 1)
                         if (nearest != selected) {
                             onSelect(nearest)
                         } else {
                             // Same tab: spring the thumb back home.
-                            thumbX.animateTo(tabWidth * selected, slideSpec)
+                            thumbX.animateTo(tabWidthPx * selected, slideSpec)
                         }
                     },
                 ),

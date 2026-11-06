@@ -44,6 +44,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import dev.chrisbanes.haze.ExperimentalHazeApi
 import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.HazeState
@@ -445,6 +446,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // so the pill showed two selections at once. Only the
                 // capsule is the selection now — taps show nothing else.
                 val tabInteractionSource = remember { MutableInteractionSource() }
+                // Scope for moving the capsule: the drag loop runs inside
+                // awaitPointerEventScope (a RESTRICTED scope — it refuses
+                // Animatable suspend calls like snapTo/animateTo), so the
+                // capsule moves go through this launched scope instead.
+                val pillScope = rememberCoroutineScope()
                 val selIdx = tabs.indexOfFirst { it.screen == selectedTab }.coerceAtLeast(0)
                 val selBounds = tabBounds.getOrNull(selIdx) ?: Rect.Zero
                 val pillCenterX = remember { Animatable(0f) }
@@ -529,10 +535,12 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                                 } else {
                                                     // Same tab: spring the
                                                     // capsule back home.
-                                                    pillCenterX.animateTo(
-                                                        tabBounds.getOrNull(selIdx)?.center?.x ?: startCenterX,
-                                                        navSlideSpec,
-                                                    )
+                                                    pillScope.launch {
+                                                        pillCenterX.animateTo(
+                                                            tabBounds.getOrNull(selIdx)?.center?.x ?: startCenterX,
+                                                            navSlideSpec,
+                                                        )
+                                                    }
                                                 }
                                             }
                                             break
@@ -551,9 +559,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         val minCenter = tabBounds.firstOrNull()?.center?.x ?: 0f
                                         val maxCenter = tabBounds.lastOrNull()?.center?.x ?: 0f
                                         if (minCenter != 0f && maxCenter != 0f) {
-                                            pillCenterX.snapTo(
-                                                (startCenterX + accum).coerceIn(minCenter, maxCenter)
-                                            )
+                                            pillScope.launch {
+                                                pillCenterX.snapTo(
+                                                    (startCenterX + accum).coerceIn(minCenter, maxCenter)
+                                                )
+                                            }
                                         }
                                     }
                                 }
