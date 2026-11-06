@@ -21,6 +21,11 @@ object ScanPrefs {
     // Custom BetterPosters style address (moon's 2026-11-06): a btttr.cc URL
     // pattern with {imdb_id} in it, e.g. from btttr.cc/configure.
     private const val KEY_POSTER_TEMPLATE = "poster_template"
+    // GitHub Gist second backup (moon's 2026-11-06): personal access token
+    // with the `gist` scope (created at github.com/settings/tokens) and the
+    // id of the private gist the backups live in.
+    private const val KEY_GIST_TOKEN = "gist_token"
+    private const val KEY_GIST_ID = "gist_id"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -60,6 +65,22 @@ object ScanPrefs {
 
     fun setFanartKey(context: Context, key: String) {
         prefs(context).edit().putString(KEY_FANART, key.trim()).apply()
+    }
+
+    /** GitHub personal access token with the `gist` scope, or "". */
+    fun getGistToken(context: Context): String =
+        prefs(context).getString(KEY_GIST_TOKEN, "") ?: ""
+
+    fun setGistToken(context: Context, token: String) {
+        prefs(context).edit().putString(KEY_GIST_TOKEN, token.trim()).apply()
+    }
+
+    /** Id of the private gist holding the backups, or "" before the first push. */
+    fun getGistId(context: Context): String =
+        prefs(context).getString(KEY_GIST_ID, "") ?: ""
+
+    fun setGistId(context: Context, id: String) {
+        prefs(context).edit().putString(KEY_GIST_ID, id.trim()).apply()
     }
 
     fun isAnimeAbsolute(context: Context): Boolean =

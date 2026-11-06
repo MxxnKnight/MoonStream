@@ -194,6 +194,16 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 .getLong("last_backup_at", 0),
         )
     }
+    // GitHub Gist second backup (moon's 2026-11-06): token typed in Settings,
+    // gist id saved on first push. Kept next to the Telegram backup state.
+    var gistToken by remember { mutableStateOf(ScanPrefs.getGistToken(context)) }
+    var gistTokenSaved by remember { mutableStateOf(ScanPrefs.getGistToken(context)) }
+    var lastGistBackupAt by remember {
+        mutableStateOf(
+            context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
+                .getLong(com.moon.moonstream.backup.GistBackup.PREF_LAST_GIST_BACKUP_AT, 0),
+        )
+    }
 
     fun markBackedUp() {
         lastBackupAt = System.currentTimeMillis()
@@ -205,6 +215,18 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         if (lastBackupAt == 0L) return "Last backup: never"
         val fmt = SimpleDateFormat("d MMM yyyy, h:mm a", Locale.US)
         return "Last backup: ${fmt.format(Date(lastBackupAt))}"
+    }
+
+    fun markGistBackedUp() {
+        lastGistBackupAt = System.currentTimeMillis()
+        context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putLong(com.moon.moonstream.backup.GistBackup.PREF_LAST_GIST_BACKUP_AT, lastGistBackupAt).apply()
+    }
+
+    fun lastGistBackupText(): String {
+        if (lastGistBackupAt == 0L) return "Last Gist backup: never"
+        val fmt = SimpleDateFormat("d MMM yyyy, h:mm a", Locale.US)
+        return "Last Gist backup: ${fmt.format(Date(lastGistBackupAt))}"
     }
 
     fun pushBackupToTelegram(onDone: () -> Unit = {}) {
@@ -274,6 +296,65 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     MsToast.show("Restore error: ${e.message}")
+                }
+            } finally {
+                backupWorking = false
+            }
+        }
+    }
+
+    /** Push the library backup to the private GitHub Gist (second backup). */
+    fun pushBackupToGist() {
+        if (backupWorking) return
+        backupWorking = true
+        scope.launch(Dispatchers.IO) {
+            try {
+                val json = BackupManager.buildBackupJson(context)
+                val gz = BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
+                val ok = com.moon.moonstream.backup.GistBackup.push(context, gz)
+                withContext(Dispatchers.Main) {
+                    if (ok) {
+                        context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
+                            .edit().putString(com.moon.moonstream.backup.GistBackup.PREF_LAST_GIST_HASH, BackupManager.contentHash(json)).apply()
+                        markGistBackedUp()
+                        MsToast.show("Gist backup pushed")
+                    } else {
+                        MsToast.show("Gist backup failed — check the token in Settings")
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    MsToast.show("Gist backup error: ${e.message}")
+                }
+            } finally {
+                backupWorking = false
+            }
+        }
+    }
+
+    /** Pull the library backup back from the private GitHub Gist. */
+    fun pullBackupFromGist() {
+        if (backupWorking) return
+        backupWorking = true
+        scope.launch(Dispatchers.IO) {
+            try {
+                val bytes = com.moon.moonstream.backup.GistBackup.pull(context)
+                if (bytes == null) {
+                    withContext(Dispatchers.Main) {
+                        MsToast.show("No Gist backup found — check the token in Settings")
+                    }
+                    return@launch
+                }
+                val json = BackupManager.parseBackup(bytes)
+                val summary = BackupManager.restore(context, json)
+                com.moon.moonstream.index.scan.ScanUiState.bumpChannelListVersion()
+                withContext(Dispatchers.Main) {
+                    markGistBackedUp()
+                    MsToast.show("Restored from Gist: ${summary.channels} channels, ${summary.media} titles, ${summary.files} files, ${summary.progress} resume spots")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    MsToast.show("Gist restore error: ${e.message}")
                 }
             } finally {
                 backupWorking = false
@@ -1172,7 +1253,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             }
             SettingRow(
                 title = "Backup destination",
-                info = "Where your backups are stored. Saved Messages is a private chat only you can see.",
+                info = "Where your backups are stored. Saved Messages is a private chat only you can see; GitHub Gist below is the second copy on your own GitHub account.",
             ) {
                 Text(
                     "Saved Messages",
@@ -1214,10 +1295,60 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     onClick = { pullBackupFromTelegram() },
                 )
             }
+            SettingBlock(
+                title = "GitHub Gist (second backup)",
+                info = "A second, free backup on your own GitHub account as a private gist — only you can see it. Needs a personal access token with the gist permission: create one at github.com/settings/tokens, tick gist, and paste it below. The token lives only on this phone, never in chat.",
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MsTextField(
+                        value = gistToken,
+                        onValueChange = { gistToken = it },
+                        hint = "Paste token (ghp_…)",
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    MsOutlinePill(
+                        text = "Save",
+                        fontSize = 13,
+                        onClick = {
+                            ScanPrefs.setGistToken(context, gistToken)
+                            gistTokenSaved = gistToken.trim()
+                            MsToast.show("Saved")
+                        },
+                    )
+                }
+                Text(
+                    lastGistBackupText(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MsColors.TextSecondary,
+                    modifier = Modifier.padding(vertical = 6.dp),
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    MsOutlinePill(
+                        text = "Push to Gist",
+                        fontSize = 13,
+                        enabled = gistTokenSaved.isNotBlank(),
+                        modifier = Modifier.weight(1f),
+                        onClick = { pushBackupToGist() },
+                    )
+                    MsOutlinePill(
+                        text = "Pull from Gist",
+                        fontSize = 13,
+                        enabled = gistTokenSaved.isNotBlank(),
+                        modifier = Modifier.weight(1f),
+                        onClick = { pullBackupFromGist() },
+                    )
+                }
+            }
             // Phone-storage backup removed (moon's call 2026-11-03):
-            // backup/restore is Telegram cloud only now.
+            // backup/restore is cloud only now (Telegram + GitHub Gist).
             Text(
-                "If you reinstall the app, log in with the same Telegram account and hit Restore — your catalog comes back.",
+                "If you reinstall the app, log in with the same Telegram account and hit Restore — your catalog comes back. A Gist backup restores the same way from the Gist buttons above.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
                 modifier = Modifier.padding(bottom = 8.dp),

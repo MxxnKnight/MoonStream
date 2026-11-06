@@ -99,13 +99,13 @@ class ScanService : Service() {
                 try {
                     val prefs = getSharedPreferences("moonstream_prefs", Context.MODE_PRIVATE)
                     val autoBackup = prefs.getBoolean("auto_backup_sync", true)
-                    // backup_to_telegram toggle removed — Telegram is the only
-                    // destination now (moon's call 2026-11-03).
                     if (autoBackup) {
                         // Changed-only (moon's 2026-11-06): a scan that finds
-                        // nothing new must not push another copy to Saved
-                        // Messages. The content hash ignores the timestamp,
-                        // so an unchanged library hashes identically.
+                        // nothing new must not push another copy. The content
+                        // hash ignores the timestamp, so an unchanged library
+                        // hashes identically. Telegram and Gist keep SEPARATE
+                        // hashes, so a failed push on one side retries on the
+                        // next scan even when the other side succeeded.
                         val json = com.moon.moonstream.backup.BackupManager.buildBackupJson(this@ScanService)
                         val hash = com.moon.moonstream.backup.BackupManager.contentHash(json)
                         val lastHash = prefs.getString(
@@ -131,6 +131,28 @@ class ScanService : Service() {
                                 // the helper; do NOT stamp last_backup_at/hash,
                                 // so the next scan retries the push.
                                 Log.w(TAG, "Post-scan auto backup uploaded msg ${result.messageId} but unverified")
+                            }
+                        }
+                        // Second backup (moon's 2026-11-06): GitHub Gist, same
+                        // changed-only rule, independent of Telegram's result.
+                        val gistToken = com.moon.moonstream.index.scan.ScanPrefs.getGistToken(this@ScanService)
+                        if (gistToken.isNotBlank()) {
+                            val lastGistHash = prefs.getString(
+                                com.moon.moonstream.backup.GistBackup.PREF_LAST_GIST_HASH, null,
+                            )
+                            if (hash == lastGistHash) {
+                                Log.i(TAG, "Gist backup unchanged — skipping")
+                            } else {
+                                val gistGz = com.moon.moonstream.backup.BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
+                                if (com.moon.moonstream.backup.GistBackup.push(this@ScanService, gistGz)) {
+                                    prefs.edit()
+                                        .putLong(com.moon.moonstream.backup.GistBackup.PREF_LAST_GIST_BACKUP_AT, System.currentTimeMillis())
+                                        .putString(com.moon.moonstream.backup.GistBackup.PREF_LAST_GIST_HASH, hash)
+                                        .apply()
+                                    Log.i(TAG, "Post-scan Gist backup pushed")
+                                } else {
+                                    Log.w(TAG, "Post-scan Gist backup failed — will retry next scan")
+                                }
                             }
                         }
                     }
