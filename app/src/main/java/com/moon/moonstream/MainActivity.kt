@@ -7,9 +7,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -405,7 +402,6 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // blue selected, gray unselected. Keeps floating pill + swipe.
                 // Basic black blur look (moon's request 2026-11-04): simple dark
                 // translucent pill like the reference — no GPU blur, light on RAM.
-                var dragAccum by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
                 val pillShape = RoundedCornerShape(24.dp)
                 // Sliding selection pill (moon's 2026-11-06): the same
                 // sliding-pill idea as MsSegmented — a soft accent highlight
@@ -448,21 +444,48 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         .clip(pillShape)
                         .background(Color.Black.copy(alpha = 0.78f))
                         .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape)
-                        .draggable(
-                            state = rememberDraggableState { delta ->
-                                    dragAccum += delta
-                                },
-                                orientation = Orientation.Horizontal,
-                                onDragStopped = {
-                                    val idx = tabs.indexOfFirst { it.screen == selectedTab }
-                                if (dragAccum < -80 && idx < tabs.size - 1) {
-                                    goTab(tabs[idx + 1].screen)
-                                } else if (dragAccum > 80 && idx > 0) {
-                                    goTab(tabs[idx - 1].screen)
+                        .pointerInput(selectedTab) {
+                            // Swipe-to-switch (moon's 2026-11-06): the old
+                            // `draggable` never fired — it fought the
+                            // `clickable` on each tab for the gesture, so
+                            // swipes did nothing and only taps worked.
+                            // Manual loop instead: track the finger, consume
+                            // moves only once it's clearly a horizontal
+                            // drag, decide on release. A plain tap consumes
+                            // nothing, so the tab clickables still fire.
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val down = awaitFirstDown()
+                                    var accum = 0f
+                                    var dragging = false
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == down.id }
+                                            ?: continue
+                                        if (!change.pressed) {
+                                            // Finger lifted: a real swipe switches tabs.
+                                            if (dragging) {
+                                                val idx = tabs.indexOfFirst { it.screen == selectedTab }
+                                                if (accum < -80 && idx < tabs.size - 1) {
+                                                    goTab(tabs[idx + 1].screen)
+                                                } else if (accum > 80 && idx > 0) {
+                                                    goTab(tabs[idx - 1].screen)
+                                                }
+                                            }
+                                            break
+                                        }
+                                        val dx = change.position.x - change.previousPosition.x
+                                        accum += dx
+                                        // Wait for a clear horizontal move
+                                        // before claiming the gesture, so
+                                        // taps (and vertical scrolls) still work.
+                                        if (!dragging && kotlin.math.abs(accum) < 24f) continue
+                                        dragging = true
+                                        change.consume()
+                                    }
                                 }
-                                dragAccum = 0f
-                            },
-                        )
+                            }
+                        }
                         .padding(horizontal = 8.dp, vertical = 8.dp),
                 ) {
                     // The sliding highlight (behind the tabs).
