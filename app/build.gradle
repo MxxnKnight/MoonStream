@@ -1,7 +1,7 @@
 apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'org.jetbrains.kotlin.plugin.compose'
-apply plugin: 'org.jetbrains.kotlin.kapt'
+apply plugin: 'com.google.devtools.ksp'
 
 android {
     namespace 'com.moon.moonstream'
@@ -125,7 +125,7 @@ dependencies {
     // Room: on-phone library database (Phase 3 indexing)
     implementation 'androidx.room:room-runtime:2.6.1'
     implementation 'androidx.room:room-ktx:2.6.1'
-    kapt 'androidx.room:room-compiler:2.6.1'
+    ksp 'androidx.room:room-compiler:2.6.1'
 
     // Coil: real poster art in Library/Detail (mirror has 2.6.0).
     implementation 'io.coil-kt:coil-compose:2.6.0'

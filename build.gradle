@@ -12,10 +12,9 @@ buildscript {
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.5.2'
-        // KAPT's bundled kotlinx-metadata-jvm only reads metadata up to
-        // 2.0.0, but Haze's JetBrains Compose UI was compiled with Kotlin
-        // 2.1 (metadata 2.1.0) — 0.9.0 teaches KAPT the newer format.
-        classpath 'org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0'
+        // KSP (replaces KAPT for Room): KAPT cannot read Kotlin 2.1
+        // metadata from Haze's JetBrains Compose UI, KSP can.
+        classpath 'com.google.devtools.ksp:com.google.devtools.ksp.gradle.plugin:2.0.20-1.0.24'
         classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.20'
         classpath 'org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.0.20'
     }
