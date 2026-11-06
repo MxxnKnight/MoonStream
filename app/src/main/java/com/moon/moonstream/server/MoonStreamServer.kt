@@ -395,7 +395,7 @@ class MoonStreamServer(
             var remaining = length
             while (remaining > 0) {
                 val chunk = minOf(CHUNK_SIZE.toLong(), remaining).toInt()
-                val bytes = readGlobalRange(offset, chunk)
+                val bytes = readChunkWithRetry(targetFile.fileName, offset, chunk, ::readGlobalRange)
                 if (bytes.isEmpty()) break
                 output.write(bytes)
                 ServerTelemetry.addBytes(appContext, bytes.size.toLong())
@@ -465,8 +465,8 @@ class MoonStreamServer(
             var remaining = length
             while (remaining > 0) {
                 val chunk = minOf(CHUNK_SIZE.toLong(), remaining).toInt()
-                val bytes = runBlocking {
-                    backend.readFileRange(channelId, messageId, offset, chunk)
+                val bytes = readChunkWithRetry(msg.fileName, offset, chunk) { off, size ->
+                    runBlocking { backend.readFileRange(channelId, messageId, off, size) }
                 }
                 if (bytes.isEmpty()) break
                 output.write(bytes)
@@ -669,6 +669,48 @@ class MoonStreamServer(
         else -> "application/octet-stream"
     }
 
+    /**
+     * Read one chunk from Telegram, retrying transient empty reads.
+     * A single failed chunk used to end the whole stream silently — the
+     * server had already promised the player the full file size, so the
+     * player waited forever for bytes that never came (moon's 2026-11-06:
+     * 102 MB served, then loading forever in mpvRx). The retry lives
+     * inside the server, before any bytes reach a player, so it fixes
+     * every player at once — mpvRx, Nuvio and Stremio all drink from
+     * these same two loops.
+     */
+    private fun readChunkWithRetry(
+        fileName: String,
+        offset: Long,
+        size: Int,
+        read: (Long, Int) -> ByteArray,
+    ): ByteArray {
+        var attempt = 0
+        while (true) {
+            val bytes = try {
+                read(offset, size)
+            } catch (e: Exception) {
+                ByteArray(0)
+            }
+            if (bytes.isNotEmpty()) return bytes
+            attempt++
+            if (attempt > STREAM_MAX_RETRIES) {
+                AppLog.e(
+                    "STREAM",
+                    "Gave up on '$fileName' at offset $offset after $attempt tries — " +
+                        "sent less than promised, player may stall",
+                )
+                return ByteArray(0)
+            }
+            AppLog.i("STREAM", "Chunk @$offset empty, retry $attempt/$STREAM_MAX_RETRIES for '$fileName'")
+            try {
+                Thread.sleep(STREAM_RETRY_DELAY_MS)
+            } catch (_: InterruptedException) {
+                return ByteArray(0)
+            }
+        }
+    }
+
     /** Parser language tags ("Mal","Eng","unknown") → Stremio lang codes. */
     private fun stremioLang(raw: String): String = when (raw.trim().lowercase()) {
         "eng", "en", "english" -> "eng"
@@ -745,6 +787,8 @@ class MoonStreamServer(
     companion object {
         private const val TAG = "MoonStreamServer"
         private const val CHUNK_SIZE = 1_048_576 // 1 MB per Telegram read
+        private const val STREAM_MAX_RETRIES = 3 // empty-chunk retries before giving up
+        private const val STREAM_RETRY_DELAY_MS = 1_000L // wait between retries
         private const val MAX_SUB_BYTES = 8 * 1_048_576 // sanity cap for subtitle files
 
         fun getLocalIpAddress(): String {
