@@ -461,6 +461,10 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // capsule centre at 636px). Keep this in sync with the
                 // Row's horizontal padding below.
                 val rowHPaddingPx = with(density) { 6.dp.toPx() }
+                // Capsule height (moon's 2026-11-07: taller top-to-bottom,
+                // same width). Kept as a value so the drag-grab check below
+                // uses the same number as the drawn capsule.
+                val capsuleHeightPx = with(density) { 54.dp.toPx() }
                 val pillCenterX = remember { Animatable(0f) }
                 val indW = remember { Animatable(0f) }
                 var indReady by remember { mutableStateOf(false) }
@@ -515,6 +519,18 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         requireUnconsumed = false,
                                         pass = PointerEventPass.Initial,
                                     )
+                                    // Grab-only rule (moon's 2026-11-07): the
+                                    // capsule only drags when the finger
+                                    // starts ON the capsule itself. A drag
+                                    // that starts on another tab must NOT
+                                    // yank the capsule under the finger — it
+                                    // just taps that tab instead. So if the
+                                    // down lands outside the capsule's rect,
+                                    // skip this gesture entirely.
+                                    val onCapsule = indW.value > 0f &&
+                                        kotlin.math.abs(down.position.x - pillCenterX.value) <= indW.value / 2 &&
+                                        kotlin.math.abs(down.position.y - size.height / 2) <= capsuleHeightPx / 2
+                                    if (!onCapsule) continue
                                     var accum = 0f
                                     var dragging = false
                                     // The capsule's centre when the drag
@@ -630,7 +646,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     }
                                     .size(
                                         with(density) { indW.value.toDp() },
-                                        50.dp,
+                                        54.dp,
                                     )
                                     .clip(RoundedCornerShape(50))
                                     .background(Color.White.copy(alpha = 0.22f)),
@@ -639,7 +655,10 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 6.dp, vertical = 6.dp),
+                                // Vertical padding 8dp (was 6dp): the taller
+                                // 54dp capsule needs the extra room so it
+                                // doesn't touch the bar's top/bottom edges.
+                                .padding(horizontal = 6.dp, vertical = 8.dp),
                         ) {
                         tabs.forEachIndexed { idx, tab ->
                             val selected = selectedTab == tab.screen

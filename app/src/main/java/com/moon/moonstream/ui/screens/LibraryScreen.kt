@@ -15,10 +15,11 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitPointerEvent
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -808,6 +809,7 @@ private fun MsSegmentedControl(
     ) {
         val tabWidth = maxWidth / segments.size
         val tabWidthPx = with(density) { tabWidth.toPx() }
+        val thumbHeightPx = with(density) { 36.dp.toPx() }
         // The thumb's X is a pixel Animatable (not animateDpAsState) so a
         // drag can move it with the finger and it springs back on release.
         // Same bouncy spring as the original, same fixed thumb size, so
@@ -829,15 +831,13 @@ private fun MsSegmentedControl(
                 thumbX.animateTo(target, slideSpec)
             }
         }
-        // Horizontal drag (moon's 2026-11-07): press and drag the bar —
-        // the thumb follows the finger, release snaps to the nearest tab.
-        // Taps still work (the segment clickables fire when no drag).
-        val dragState = rememberDraggableState { delta ->
-            scope.launch {
-                val maxX = tabWidthPx * (segments.size - 1)
-                thumbX.snapTo((thumbX.value + delta).coerceIn(0f, maxX))
-            }
-        }
+        // Horizontal drag (moon's 2026-11-07): press and drag the thumb —
+        // it follows the finger, release snaps to the nearest tab. Taps
+        // still work (the segment clickables fire when no drag). The drag
+        // lives on the labels Row (it covers the whole bar — the thumb sits
+        // behind it, so a drag on the thumb itself would never receive
+        // touches), but it only ENGAGES when the finger starts ON the thumb
+        // (see the grab-only check in the pointerInput below).
         // iOS-style: selected thumb is lighter gray (moon's pick 2026-11-04).
         Box(
             modifier = Modifier
@@ -846,9 +846,6 @@ private fun MsSegmentedControl(
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xFF636366)),
         )
-        // The drag lives on the labels Row (it covers the whole bar — the
-        // thumb sits behind it, so a draggable on the thumb would never
-        // receive touches). Taps still reach the segment clickables.
         // No touch animation on the segments (moon's 2026-11-07): only the
         // capsule and its slide animate — a tap ripple would draw a second
         // rounded rect around the pill, the same double-selection the
@@ -857,20 +854,61 @@ private fun MsSegmentedControl(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .draggable(
-                    state = dragState,
-                    orientation = Orientation.Horizontal,
-                    onDragStopped = {
-                        val nearest = ((thumbX.value / tabWidthPx).roundToInt())
-                            .coerceIn(0, segments.size - 1)
-                        if (nearest != selected) {
-                            onSelect(nearest)
-                        } else {
-                            // Same tab: spring the thumb back home.
-                            thumbX.animateTo(tabWidthPx * selected, slideSpec)
+                .pointerInput(selected, tabWidthPx) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val down = awaitFirstDown(
+                                requireUnconsumed = false,
+                                pass = PointerEventPass.Initial,
+                            )
+                            // Grab-only rule (moon's 2026-11-07): the thumb
+                            // only drags when the finger starts ON the thumb
+                            // itself. A drag that starts on another segment
+                            // must NOT yank the thumb under the finger — it
+                            // just taps that segment instead. thumbX is the
+                            // thumb's LEFT edge; the thumb spans the full
+                            // height of the bar, so the check is the thumb's
+                            // horizontal span.
+                            val onThumb = down.position.x in thumbX.value..(thumbX.value + tabWidthPx) &&
+                                down.position.y in 0f..thumbHeightPx
+                            if (!onThumb) continue
+                            var dragging = false
+                            var accum = 0f
+                            val startX = thumbX.value
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                    ?: continue
+                                if (!change.pressed) {
+                                    // Finger lifted: snap to the nearest tab.
+                                    if (dragging) {
+                                        val nearest = ((thumbX.value / tabWidthPx).roundToInt())
+                                            .coerceIn(0, segments.size - 1)
+                                        if (nearest != selected) {
+                                            onSelect(nearest)
+                                        } else {
+                                            scope.launch {
+                                                thumbX.animateTo(tabWidthPx * selected, slideSpec)
+                                            }
+                                        }
+                                    }
+                                    break
+                                }
+                                val dx = change.position.x - change.previousPosition.x
+                                accum += dx
+                                // Wait for a clear horizontal move before
+                                // claiming the gesture, so taps still work.
+                                if (!dragging && kotlin.math.abs(accum) < 24f) continue
+                                dragging = true
+                                change.consume()
+                                scope.launch {
+                                    val maxX = tabWidthPx * (segments.size - 1)
+                                    thumbX.snapTo((startX + accum).coerceIn(0f, maxX))
+                                }
+                            }
                         }
-                    },
-                ),
+                    }
+                },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             segments.forEachIndexed { i, label ->
