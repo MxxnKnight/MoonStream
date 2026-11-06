@@ -106,6 +106,7 @@ import com.moon.moonstream.ui.components.IosSheetButton
 import com.moon.moonstream.ui.components.rememberAnimeCheckIcon
 import com.moon.moonstream.ui.components.rememberDeleteIcon
 import com.moon.moonstream.ui.components.LimePillButton
+import com.moon.moonstream.ui.components.MsOutlinePill
 import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MetadataFixSheet
 import com.moon.moonstream.ui.components.MsCard
@@ -424,8 +425,13 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 )
             }
 
+            // iOS pattern (moon's 2026-11-07): one blue primary
+            // ("Scan All Now") and the rest gray secondary pills,
+            // like the Detail screen's Play + Copy Link / Add Subtitle.
+            // (Also normalises the full-width ＋ in "Add Custom
+            // Content" to a regular +.)
             item(key = "refreshChannels") {
-                LimePillButton(
+                MsOutlinePill(
                     text = "↻ Refresh channels",
                     onClick = { scope.launch { reloadChannels() } },
                     modifier = Modifier.fillMaxWidth(),
@@ -433,7 +439,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
             }
 
             item(key = "addChannel") {
-                LimePillButton(
+                MsOutlinePill(
                     text = "+ Add Channel",
                     onClick = { showAddSheet = true },
                     modifier = Modifier.fillMaxWidth(),
@@ -441,8 +447,8 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
             }
 
             item(key = "addCustomContent") {
-                LimePillButton(
-                    text = "＋ Add Custom Content",
+                MsOutlinePill(
+                    text = "+ Add Custom Content",
                     onClick = { onCreateEntry(null) },
                     modifier = Modifier.fillMaxWidth(),
                 )

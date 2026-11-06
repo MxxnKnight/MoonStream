@@ -8,7 +8,6 @@ import com.moon.moonstream.ui.components.MsToggle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,7 +55,6 @@ import com.moon.moonstream.index.parse.normalizeTitle
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.FilePickerSheet
 import com.moon.moonstream.ui.components.LimePillButton
-import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MsOutlinePill
 import com.moon.moonstream.ui.components.MsDropdown
 import com.moon.moonstream.ui.components.MsSectionLabel
@@ -465,13 +463,18 @@ fun CreateScreen(
                 onRemove = { files.removeAt(i) },
             )
         }
-        LimeTextButton(
+        // iOS pattern (moon's 2026-11-07): all actions are pills —
+        // blue primary for the confirm actions, gray secondary for
+        // the add actions — matching the Detail screen.
+        MsOutlinePill(
             text = "+ Add files",
             onClick = { pickerMode = PickerMode.FILES },
+            modifier = Modifier.fillMaxWidth(),
         )
-        LimeTextButton(
+        MsOutlinePill(
             text = "+ Add by link",
             onClick = { showFileLink = !showFileLink },
+            modifier = Modifier.fillMaxWidth(),
         )
         if (showFileLink) {
             Column(
@@ -650,9 +653,10 @@ fun CreateScreen(
                     onRemove = { if (splitLinks.size > 1) splitLinks.removeAt(i) },
                 )
             }
-            LimeTextButton(
+            MsOutlinePill(
                 text = "+ Add part",
                 onClick = { splitLinks.add("") },
+                modifier = Modifier.fillMaxWidth(),
             )
         }
 
@@ -679,13 +683,15 @@ fun CreateScreen(
                 )
             }
         }
-        LimeTextButton(
+        MsOutlinePill(
             text = "+ Add subtitles",
             onClick = { pickerMode = PickerMode.SUBTITLES },
+            modifier = Modifier.fillMaxWidth(),
         )
-        LimeTextButton(
+        MsOutlinePill(
             text = "+ Add by link",
             onClick = { showSubLink = !showSubLink },
+            modifier = Modifier.fillMaxWidth(),
         )
         if (showSubLink) {
             Column(
@@ -801,16 +807,11 @@ fun CreateScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            TextButton(
+            MsOutlinePill(
+                text = "Cancel",
                 onClick = onCancel,
-                modifier = Modifier.padding(end = 8.dp),
-            ) {
-                Text(
-                    text = "Cancel",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MsColors.Accent,
-                )
-            }
+                modifier = Modifier.weight(1f),
+            )
             LimePillButton(
                 text = if (saving) "Saving…" else "Save Content",
                 onClick = ::save,
