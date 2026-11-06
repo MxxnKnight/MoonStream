@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION_ERROR")
+
 package com.moon.moonstream.ui.components
 
 import androidx.compose.material.ripple.RippleAlpha
