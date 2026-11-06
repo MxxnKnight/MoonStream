@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -438,6 +439,12 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         repeat(tabs.size) { add(Rect.Zero) }
                     }
                 }
+                // One shared interaction source for the tabs, with NO ripple
+                // (moon's 2026-11-07): the tab clickable's default ripple
+                // drew a second rounded-rect "selection" around the capsule,
+                // so the pill showed two selections at once. Only the
+                // capsule is the selection now — taps show nothing else.
+                val tabInteractionSource = remember { MutableInteractionSource() }
                 val selIdx = tabs.indexOfFirst { it.screen == selectedTab }.coerceAtLeast(0)
                 val selBounds = tabBounds.getOrNull(selIdx) ?: Rect.Zero
                 val pillCenterX = remember { Animatable(0f) }
@@ -472,8 +479,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         .fillMaxWidth()
                         .padding(start = 24.dp, end = 24.dp, bottom = 22.dp)
                         .pointerInput(selectedTab) {
-                            // Swipe-to-switch (moon's 2026-11-06): the old
-                            // `draggable` never fired — it fought the
+                            // Drag-the-capsule to switch (moon's 2026-11-07):
+                            // press the pill and drag it to another tab — the
+                            // capsule follows the finger, and on release it
+                            // snaps to the nearest tab and switches to it.
+                            // The old `draggable` never fired — it fought the
                             // `clickable` on each tab for the gesture, so
                             // swipes did nothing and only taps worked.
                             // Manual loop instead: track the finger, consume
@@ -482,10 +492,9 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             // nothing, so the tab clickables still fire.
                             // Listen in the Initial pass (requireUnconsumed
                             // = false): the tab clickables eat the down in
-                            // the Main pass, so a swipe that starts ON a tab
-                            // never reached this loop — that's why moon's
-                            // swipes did nothing. In the Initial pass the
-                            // parent sees the finger first.
+                            // the Main pass, so a drag that starts ON a tab
+                            // never reached this loop. In the Initial pass
+                            // the parent sees the finger first.
                             awaitPointerEventScope {
                                 while (true) {
                                     val down = awaitFirstDown(
@@ -494,18 +503,36 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     )
                                     var accum = 0f
                                     var dragging = false
+                                    // The capsule's centre when the drag
+                                    // starts (the selected tab's centre).
+                                    val startCenterX = pillCenterX.value
                                     while (true) {
                                         val event = awaitPointerEvent(PointerEventPass.Initial)
                                         val change = event.changes.firstOrNull { it.id == down.id }
                                             ?: continue
                                         if (!change.pressed) {
-                                            // Finger lifted: a real swipe switches tabs.
+                                            // Finger lifted: snap to the
+                                            // nearest tab and switch to it.
                                             if (dragging) {
-                                                val idx = tabs.indexOfFirst { it.screen == selectedTab }
-                                                if (accum < -80 && idx < tabs.size - 1) {
-                                                    goTab(tabs[idx + 1].screen)
-                                                } else if (accum > 80 && idx > 0) {
-                                                    goTab(tabs[idx - 1].screen)
+                                                var nearest = selIdx
+                                                var best = Float.MAX_VALUE
+                                                tabBounds.forEachIndexed { i, bounds ->
+                                                    if (bounds == Rect.Zero) return@forEachIndexed
+                                                    val d = kotlin.math.abs(bounds.center.x - pillCenterX.value)
+                                                    if (d < best) {
+                                                        best = d
+                                                        nearest = i
+                                                    }
+                                                }
+                                                if (nearest != selIdx) {
+                                                    goTab(tabs[nearest].screen)
+                                                } else {
+                                                    // Same tab: spring the
+                                                    // capsule back home.
+                                                    pillCenterX.animateTo(
+                                                        tabBounds.getOrNull(selIdx)?.center?.x ?: startCenterX,
+                                                        navSlideSpec,
+                                                    )
                                                 }
                                             }
                                             break
@@ -518,6 +545,16 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         if (!dragging && kotlin.math.abs(accum) < 24f) continue
                                         dragging = true
                                         change.consume()
+                                        // Drag the capsule with the finger,
+                                        // clamped to the first/last tab
+                                        // centres so it can't leave the bar.
+                                        val minCenter = tabBounds.firstOrNull()?.center?.x ?: 0f
+                                        val maxCenter = tabBounds.lastOrNull()?.center?.x ?: 0f
+                                        if (minCenter != 0f && maxCenter != 0f) {
+                                            pillCenterX.snapTo(
+                                                (startCenterX + accum).coerceIn(minCenter, maxCenter)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -583,8 +620,14 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     .onGloballyPositioned { coords ->
                                         tabBounds[idx] = coords.boundsInParent()
                                     }
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .clickable { goTab(tab.screen) }
+                                    // No ripple (moon's 2026-11-07): the
+                                    // default ripple drew a second rounded
+                                    // rect around the capsule. Only the
+                                    // capsule is the selection now.
+                                    .clickable(
+                                        interactionSource = tabInteractionSource,
+                                        indication = null,
+                                    ) { goTab(tab.screen) }
                                     .padding(horizontal = 12.dp, vertical = 4.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {

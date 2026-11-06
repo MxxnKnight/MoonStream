@@ -4,8 +4,8 @@ import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.components.IosBottomSheet
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -15,6 +15,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -68,9 +71,11 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -790,6 +795,8 @@ private fun MsSegmentedControl(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
@@ -799,23 +806,67 @@ private fun MsSegmentedControl(
             .padding(2.dp),
     ) {
         val tabWidth = maxWidth / segments.size
-        val thumbOffset by animateDpAsState(
-            targetValue = tabWidth * selected,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessMedium,
-            ),
-            label = "segmentThumb",
+        // The thumb's X is an Animatable (not animateDpAsState) so a drag
+        // can move it with the finger and it springs back on release.
+        // Same bouncy spring as the original, same fixed thumb size, so
+        // a tap animates exactly like the original control.
+        val slideSpec = spring<Dp>(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
         )
+        val thumbX = remember { Animatable(0.dp, Dp.VectorConverter) }
+        var thumbReady by remember { mutableStateOf(false) }
+        LaunchedEffect(selected, tabWidth) {
+            val target = tabWidth * selected
+            if (!thumbReady) {
+                thumbX.snapTo(target)
+                thumbReady = true
+            } else {
+                thumbX.animateTo(target, slideSpec)
+            }
+        }
+        // Horizontal drag (moon's 2026-11-07): press and drag the bar —
+        // the thumb follows the finger, release snaps to the nearest tab.
+        // Taps still work (the segment clickables fire when no drag).
+        val dragState = rememberDraggableState { delta ->
+            scope.launch {
+                val minX = 0.dp
+                val maxX = tabWidth * (segments.size - 1)
+                thumbX.snapTo(
+                    (thumbX.value + with(density) { delta.toDp() }).coerceIn(minX, maxX)
+                )
+            }
+        }
         // iOS-style: selected thumb is lighter gray (moon's pick 2026-11-04).
         Box(
             modifier = Modifier
-                .offset(x = thumbOffset)
+                .offset(x = thumbX.value)
                 .size(width = tabWidth, height = 36.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xFF636366)),
         )
-        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        // The drag lives on the labels Row (it covers the whole bar — the
+        // thumb sits behind it, so a draggable on the thumb would never
+        // receive touches). Taps still reach the segment clickables.
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .draggable(
+                    state = dragState,
+                    orientation = Orientation.Horizontal,
+                    onDragStopped = {
+                        val nearest = ((thumbX.value / tabWidth).roundToInt())
+                            .coerceIn(0, segments.size - 1)
+                        if (nearest != selected) {
+                            onSelect(nearest)
+                        } else {
+                            // Same tab: spring the thumb back home.
+                            thumbX.animateTo(tabWidth * selected, slideSpec)
+                        }
+                    },
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             segments.forEachIndexed { i, label ->
                 val isSel = i == selected
                 Box(
