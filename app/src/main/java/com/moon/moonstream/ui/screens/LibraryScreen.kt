@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
@@ -244,12 +245,11 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MsColors.Bg),
-    ) {
-        Column(Modifier.fillMaxSize()) {
+    // Header (title, search, filters, counts) as one piece, so it can sit
+    // at the top of the scrolling grid AND above the empty state.
+    @Composable
+    fun LibraryHeader() {
+        Column(Modifier.fillMaxWidth()) {
             Text(
                 "Library",
                 style = MaterialTheme.typography.headlineLarge,
@@ -276,7 +276,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp),
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
 
             MsSegmentedControl(
                 segments = listOf("ALL", "MOVIES", "SERIES", "ANIME", "HIDDEN"),
@@ -288,7 +288,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 },
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
 
             Row(
                 modifier = Modifier
@@ -316,9 +316,27 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     fontSize = 13,
                 )
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
+        }
+    }
 
+    val gridState = rememberLazyGridState(
+        initialFirstVisibleItemIndex = AppUiState.restoreScroll("library_grid"),
+    )
+    DisposableEffect(Unit) {
+        onDispose {
+            AppUiState.saveScroll("library_grid", gridState.firstVisibleItemIndex)
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MsColors.Bg),
+    ) {
+        Column(Modifier.fillMaxSize()) {
             if (filtered.isEmpty()) {
+                LibraryHeader()
                 // Plain-words empty states — never a fake grid.
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -340,14 +358,6 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     )
                 }
             } else {
-                val gridState = rememberLazyGridState(
-                    initialFirstVisibleItemIndex = AppUiState.restoreScroll("library_grid"),
-                )
-                DisposableEffect(Unit) {
-                    onDispose {
-                        AppUiState.saveScroll("library_grid", gridState.firstVisibleItemIndex)
-                    }
-                }
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     state = gridState,
@@ -356,6 +366,11 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
+                    // Header scrolls away with the grid (moon's 2026-11-06:
+                    // like the old UI — the bars were pinned before).
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        LibraryHeader()
+                    }
                     items(filtered, key = { it.id }) { item ->
                         val isSelected = selectedIds.contains(item.id)
                         PosterCell(
