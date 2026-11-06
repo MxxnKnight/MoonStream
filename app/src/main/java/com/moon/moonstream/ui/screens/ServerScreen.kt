@@ -365,10 +365,16 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
 
     // Fixed card height.
     val cardHeight = 240.dp
-    // URL visibility (moon's 2026-11-05): part of the card, ONLY visible
-    // on pill swipe — appears as the pill moves past halfway, fades in
-    // with progress (not a pop-in at 85%).
-    val urlVisible = progress > 0.5f || cardState == ServerCardState.RUNNING
+    // URL drawer reveal (moon's 2026-11-06): NO boolean gate — the drawer
+    // slides down progressively AS the pill moves (reveal = progress,
+    // 0 = hidden, 1 = fully down), instead of popping in at 50%.
+    // Its full height is measured once fully open; before that a 58dp
+    // estimate (1dp divider + 18dp padding + one text line) is close
+    // enough that the slide looks right from the first swipe.
+    var drawerFullHeightPx by remember {
+        mutableIntStateOf(with(density) { 58.dp.toPx() }.roundToInt())
+    }
+    val drawerReveal = progress.coerceIn(0f, 1f)
 
     Column(modifier = Modifier.fillMaxWidth()) {
         // Main card.
@@ -580,12 +586,28 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                 }
 
                 // URL row INSIDE the card, below the track, behind a divider.
-                // Only visible on swipe (progress > 0.5 or RUNNING).
-                if (urlVisible) {
+                // Height grows with the pill (clipped, so it slides down
+                // from behind the divider) and fades in at the same time.
+                // Slides back up when the pill returns.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            clip = true
+                            alpha = drawerReveal
+                        }
+                        .height(with(density) { (drawerFullHeightPx * drawerReveal).toDp() }),
+                ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .graphicsLayer { alpha = progress.coerceIn(0f, 1f) },
+                            .onSizeChanged { size ->
+                                // Only trust the measurement when fully open
+                                // (otherwise the clip itself shrinks it).
+                                if (drawerReveal >= 1f && size.height > 0) {
+                                    drawerFullHeightPx = size.height
+                                }
+                            },
                     ) {
                         Box(
                             modifier = Modifier
@@ -593,7 +615,7 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                 .height(1.dp)
                                 .background(Color.White.copy(alpha = 0.08f)),
                         )
-                        ManifestDrawer()
+                        ManifestDrawer(active = cardState == ServerCardState.RUNNING)
                     }
                 }
             }
@@ -603,40 +625,49 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
 
 
 /**
- * URL text with a fast scramble/decode animation (moon's request 2026-11-04):
- * random chars resolve left-to-right into the real URL, ~600ms.
+ * URL text with a scramble animation (moon's 2026-11-06 rework):
+ * - "URL: " is a STATIC prefix — never part of the animation, so it
+ *   never looks like it's typing.
+ * - Only letters/digits randomize; separators (. : / etc.) stay fixed.
+ * - ALL chars randomize TOGETHER on every step and resolve TOGETHER at
+ *   the end — no left-to-right reveal. 10 steps x 100ms = ~1s, starting
+ *   once the server is actually RUNNING.
  */
 @Composable
-private fun ScrambleUrlText(url: String, modifier: Modifier = Modifier) {
+private fun ScrambleUrlText(url: String, active: Boolean, modifier: Modifier = Modifier) {
     var display by remember { mutableStateOf(url) }
-    LaunchedEffect(url) {
-        if (url.isEmpty()) { display = ""; return@LaunchedEffect }
-        // Scramble ALL chars from "http:" onward (moon's 2026-11-05: the old
-        // version kept : / . fixed, so only the numbers scrambled — and it
-        // was too fast at 10x60ms). Now 14 steps x 100ms = 1.4s, every char
-        // randomizes until its turn to resolve.
+    LaunchedEffect(url, active) {
+        if (!active || url.isEmpty()) { display = url; return@LaunchedEffect }
         val pool = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-        val steps = 14
-        repeat(steps) { step ->
-            val progress = (step + 1) / steps.toFloat()
-            val resolved = (url.length * progress).toInt()
+        val steps = 10
+        repeat(steps) {
             display = buildString {
-                url.forEachIndexed { i, c ->
-                    if (i < resolved) append(c) else append(pool.random())
+                url.forEach { c ->
+                    if (c.isLetterOrDigit()) append(pool.random()) else append(c)
                 }
             }
             delay(100)
         }
         display = url
     }
-    Text(
-        "URL: $display",
-        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Doto),
-        color = MsColors.TextSecondary,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = modifier,
-    )
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "URL: ",
+            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Doto),
+            color = MsColors.TextSecondary,
+            maxLines = 1,
+            softWrap = false,
+        )
+        Text(
+            display,
+            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Doto),
+            color = MsColors.TextSecondary,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+    }
 }
 
 /**
@@ -644,7 +675,7 @@ private fun ScrambleUrlText(url: String, modifier: Modifier = Modifier) {
  * (not just an icon) — a short gold flash confirms the copy.
  */
 @Composable
-private fun ManifestDrawer() {
+private fun ManifestDrawer(active: Boolean) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val url = AppUiState.manifestLink
@@ -674,7 +705,7 @@ private fun ManifestDrawer() {
             .padding(18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ScrambleUrlText(url = url, modifier = Modifier.weight(1f))
+        ScrambleUrlText(url = url, active = active, modifier = Modifier.weight(1f))
         // NoxMedia-style "copied" feedback (moon's request 2026-11-01).
         AnimatedVisibility(
             visible = copied,
