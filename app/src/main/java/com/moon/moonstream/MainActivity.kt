@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
@@ -417,10 +419,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // Basic black blur look (moon's request 2026-11-04): simple dark
                 // translucent pill like the reference — no GPU blur, light on RAM.
                 val pillShape = RoundedCornerShape(24.dp)
-                // Sliding selection pill (moon's 2026-11-06): the same
-                // sliding-pill idea as MsSegmented — a soft accent highlight
-                // RUNS to the newly selected tab instead of the icon/tint
-                // just swapping. Runs on taps and on swipe-to-switch alike.
+                // Orb highlight (moon's pick 2026-11-06, Nuvio/mpvRx-style):
+                // the selected tab sits in a big frosted circle that slides
+                // between tabs and bulges past the pill's edges. One animated
+                // value — the orb's centre — snaps on first measure, springs
+                // on every switch, tap or swipe alike.
                 val density = LocalDensity.current
                 val tabBounds = remember {
                     mutableStateListOf<Rect>().apply {
@@ -429,9 +432,10 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 }
                 val selIdx = tabs.indexOfFirst { it.screen == selectedTab }.coerceAtLeast(0)
                 val selBounds = tabBounds.getOrNull(selIdx) ?: Rect.Zero
-                val indX = remember { Animatable(0f) }
-                val indW = remember { Animatable(0f) }
-                var indReady by remember { mutableStateOf(false) }
+                val orbDiameter = 72.dp
+                val orbRadiusPx = with(density) { (orbDiameter / 2).toPx() }
+                val orbCenterX = remember { Animatable(0f) }
+                var orbReady by remember { mutableStateOf(false) }
                 val navSlideSpec = spring<Float>(
                     dampingRatio = Spring.DampingRatioNoBouncy,
                     stiffness = Spring.StiffnessMediumLow,
@@ -439,44 +443,24 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // Snap into place on first measure, slide on every change.
                 LaunchedEffect(selIdx, selBounds) {
                     if (selBounds == Rect.Zero) return@LaunchedEffect
-                    val targetX = selBounds.left
-                    val targetW = selBounds.width
-                    if (!indReady) {
-                        indX.snapTo(targetX)
-                        indW.snapTo(targetW)
-                        indReady = true
+                    val targetX = selBounds.center.x
+                    if (!orbReady) {
+                        orbCenterX.snapTo(targetX)
+                        orbReady = true
                     } else {
-                        launch { indX.animateTo(targetX, navSlideSpec) }
-                        indW.animateTo(targetW, navSlideSpec)
+                        orbCenterX.animateTo(targetX, navSlideSpec)
                     }
                 }
-                // Blurred pill (experiment branch, Haze): the screen content
-                // behind the pill is blurred live; the dark tint keeps it
-                // readable. The old plain black is gone (BlurView crashed).
-                // Compact (moon's 2026-11-06: the first blurred pill read too
-                // big) and cheap (half-res blur input + 18dp radius).
+                // Bottom pill (Nuvio/mpvRx-style orb, moon's pick 2026-11-06):
+                // a black-tinted blurred bar; the selected tab sits in a big
+                // frosted circle that slides between tabs and bulges past the
+                // bar's edges. Tap and swipe both switch. The container is
+                // unclipped so the orb can bulge; only the background bar
+                // itself is clipped to the pill shape.
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(start = 24.dp, end = 24.dp, bottom = 22.dp)
-                        .clip(pillShape)
-                        .hazeEffect(hazeState) {
-                            style = HazeStyle(
-                                // Black-tinted backdrop blur (moon's AMOLED
-                                // pick): darker base + stronger black tint
-                                // so the pill reads black-frosted, with the
-                                // blurred content still showing through.
-                                backgroundColor = Color.Black.copy(alpha = 0.68f),
-                                tint = HazeTint(Color.Black.copy(alpha = 0.35f)),
-                                blurRadius = 18.dp,
-                            )
-                            // Half-resolution blur input (25% of the pixels
-                            // to blur) — the main RAM/GPU saving on low-end
-                            // phones; the upscale softens the blur slightly,
-                            // which suits a frosted pill.
-                            inputScale = HazeInputScale.Fixed(0.5f)
-                        }
-                        .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape)
                         .pointerInput(selectedTab) {
                             // Swipe-to-switch (moon's 2026-11-06): the old
                             // `draggable` never fired — it fought the
@@ -518,30 +502,57 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     }
                                 }
                             }
-                        }
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
-                ) {
-                    // The sliding highlight (behind the tabs).
-                    if (indReady) {
+                        },
+                    ) {
+                        // Pill background: blurred, black-tinted, bordered.
+                        // matchParentSize so it sizes to the tabs Row.
                         Box(
                             modifier = Modifier
-                                .offset {
-                                    IntOffset(
-                                        indX.value.roundToInt(),
-                                        selBounds.top.roundToInt(),
+                                .matchParentSize()
+                                .clip(pillShape)
+                                .hazeEffect(hazeState) {
+                                    style = HazeStyle(
+                                        // Black-tinted backdrop blur (moon's
+                                        // AMOLED pick): darker base + stronger
+                                        // black tint so the pill reads
+                                        // black-frosted, with the blurred
+                                        // content still showing through.
+                                        backgroundColor = Color.Black.copy(alpha = 0.68f),
+                                        tint = HazeTint(Color.Black.copy(alpha = 0.35f)),
+                                        blurRadius = 18.dp,
                                     )
+                                    // Half-resolution blur input (25% of the
+                                    // pixels to blur) — the main RAM/GPU
+                                    // saving on low-end phones.
+                                    inputScale = HazeInputScale.Fixed(0.5f)
                                 }
-                                .size(
-                                    with(density) { indW.value.toDp() },
-                                    with(density) { selBounds.height.toDp() },
-                                )
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(MsColors.Accent.copy(alpha = 0.15f)),
+                                .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape),
                         )
-                    }
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                    ) {
+                        // Orb highlight: zero-size anchor so it never affects
+                        // the pill's size; the circle is placed freely and
+                        // draws outside the anchor (Box doesn't clip).
+                        if (orbReady) {
+                            Box(
+                                modifier = Modifier.size(0.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .requiredSize(orbDiameter)
+                                        .offset {
+                                            IntOffset(
+                                                (orbCenterX.value - orbRadiusPx).roundToInt(),
+                                                (selBounds.center.y - orbRadiusPx).roundToInt(),
+                                            )
+                                        }
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.20f)),
+                                )
+                            }
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                        ) {
                         tabs.forEachIndexed { idx, tab ->
                             val selected = selectedTab == tab.screen
                             Column(
