@@ -162,9 +162,10 @@ configurations.all {
         if (g == 'androidx.annotation') {
             details.useVersion(n == 'annotation-experimental' ? '1.3.0' : '1.7.0')
         }
-        if (g == 'org.jetbrains.kotlinx' && n != 'atomicfu') {
-            // atomicfu is versioned 0.x, not with coroutines — forcing it
-            // to 1.7.3 breaks resolution (Haze pulls it in).
+        if (g == 'org.jetbrains.kotlinx' && !n.startsWith('atomicfu')) {
+            // atomicfu (and atomicfu-jvm etc.) is versioned 0.x, not with
+            // coroutines — forcing it to 1.7.3 breaks resolution (Haze
+            // pulls it in via JetBrains Compose UI).
             details.useVersion '1.7.3'
         }
     }
