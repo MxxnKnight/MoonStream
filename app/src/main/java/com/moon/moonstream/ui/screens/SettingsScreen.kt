@@ -18,6 +18,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +59,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -123,6 +126,7 @@ import com.moon.moonstream.cache.TdStreamCache
 @Composable
 fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
 
     // --- Server state ---
@@ -1554,10 +1558,16 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         }
     } else {
         // Sub-screen: fixed header with back button + section content.
+        // Tap outside a text field to unfocus it (moon's 2026-11-06): the
+        // outline + keyboard go away. Taps on buttons/fields themselves
+        // are consumed by those children, so they still work normally.
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MsColors.Bg),
+                .background(MsColors.Bg)
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { focusManager.clearFocus() })
+                },
         ) {
             Row(
                 modifier = Modifier
