@@ -55,7 +55,7 @@ object ScanManager {
      * Free playability gate (moon's 2026-11-06): true when Telegram's own
      * MIME type says this file is clearly NOT a video. Unknown (null) and
      * generic application/octet-stream pass — many legit videos arrive as
-     * those — as do video/* and the legit application/mp4 + MKV claims.
+     * those — as do video/ types and the legit application/mp4 + MKV claims.
      * Everything else present (archives, text, images, audio, docs...) is
      * rejected. Note: a file that CLAIMS to be video but isn't (the Philips
      * case, if its mime said video) still passes — catching that needs the
