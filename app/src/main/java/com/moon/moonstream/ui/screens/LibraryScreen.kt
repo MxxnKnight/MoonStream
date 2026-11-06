@@ -563,8 +563,6 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     }
 }
 
-/** Pill segmented control with a sliding accent thumb. */
-@Composable
 @Composable
 private fun FilterTabPill(text: String, selected: Boolean, onClick: () -> Unit) {
     Box(
