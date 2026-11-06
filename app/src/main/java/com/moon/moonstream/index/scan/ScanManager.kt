@@ -52,6 +52,25 @@ object ScanManager {
         fileName.substringAfterLast('.', "").lowercase() in SUBTITLE_EXTS
 
     /**
+     * Free playability gate (moon's 2026-11-06): true when Telegram's own
+     * MIME type says this file is clearly NOT a video. Unknown (null) and
+     * generic application/octet-stream pass — many legit videos arrive as
+     * those — as do video/* and the legit application/mp4 + MKV claims.
+     * Everything else present (archives, text, images, audio, docs...) is
+     * rejected. Note: a file that CLAIMS to be video but isn't (the Philips
+     * case, if its mime said video) still passes — catching that needs the
+     * header check, which moon declined for now.
+     */
+    fun isNonVideoMime(mimeType: String?): Boolean {
+        val m = mimeType?.trim()?.lowercase() ?: return false
+        if (m.startsWith("video/")) return false
+        if (m == "application/octet-stream") return false
+        if (m == "application/mp4") return false
+        if (m == "application/x-matroska") return false
+        return true
+    }
+
+    /**
      * Scans every target in order. Safe to call from a foreground service;
      * reports live progress through [ScanUiState].
      */
@@ -189,6 +208,26 @@ object ScanManager {
                 if (isSubtitleFile(msg.fileName)) {
                     indexSubtitle(db, target, msg.id, msg.fileName, msg.fileSize, absoluteAnime)
                     indexed++
+                    continue
+                }
+                // Free playability gate (moon's 2026-11-06): Telegram's own
+                // MIME type says this is not a video — it can never play, so
+                // it goes to unmatched instead of the library. No downloads,
+                // no slower scans: the mime already arrives with the message.
+                if (isNonVideoMime(msg.mimeType)) {
+                    com.moon.moonstream.util.AppLog.w(
+                        "MATCH",
+                        "'${msg.fileName}' mime=${msg.mimeType} is not a video → unmatched",
+                    )
+                    db.unmatchedDao().insert(
+                        UnmatchedFileEntity(
+                            channelId = channelId,
+                            messageId = msg.id,
+                            fileName = msg.fileName,
+                            fileSize = msg.fileSize,
+                        ),
+                    )
+                    unmatched++
                     continue
                 }
                 val parsed = FilenameParser.parse(msg.fileName, target.isAnime, msg.caption, absoluteAnime)
