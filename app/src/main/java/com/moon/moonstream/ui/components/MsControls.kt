@@ -20,6 +20,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -99,7 +100,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -599,12 +602,30 @@ fun BareIconButton(
 
 /** Sheet content wrapper: title + body, mockup spacing. */
 @Composable
+/**
+ * Tap-outside-to-unfocus (moon's 2026-11-06): tapping empty space inside
+ * this container clears text-field focus (outline + keyboard go away).
+ * Taps on buttons, toggles and the fields themselves are consumed by
+ * those children, so they still work normally.
+ */
+@Composable
+fun Modifier.unfocusOnTapOutside(): Modifier {
+    val focusManager = LocalFocusManager.current
+    return pointerInput(Unit) {
+        detectTapGestures(onTap = { focusManager.clearFocus() })
+    }
+}
+
 fun MsSheetContent(title: String, scrollable: Boolean = false, body: @Composable () -> Unit) {
+    // Every bottom sheet gets tap-outside-to-unfocus (moon's 2026-11-06):
+    // Fix Metadata search, Add Custom Stream / Subtitle fields, Add
+    // Channel ID, Filters — tapping empty sheet space unfocuses.
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
             .padding(bottom = 32.dp)
+            .unfocusOnTapOutside()
             .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -1553,6 +1574,11 @@ fun IosDialog(
     content: @Composable (() -> Unit)? = null,
 ) {
     // Use Dialog so it escapes parent layout bounds (same fix as IosActionSheet).
+    // The card tap below also clears text-field focus (moon's 2026-11-06):
+    // e.g. the Set Episode dialog's Season/Episode fields unfocus when
+    // tapping empty card space. Taps on the fields/buttons themselves are
+    // consumed by those children, so they still work normally.
+    val focusManager = LocalFocusManager.current
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(
@@ -1577,7 +1603,7 @@ fun IosDialog(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                ) { /* swallow taps */ },
+                ) { focusManager.clearFocus() },
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,

@@ -18,7 +18,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,8 +58,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -93,6 +90,7 @@ import com.moon.moonstream.ui.components.MsGroupHeader
 import com.moon.moonstream.ui.components.MsOutlinePill
 import com.moon.moonstream.ui.components.MsSegmented
 import com.moon.moonstream.ui.components.MsTextField
+import com.moon.moonstream.ui.components.unfocusOnTapOutside
 import com.moon.moonstream.ui.components.MsToggle
 import com.moon.moonstream.index.tools.LibraryToolsRunner
 import com.moon.moonstream.ui.components.BackgroundToolButton
@@ -126,7 +124,6 @@ import com.moon.moonstream.cache.TdStreamCache
 @Composable
 fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     val context = LocalContext.current
-    val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
 
     // --- Server state ---
@@ -1570,9 +1567,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             modifier = Modifier
                 .fillMaxSize()
                 .background(MsColors.Bg)
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { focusManager.clearFocus() })
-                },
+                .unfocusOnTapOutside(),
         ) {
             Row(
                 modifier = Modifier

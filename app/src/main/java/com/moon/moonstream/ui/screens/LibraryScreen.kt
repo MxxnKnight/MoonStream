@@ -80,6 +80,7 @@ import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MsOutlinePill
 import com.moon.moonstream.ui.components.MsSheetContent
 import com.moon.moonstream.ui.components.MsTextField
+import com.moon.moonstream.ui.components.unfocusOnTapOutside
 import com.moon.moonstream.ui.model.formatBytes
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.ui.state.AppUiState
@@ -342,10 +343,13 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
         }
     }
 
+    // Tap outside the search box to unfocus it (moon's 2026-11-06):
+    // tapping empty grid space clears focus + hides the keyboard.
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MsColors.Bg),
+            .background(MsColors.Bg)
+            .unfocusOnTapOutside(),
     ) {
         Column(Modifier.fillMaxSize()) {
             LibraryHeader()

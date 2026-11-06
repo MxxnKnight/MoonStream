@@ -4,6 +4,7 @@ import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.components.IosBottomSheet
 import com.moon.moonstream.ui.components.MsTextField
+import com.moon.moonstream.ui.components.unfocusOnTapOutside
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
@@ -363,8 +364,9 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 AppUiState.saveScroll("channels_list", listState.firstVisibleItemIndex)
             }
         }
+        // Tap outside the unmatched search box to unfocus it (moon's 2026-11-06).
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().unfocusOnTapOutside(),
             state = listState,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 124.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
