@@ -93,13 +93,6 @@ object TdStreamUri {
 @UnstableApi
 class TdDataSource(private val context: Context) : BaseDataSource(true) {
 
-    companion object {
-        /** The TdDataSource currently serving the player, if any (one player at a time). */
-        @Volatile
-        var current: TdDataSource? = null
-            private set
-    }
-
     private var window: TdByteWindow? = null
     private var position = 0L
     private var bytesRemaining = 0L
@@ -235,11 +228,16 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
         transferEnded()
     }
 
-    private companion object {
+    companion object {
         const val AHEAD_BYTES = 64 * 1024
 
         /** Reads smaller than this are worth filling the buffer for. */
         const val SMALL_READ_BYTES = 4 * 1024
+
+        /** The TdDataSource currently serving the player, if any (one player at a time). */
+        @Volatile
+        var current: TdDataSource? = null
+            private set
     }
 }
 

@@ -2340,6 +2340,7 @@ private fun MoonSeekBar(
     }
 }
 
+@Composable
 private fun UnlockSlider(
     onUnlock: () -> Unit,
     modifier: Modifier = Modifier,
