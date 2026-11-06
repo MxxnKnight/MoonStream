@@ -4,6 +4,9 @@ import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.components.IosBottomSheet
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -32,10 +35,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
@@ -56,6 +56,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -63,12 +64,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -87,6 +93,7 @@ import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.Redaction35
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlinx.coroutines.withContext
 
 /**
@@ -278,47 +285,116 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             )
             Spacer(Modifier.height(16.dp))
 
-            // Filter tabs scroll sideways (moon's correction 2026-11-06):
-            // five tabs crammed in one fixed row squeezed HIDDEN at the
-            // edge. Each tab now gets room, and the row scrolls to reach
-            // it — tapping a tab scrolls it into view.
-            val tabListState = rememberLazyListState()
-            // Reveal a tab only if it isn't fully visible (moon's video
-            // 2026-11-06: tapping a tab shoved the whole row left on every
-            // tap, because animateScrollToItem drags it to the left edge
-            // even when it was already in view). Fully visible = the row
-            // doesn't move at all; partly visible or off-screen = scroll
-            // it in as before. (animateScrollBy doesn't exist in Compose
-            // 1.6.1, so there's no minimum-distance scroll here.)
-            fun revealTab(idx: Int) {
-                scope.launch {
-                    val info = tabListState.layoutInfo
-                    val item = info.visibleItemsInfo.firstOrNull { it.index == idx }
-                    if (item != null) {
-                        val start = info.viewportStartOffset
-                        val end = info.viewportEndOffset
-                        if (item.offset >= start && item.offset + item.size <= end) return@launch
-                    }
-                    tabListState.animateScrollToItem(idx)
+            // Filter tabs: the old iOS segmented look, back by moon's
+            // pick 2026-11-06 — one dark bar (#1C1C1E) with a sliding gray
+            // selection (#636365, both sampled from his screenshot). The
+            // bar itself scrolls sideways with roomy tabs, so HIDDEN is
+            // reachable and nothing is squeezed. (The old fixed bar
+            // couldn't scroll — that's why the tabs sat too close; the
+            // pills fixed the closeness but lost the look.)
+            val tabLabels = listOf("ALL", "MOVIES", "SERIES", "ANIME", "HIDDEN")
+            val tabScrollState = rememberScrollState()
+            val density = LocalDensity.current
+            var viewportWidthPx by remember { mutableStateOf(0) }
+            val tabBounds = remember { mutableStateMapOf<Int, Rect>() }
+            // Sliding selection pill, measured like the bottom pill's
+            // highlight: snap on first measure, spring on later switches.
+            val selX = remember { Animatable(0f) }
+            val selW = remember { Animatable(0f) }
+            var selReady by remember { mutableStateOf(false) }
+            val selBounds = tabBounds[segment] ?: Rect.Zero
+            val pillInsetPx = with(density) { 4.dp.toPx() }
+            LaunchedEffect(segment, selBounds) {
+                if (selBounds == Rect.Zero) return@LaunchedEffect
+                val targetX = selBounds.left
+                val targetW = selBounds.width
+                if (!selReady) {
+                    selX.snapTo(targetX)
+                    selW.snapTo(targetW)
+                    selReady = true
+                } else {
+                    launch { selX.animateTo(targetX, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)) }
+                    selW.animateTo(targetW, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow))
                 }
             }
-            LazyRow(
-                state = tabListState,
-                contentPadding = PaddingValues(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
+            // Reveal the selected tab only if it isn't fully visible.
+            fun revealTab(idx: Int) {
+                scope.launch {
+                    val bounds = tabBounds[idx] ?: return@launch
+                    val viewW = viewportWidthPx
+                    if (viewW == 0) return@launch
+                    val scroll = tabScrollState.value
+                    val marginPx = with(density) { 8.dp.toPx() }
+                    if (bounds.left >= scroll && bounds.right <= scroll + viewW) return@launch
+                    val target = if (bounds.left < scroll) {
+                        (bounds.left - marginPx).toInt()
+                    } else {
+                        (bounds.right - viewW + marginPx).toInt()
+                    }
+                    tabScrollState.animateScrollTo(target.coerceIn(0, tabScrollState.maxValue))
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
             ) {
-                itemsIndexed(listOf("ALL", "MOVIES", "SERIES", "ANIME", "HIDDEN")) { idx, label ->
-                    FilterTabPill(
-                        text = label,
-                        selected = segment == idx,
-                        onClick = {
-                            segment = idx
-                            // Don't exit select mode on tab switch (moon's bug 2026-11-04:
-                            // selection must survive to allow cross-tab merge).
-                            revealTab(idx)
-                        },
-                    )
+                Row(
+                    modifier = Modifier
+                        .horizontalScroll(tabScrollState)
+                        .onGloballyPositioned { viewportWidthPx = it.size.width },
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0xFF1C1C1E)),
+                    ) {
+                        // Sliding selection pill, behind the labels.
+                        if (selReady) {
+                            Box(
+                                modifier = Modifier
+                                    .offset {
+                                        IntOffset(
+                                            selX.value.roundToInt(),
+                                            (selBounds.top + pillInsetPx).roundToInt(),
+                                        )
+                                    }
+                                    .size(
+                                        with(density) { selW.value.toDp() },
+                                        with(density) { (selBounds.height - pillInsetPx * 2).toDp() },
+                                    )
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF636365)),
+                            )
+                        }
+                        Row {
+                            tabLabels.forEachIndexed { idx, label ->
+                                Box(
+                                    modifier = Modifier
+                                        .onGloballyPositioned { coords ->
+                                            tabBounds[idx] = coords.boundsInParent()
+                                        }
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            segment = idx
+                                            // Don't exit select mode on tab switch (moon's bug 2026-11-04:
+                                            // selection must survive to allow cross-tab merge).
+                                            revealTab(idx)
+                                        }
+                                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (segment == idx) Color.White else Color(0xFF98989F),
+                                        fontWeight = if (segment == idx) FontWeight.SemiBold else FontWeight.Normal,
+                                        fontSize = 15.sp,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -582,26 +658,6 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             subLangFilter = subLangFilter, onSubLangFilter = { subLangFilter = it },
             sort = sort, onSort = { sort = it },
             onDismiss = { showFilters = false },
-        )
-    }
-}
-
-@Composable
-private fun FilterTabPill(text: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(if (selected) MsColors.Accent else Color(0xFF1C1C1E))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text,
-            color = if (selected) Color.White else MsColors.TextSecondary,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            fontSize = 13.sp,
-            maxLines = 1,
         )
     }
 }
