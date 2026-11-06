@@ -43,6 +43,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -173,6 +178,10 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     val authState by telegramManager.authState.collectAsState()
     val context = LocalContext.current
 
+    // Haze blur state (experiment branch): the screens are the blur source,
+    // the bottom pill is the blurred overlay.
+    val hazeState = remember { HazeState() }
+
     // Warm the library list at launch so the Library tab opens instantly.
     LaunchedEffect(Unit) { com.moon.moonstream.index.db.LibraryCache.items(context) }
 
@@ -276,7 +285,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     fadeIn(tween(110)) togetherWith ExitTransition.None
                 },
                 label = "screenSwitch",
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().hazeSource(hazeState),
             ) { screen ->
                 when (screen) {
                     AppScreen.Splash -> SplashScreen(
@@ -441,13 +450,21 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         indW.animateTo(targetW, navSlideSpec)
                     }
                 }
-                // Plain black pill (hotfix 2026-11-05: BlurView crashed on Android 12).
+                // Blurred pill (experiment branch, Haze): the screen content
+                // behind the pill is blurred live; the dark tint keeps it
+                // readable. The old plain black is gone (BlurView crashed).
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(start = 24.dp, end = 24.dp, bottom = 22.dp)
                         .clip(pillShape)
-                        .background(Color.Black.copy(alpha = 0.78f))
+                        .hazeEffect(hazeState) {
+                            style = HazeStyle(
+                                backgroundColor = Color.Black.copy(alpha = 0.55f),
+                                tint = HazeTint(Color.Black.copy(alpha = 0.20f)),
+                                blurRadius = 24.dp,
+                            )
+                        }
                         .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape)
                         .pointerInput(selectedTab) {
                             // Swipe-to-switch (moon's 2026-11-06): the old
