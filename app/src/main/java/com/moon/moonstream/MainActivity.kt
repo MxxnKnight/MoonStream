@@ -461,6 +461,14 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // capsule centre at 636px). Keep this in sync with the
                 // Row's horizontal padding below.
                 val rowHPaddingPx = with(density) { 6.dp.toPx() }
+                // Drag threshold (moon's 2026-11-07): a tap must never trip
+                // the drag. The old 24px (8dp) was so small that the tiny
+                // finger movement of pressing a tab engaged the drag and the
+                // capsule SNAPPED to the finger (teleport) instead of
+                // sliding via the spring. 16dp gives a tap real headroom;
+                // a deliberate drag still engages quickly and then follows
+                // the finger exactly.
+                val dragThresholdPx = with(density) { 16.dp.toPx() }
                 // (Capsule height is 54dp — moon's 2026-11-07: taller
                 // top-to-bottom, same width. Set in the capsule's .size()
                 // below.)
@@ -566,7 +574,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         // Wait for a clear horizontal move
                                         // before claiming the gesture, so
                                         // taps (and vertical scrolls) still work.
-                                        if (!dragging && kotlin.math.abs(accum) < 24f) continue
+                                        if (!dragging && kotlin.math.abs(accum) < dragThresholdPx) continue
                                         dragging = true
                                         change.consume()
                                         // Capsule follows the finger EXACTLY

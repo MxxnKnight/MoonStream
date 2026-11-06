@@ -808,6 +808,12 @@ private fun MsSegmentedControl(
     ) {
         val tabWidth = maxWidth / segments.size
         val tabWidthPx = with(density) { tabWidth.toPx() }
+        // Drag threshold (moon's 2026-11-07): a tap must never trip the
+        // drag. The old 24px (8dp) was so small that the tiny finger
+        // movement of pressing a segment engaged the drag and the thumb
+        // SNAPPED to the finger (teleport) instead of sliding via the
+        // spring. 16dp gives a tap real headroom.
+        val dragThresholdPx = with(density) { 16.dp.toPx() }
         // The thumb's X is a pixel Animatable (not animateDpAsState) so a
         // drag can move it with the finger and it springs back on release.
         // Same bouncy spring as the original, same fixed thumb size, so
@@ -884,7 +890,7 @@ private fun MsSegmentedControl(
                                 accum += dx
                                 // Wait for a clear horizontal move before
                                 // claiming the gesture, so taps still work.
-                                if (!dragging && kotlin.math.abs(accum) < 24f) continue
+                                if (!dragging && kotlin.math.abs(accum) < dragThresholdPx) continue
                                 dragging = true
                                 change.consume()
                                 // Thumb follows the finger EXACTLY (moon's
