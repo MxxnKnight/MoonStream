@@ -387,6 +387,29 @@ interface WatchProgressDao {
     @Query("DELETE FROM watch_progress WHERE mediaId = :mediaId")
     suspend fun deleteByMedia(mediaId: Long)
 
+    /**
+     * Merge helper (moon's 2026-11-06): when duplicate entries merge, the
+     * resume spots move to the kept entry with the video files — otherwise
+     * the progress is orphaned and tapping it opens a "deleted" entry.
+     * No unique index on this table, so the move can never clash.
+     */
+    @Query("UPDATE watch_progress SET mediaId = :newMediaId WHERE mediaId = :oldMediaId")
+    suspend fun moveAllToMedia(oldMediaId: Long, newMediaId: Long): Int
+
+    /**
+     * Heal resume spots orphaned by a merge that ran before the move
+     * existed (moon's Reacher, 2026-11-06): re-point any row whose entry
+     * is gone to the entry that now owns its video file. Rows whose file
+     * is gone too are left alone.
+     */
+    @Query(
+        """UPDATE watch_progress SET mediaId = (
+            SELECT mediaId FROM stream_files WHERE stream_files.id = watch_progress.streamFileId
+        ) WHERE mediaId NOT IN (SELECT id FROM media_items)
+          AND streamFileId IN (SELECT id FROM stream_files)"""
+    )
+    suspend fun repairOrphanedProgress(): Int
+
     @Query("DELETE FROM watch_progress")
     suspend fun clearAll()
 }

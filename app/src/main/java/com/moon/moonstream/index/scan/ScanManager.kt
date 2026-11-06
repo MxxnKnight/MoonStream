@@ -461,11 +461,22 @@ object ScanManager {
             for (dupe in items.filter { it.id != kept.id }) {
                 db.streamDao().moveAllToMedia(dupe.id, kept.id)
                 db.subtitleDao().moveAllToMedia(dupe.id, kept.id)
+                // Resume spots move too (moon's 2026-11-06): without this
+                // the kept entry has no resume spot and the old one opens
+                // a "deleted" entry from Continue Watching.
+                db.watchProgressDao().moveAllToMedia(dupe.id, kept.id)
                 db.mediaDao().deleteById(dupe.id)
                 merged++
                 Log.i(TAG, "merged '${dupe.title}' (${dupe.year}) into entry ${kept.id}")
             }
             db.mediaDao().refreshAggregates(kept.id, now)
+        }
+        // Heal resume spots orphaned by merges that ran before the move
+        // existed (moon's Reacher S4E1, 2026-11-06): re-point them to the
+        // entry that now owns their video file.
+        val repaired = db.watchProgressDao().repairOrphanedProgress()
+        if (repaired > 0) {
+            Log.i(TAG, "re-pointed $repaired orphaned resume spot(s) to their surviving entries")
         }
         return merged
     }
