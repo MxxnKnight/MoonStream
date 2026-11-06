@@ -34,7 +34,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.animateScrollBy
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -288,8 +287,9 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             // 2026-11-06: tapping a tab shoved the whole row left on every
             // tap, because animateScrollToItem drags it to the left edge
             // even when it was already in view). Fully visible = the row
-            // doesn't move at all; partly visible = scroll just enough to
-            // reveal it; off-screen = scroll it in as before.
+            // doesn't move at all; partly visible or off-screen = scroll
+            // it in as before. (animateScrollBy doesn't exist in Compose
+            // 1.6.1, so there's no minimum-distance scroll here.)
             fun revealTab(idx: Int) {
                 scope.launch {
                     val info = tabListState.layoutInfo
@@ -298,15 +298,8 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                         val start = info.viewportStartOffset
                         val end = info.viewportEndOffset
                         if (item.offset >= start && item.offset + item.size <= end) return@launch
-                        val delta = if (item.offset < start) {
-                            (item.offset - start).toFloat()
-                        } else {
-                            (item.offset + item.size - end).toFloat()
-                        }
-                        tabListState.animateScrollBy(delta)
-                    } else {
-                        tabListState.animateScrollToItem(idx)
                     }
+                    tabListState.animateScrollToItem(idx)
                 }
             }
             LazyRow(
