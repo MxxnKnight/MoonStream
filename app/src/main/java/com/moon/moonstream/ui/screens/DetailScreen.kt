@@ -381,6 +381,20 @@ fun DetailScreen(
         }
     }
 
+    /** Move this entry to another tab (Series <-> Anime). Just flips the
+     *  type — title, poster and files stay exactly as they are. The
+     *  Library (which watches the DB) moves the card to the new tab
+     *  by itself. */
+    fun moveToType(newType: String) {
+        if (newType == m.type) return
+        scope.launch(Dispatchers.IO) {
+            db.mediaDao().updateType(m.id, newType)
+            withContext(Dispatchers.Main) {
+                MsToast.show("Moved to ${newType.replaceFirstChar { it.uppercase() }}")
+            }
+        }
+    }
+
     /** FIX_FILE apply: move one file to the picked title (find or create). */
     fun applyFixFile(file: StreamFileEntity, picked: MetaPick) {
         scope.launch(Dispatchers.IO) {
@@ -567,7 +581,9 @@ fun DetailScreen(
                 )
             }
 
-            // Secondary row: Fix Metadata + Add Custom Stream.
+            // Secondary row: Fix Metadata + Add Custom Stream + move
+            // between tabs (moon's 2026-11-07: anime in a non-anime
+            // channel lands in Series — this moves one title to Anime).
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -581,6 +597,12 @@ fun DetailScreen(
                 MsOutlinePill(
                     text = "Add Custom Stream",
                     onClick = { showAddStream = true },
+                    modifier = Modifier.weight(1f),
+                    fontSize = 13,
+                )
+                MsOutlinePill(
+                    text = if (isAnime) "Move to Series" else "Move to Anime",
+                    onClick = { moveToType(if (isAnime) "series" else "anime") },
                     modifier = Modifier.weight(1f),
                     fontSize = 13,
                 )

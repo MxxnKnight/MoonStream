@@ -19,6 +19,13 @@ interface MediaDao {
     @Query("UPDATE media_items SET backdropUrl = :url WHERE id = :mediaId")
     suspend fun updateBackdropUrl(mediaId: Long, url: String)
 
+    /** Move one entry between Movie / Series / Anime (moon's 2026-11-07:
+     *  anime in a non-anime channel lands in Series — let him move it
+     *  to the Anime tab himself). Just the type — title, poster and
+     *  files stay exactly as they are. No schema change, so no migration. */
+    @Query("UPDATE media_items SET type = :type WHERE id = :mediaId")
+    suspend fun updateType(mediaId: Long, type: String)
+
     /** Delete entries with no streams AND no subtitles (moon's request 2026-11-04:
      *  "really we don't need a entry without any streams right!").
      *  Returns the number of deleted entries. */
