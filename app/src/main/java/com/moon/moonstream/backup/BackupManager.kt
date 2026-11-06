@@ -159,6 +159,7 @@ object BackupManager {
                     .put("anilistId", m.anilistId)
                     .put("stremioId", m.stremioId)
                     .put("posterUrl", m.posterUrl)
+                    .put("backdropUrl", m.backdropUrl)
                     .put("overview", m.overview)
                     .put("totalSize", m.totalSize)
                     .put("episodeCount", m.episodeCount)
@@ -292,6 +293,7 @@ object BackupManager {
                             o.optString("imdbId", null),
                         ),
                     posterUrl = o.optString("posterUrl", null),
+                    backdropUrl = o.optString("backdropUrl", null),
                     overview = o.optString("overview", null),
                     totalSize = o.optLong("totalSize", 0),
                     episodeCount = o.optInt("episodeCount", 0),

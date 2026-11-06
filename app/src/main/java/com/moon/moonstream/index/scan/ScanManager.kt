@@ -369,6 +369,7 @@ object ScanManager {
                     // this is what Stremio clients (e.g. Nuvio) key on.
                     stremioId = StremioIds.forNewItem(target.channelId, norm, meta?.imdbId),
                     posterUrl = posterUrl,
+                    backdropUrl = meta?.backdropUrl,
                     overview = meta?.overview,
                     totalSize = 0L,
                     episodeCount = 0,

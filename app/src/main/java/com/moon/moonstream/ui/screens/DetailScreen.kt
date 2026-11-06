@@ -48,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.moon.moonstream.backend.BackendProvider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -176,6 +177,18 @@ fun DetailScreen(
     } else {
         "${m.fileCount} file${if (m.fileCount == 1) "" else "s"} · ${formatBytes(m.totalSize)}"
     }
+    // Landscape backdrop for the header (moon's 2026-11-06): Cinemeta
+    // `background`, fetched once per entry and cached in the DB — the header
+    // then recomposes from the observeById flow. Free, no key, and never
+    // re-fetched once stored.
+    LaunchedEffect(m.id, m.imdbId, m.backdropUrl) {
+        if (m.backdropUrl != null || m.imdbId.isNullOrBlank()) return@LaunchedEffect
+        val url = withContext(Dispatchers.IO) {
+            MetadataMatcher.fetchBackdrop(m.imdbId!!, m.type)
+        }
+        if (url != null) db.mediaDao().updateBackdropUrl(m.id, url)
+    }
+
     // Stream URLs served by the in-phone server: /stream/file/<mediaId>/<fileId>
     // (same shape the server advertises in its /stream responses).
     val streamBase = "http://${AppUiState.currentIp}:${AppUiState.port}"
@@ -346,6 +359,7 @@ fun DetailScreen(
                 imdbId = full?.imdbId ?: picked.imdbId,
                 tmdbId = full?.tmdbId ?: picked.tmdbId,
                 posterUrl = full?.posterUrl ?: picked.posterUrl,
+                backdropUrl = full?.backdropUrl ?: m.backdropUrl,
                 overview = full?.overview ?: picked.overview,
                 // A fixed title may now have a real tt ID — the Stremio ID
                 // follows it; otherwise keep the stable synthetic one.
@@ -398,6 +412,7 @@ fun DetailScreen(
                             m.channelId, norm, full?.imdbId ?: picked.imdbId,
                         ),
                         posterUrl = full?.posterUrl ?: picked.posterUrl,
+                        backdropUrl = full?.backdropUrl,
                         overview = full?.overview ?: picked.overview,
                         totalSize = 0L,
                         episodeCount = 0,
@@ -430,9 +445,12 @@ fun DetailScreen(
                 .background(MsColors.SurfaceAlt),
             contentAlignment = Alignment.Center,
         ) {
-            if (m.posterUrl != null) {
+            // Landscape backdrop for the header (moon's 2026-11-06): the
+            // portrait poster cropped into this wide box is what made the
+            // zoomed look. Backdrop first, portrait poster as fallback.
+            if (m.backdropUrl != null || m.posterUrl != null) {
                 AsyncImage(
-                    model = com.moon.moonstream.util.PosterStyle.displayUrl(
+                    model = m.backdropUrl ?: com.moon.moonstream.util.PosterStyle.displayUrl(
                         m.posterUrl, m.imdbId,
                         com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
                         com.moon.moonstream.index.scan.ScanPrefs.getPosterTemplate(context),
@@ -566,6 +584,15 @@ fun DetailScreen(
                     fontSize = 13,
                 )
             }
+
+            // Thin gray divider above the season list (moon's 2026-11-06):
+            // 1dp, no extra spacing — it rides the column's normal gaps.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color.White.copy(alpha = 0.12f)),
+            )
 
             if (isSeries) {
                 SeriesSeasons(

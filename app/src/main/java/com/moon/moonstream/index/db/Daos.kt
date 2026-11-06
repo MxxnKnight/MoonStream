@@ -15,6 +15,10 @@ interface MediaDao {
     @Query("UPDATE media_items SET imdbId = :imdbId WHERE id = :mediaId")
     suspend fun updateImdbId(mediaId: Long, imdbId: String)
 
+    /** Save a fetched landscape backdrop (detail header). */
+    @Query("UPDATE media_items SET backdropUrl = :url WHERE id = :mediaId")
+    suspend fun updateBackdropUrl(mediaId: Long, url: String)
+
     /** Delete entries with no streams AND no subtitles (moon's request 2026-11-04:
      *  "really we don't need a entry without any streams right!").
      *  Returns the number of deleted entries. */
@@ -96,6 +100,7 @@ interface MediaDao {
         """UPDATE media_items SET
                title = :title, normalizedTitle = :norm, year = :year,
                imdbId = :imdbId, tmdbId = :tmdbId, posterUrl = :posterUrl,
+               backdropUrl = :backdropUrl,
                overview = :overview, stremioId = :stremioId, type = :type,
                updatedAt = :now
            WHERE id = :id""",
@@ -108,6 +113,7 @@ interface MediaDao {
         imdbId: String?,
         tmdbId: Int?,
         posterUrl: String?,
+        backdropUrl: String?,
         overview: String?,
         stremioId: String?,
         type: String,

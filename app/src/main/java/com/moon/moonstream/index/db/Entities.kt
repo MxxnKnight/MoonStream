@@ -36,6 +36,9 @@ data class MediaItemEntity(
      */
     val stremioId: String? = null,
     val posterUrl: String?,
+    /** Landscape backdrop (Cinemeta `background` / TMDB backdrop / Kitsu cover)
+     *  for the detail header. Null → header falls back to the portrait poster. */
+    val backdropUrl: String? = null,
     val overview: String?,
     val totalSize: Long,
     val episodeCount: Int,

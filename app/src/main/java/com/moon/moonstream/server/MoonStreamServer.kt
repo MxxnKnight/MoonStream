@@ -600,7 +600,7 @@ class MoonStreamServer(
         )
         if (!poster.isNullOrBlank()) {
             o.put("poster", poster)
-            o.put("background", poster)
+            o.put("background", m.backdropUrl ?: poster)
         }
         return o
     }

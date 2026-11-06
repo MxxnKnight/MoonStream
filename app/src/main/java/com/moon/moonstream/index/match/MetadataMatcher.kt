@@ -25,6 +25,8 @@ data class EnrichedMeta(
     val year: String?,
     val overview: String?,
     val posterUrl: String?,
+    /** Landscape backdrop (Cinemeta `background` / TMDB backdrop / Kitsu cover). */
+    val backdropUrl: String? = null,
     val imdbId: String?,
     val tmdbId: Int?,
     /** Kitsu anime ID, for AniSkip intro lookup. Null for non-anime. */
@@ -139,6 +141,8 @@ object MetadataMatcher {
         val date = best.optString(if (kind == "movie") "release_date" else "first_air_date")
         val poster = best.optString("poster_path").takeIf { it.isNotBlank() }
             ?.let { "$TMDB_IMG$it" }
+        val backdrop = best.optString("backdrop_path").takeIf { it.isNotBlank() }
+            ?.let { "https://image.tmdb.org/t/p/w780$it" }
 
         // Resolve the IMDb id for the Cinemeta/Stremio side of the world.
         val imdbId = getJson(
@@ -150,6 +154,7 @@ object MetadataMatcher {
             year = Regex("""^(\d{4})""").find(date)?.groupValues?.get(1) ?: year,
             overview = best.optString("overview").takeIf { it.isNotBlank() },
             posterUrl = poster,
+            backdropUrl = backdrop,
             imdbId = imdbId,
             tmdbId = tmdbId,
             confidence = bestScore.coerceIn(0.0, 1.0),
@@ -228,6 +233,7 @@ object MetadataMatcher {
             year = Regex("""^(\d{4})""").find(root.optString("releaseInfo"))?.groupValues?.get(1),
             overview = root.optString("description").takeIf { it.isNotBlank() },
             posterUrl = root.optString("poster").takeIf { it.isNotBlank() },
+            backdropUrl = root.optString("background").takeIf { it.isNotBlank() },
             imdbId = imdbId,
             tmdbId = null,
             confidence = 1.0, // direct ID lookup = highest confidence
@@ -257,6 +263,7 @@ object MetadataMatcher {
                     ?.groupValues?.get(1),
                 overview = obj.optString("description").takeIf { it.isNotBlank() },
                 posterUrl = obj.optString("poster").takeIf { it.isNotBlank() },
+            backdropUrl = obj.optString("background").takeIf { it.isNotBlank() },
                 imdbId = obj.optString("id").takeIf { it.startsWith("tt") },
                 tmdbId = null,
                 // Cinemeta catalog is already ranked by relevance; use title
@@ -313,12 +320,15 @@ object MetadataMatcher {
             val name = attr.optString("canonicalTitle").ifBlank { return@mapNotNull null }
             val poster = attr.optJSONObject("posterImage")?.optString("large")
                 ?.takeIf { it.isNotBlank() }
+            val cover = attr.optJSONObject("coverImage")?.optString("large")
+                ?.takeIf { it.isNotBlank() }
             EnrichedMeta(
                 title = name,
                 year = Regex("""^(\d{4})""").find(attr.optString("startDate"))
                     ?.groupValues?.get(1),
                 overview = attr.optString("synopsis").takeIf { it.isNotBlank() },
                 posterUrl = poster,
+                backdropUrl = cover,
                 imdbId = null,
                 tmdbId = null,
                 kitsuId = kitsuId,
@@ -428,11 +438,14 @@ object MetadataMatcher {
         val startDate = best.optString("startDate")
         val poster = best.optJSONObject("posterImage")?.optString("large")
             ?.takeIf { it.isNotBlank() }
+        val cover = best.optJSONObject("coverImage")?.optString("large")
+            ?.takeIf { it.isNotBlank() }
         return EnrichedMeta(
             title = bestTitle.ifBlank { title },
             year = Regex("""^(\d{4})""").find(startDate)?.groupValues?.get(1),
             overview = best.optString("synopsis").takeIf { it.isNotBlank() },
             posterUrl = poster,
+            backdropUrl = cover,
             imdbId = null,
             tmdbId = null,
             confidence = bestScore.coerceIn(0.0, 1.0),
@@ -451,12 +464,30 @@ object MetadataMatcher {
             meta.copy(
                 posterUrl = meta.posterUrl
                     ?: root.optString("poster").takeIf { it.isNotBlank() },
+                backdropUrl = meta.backdropUrl
+                    ?: root.optString("background").takeIf { it.isNotBlank() },
                 overview = meta.overview
                     ?: root.optString("description").takeIf { it.isNotBlank() },
             )
         } catch (e: Exception) {
             Log.d(TAG, "cinemeta enrich failed: ${e.message}")
             meta
+        }
+    }
+
+    /**
+     * Landscape backdrop URL for a title (Cinemeta `background`), or null.
+     * Free, no key — one call per entry, cached in the DB by the caller.
+     */
+    fun fetchBackdrop(imdbId: String, type: String): String? {
+        val kind = if (type == "movie") "movie" else "series"
+        return try {
+            getJson("https://v3-cinemeta.strem.io/meta/$kind/$imdbId.json")
+                ?.optJSONObject("meta")
+                ?.optString("background")?.takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            Log.d(TAG, "backdrop fetch failed: ${e.message}")
+            null
         }
     }
 
