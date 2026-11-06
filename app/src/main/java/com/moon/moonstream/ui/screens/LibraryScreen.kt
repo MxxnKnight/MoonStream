@@ -343,7 +343,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                                         with(density) { selW.value.toDp() },
                                         with(density) { (selBounds.height - pillInsetPx * 2).toDp() },
                                     )
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(50))
                                     .background(Color(0xFF636365)),
                             )
                         }

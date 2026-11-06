@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -418,15 +419,15 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // translucent pill like the reference — no GPU blur, light on RAM.
                 val pillShape = RoundedCornerShape(24.dp)
                 // Pill highlight (moon's pick 2026-11-06, Nuvio-style):
-                // a frosted capsule that fills the selected tab's slot and
-                // slides between tabs. Learned from Nuvio's
-                // FloatingNavigationBar (jellyPillPath): the pill is a
-                // fully-rounded rect nearly as tall as the bar, inset a few
-                // dp — NOT a circle. The orb circle (0.15.123) rendered
-                // small and high on moon's phone — its zero-size anchor
-                // trick misplaces it — so this reuses the 0.15.122 highlight
-                // positioning, which tracked the tab correctly, with the
-                // capsule shape instead. Tap and swipe both switch.
+                // a frosted capsule that hugs the selected tab and slides
+                // between tabs. The capsule is a proper horizontal stadium:
+                // FIXED 48dp tall (fits inside the ~57dp bar, never bulges
+                // past it) and as wide as the tab plus a little, fully
+                // rounded. It is vertically centered by the container's
+                // alignment — not by the tab's measured Y — so it can never
+                // drift high or low the way the 0.15.123 orb did. Only its
+                // centre X and its width animate (snap on first measure,
+                // spring on later switches). Tap and swipe both switch.
                 val density = LocalDensity.current
                 val tabBounds = remember {
                     mutableStateListOf<Rect>().apply {
@@ -435,8 +436,8 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 }
                 val selIdx = tabs.indexOfFirst { it.screen == selectedTab }.coerceAtLeast(0)
                 val selBounds = tabBounds.getOrNull(selIdx) ?: Rect.Zero
-                val pillInsetPx = with(density) { 4.dp.toPx() }
-                val indX = remember { Animatable(0f) }
+                val pillSidePx = with(density) { 6.dp.toPx() }
+                val pillCenterX = remember { Animatable(0f) }
                 val indW = remember { Animatable(0f) }
                 var indReady by remember { mutableStateOf(false) }
                 val navSlideSpec = spring<Float>(
@@ -446,14 +447,14 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // Snap into place on first measure, slide on every change.
                 LaunchedEffect(selIdx, selBounds) {
                     if (selBounds == Rect.Zero) return@LaunchedEffect
-                    val targetX = selBounds.left - pillInsetPx
-                    val targetW = selBounds.width + pillInsetPx * 2
+                    val targetCenterX = selBounds.center.x
+                    val targetW = selBounds.width + pillSidePx * 2
                     if (!indReady) {
-                        indX.snapTo(targetX)
+                        pillCenterX.snapTo(targetCenterX)
                         indW.snapTo(targetW)
                         indReady = true
                     } else {
-                        launch { indX.animateTo(targetX, navSlideSpec) }
+                        launch { pillCenterX.animateTo(targetCenterX, navSlideSpec) }
                         indW.animateTo(targetW, navSlideSpec)
                     }
                 }
@@ -475,13 +476,22 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             // moves only once it's clearly a horizontal
                             // drag, decide on release. A plain tap consumes
                             // nothing, so the tab clickables still fire.
+                            // Listen in the Initial pass (requireUnconsumed
+                            // = false): the tab clickables eat the down in
+                            // the Main pass, so a swipe that starts ON a tab
+                            // never reached this loop — that's why moon's
+                            // swipes did nothing. In the Initial pass the
+                            // parent sees the finger first.
                             awaitPointerEventScope {
                                 while (true) {
-                                    val down = awaitFirstDown()
+                                    val down = awaitFirstDown(
+                                        requireUnconsumed = false,
+                                        pass = PointerEventPass.Initial,
+                                    )
                                     var accum = 0f
                                     var dragging = false
                                     while (true) {
-                                        val event = awaitPointerEvent()
+                                        val event = awaitPointerEvent(PointerEventPass.Initial)
                                         val change = event.changes.firstOrNull { it.id == down.id }
                                             ?: continue
                                         if (!change.pressed) {
@@ -534,19 +544,21 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                 .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape),
                         )
                         // The sliding capsule (behind the tabs): fully
-                        // rounded, frosted white, nearly as tall as the bar.
+                        // rounded, frosted white, fixed height so it stays
+                        // a horizontal capsule and never bulges past the bar.
                         if (indReady) {
                             Box(
                                 modifier = Modifier
+                                    .align(Alignment.CenterStart)
                                     .offset {
                                         IntOffset(
-                                            indX.value.roundToInt(),
-                                            (selBounds.top - pillInsetPx).roundToInt(),
+                                            (pillCenterX.value - indW.value / 2).roundToInt(),
+                                            0,
                                         )
                                     }
                                     .size(
                                         with(density) { indW.value.toDp() },
-                                        with(density) { (selBounds.height + pillInsetPx * 2).toDp() },
+                                        48.dp,
                                     )
                                     .clip(RoundedCornerShape(50))
                                     .background(Color.White.copy(alpha = 0.22f)),
