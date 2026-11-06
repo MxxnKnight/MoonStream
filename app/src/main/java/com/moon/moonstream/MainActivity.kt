@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
@@ -419,11 +417,16 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // Basic black blur look (moon's request 2026-11-04): simple dark
                 // translucent pill like the reference — no GPU blur, light on RAM.
                 val pillShape = RoundedCornerShape(24.dp)
-                // Orb highlight (moon's pick 2026-11-06, Nuvio/mpvRx-style):
-                // the selected tab sits in a big frosted circle that slides
-                // between tabs and bulges past the pill's edges. One animated
-                // value — the orb's centre — snaps on first measure, springs
-                // on every switch, tap or swipe alike.
+                // Pill highlight (moon's pick 2026-11-06, Nuvio-style):
+                // a frosted capsule that fills the selected tab's slot and
+                // slides between tabs. Learned from Nuvio's
+                // FloatingNavigationBar (jellyPillPath): the pill is a
+                // fully-rounded rect nearly as tall as the bar, inset a few
+                // dp — NOT a circle. The orb circle (0.15.123) rendered
+                // small and high on moon's phone — its zero-size anchor
+                // trick misplaces it — so this reuses the 0.15.122 highlight
+                // positioning, which tracked the tab correctly, with the
+                // capsule shape instead. Tap and swipe both switch.
                 val density = LocalDensity.current
                 val tabBounds = remember {
                     mutableStateListOf<Rect>().apply {
@@ -432,10 +435,10 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 }
                 val selIdx = tabs.indexOfFirst { it.screen == selectedTab }.coerceAtLeast(0)
                 val selBounds = tabBounds.getOrNull(selIdx) ?: Rect.Zero
-                val orbDiameter = 72.dp
-                val orbRadiusPx = with(density) { (orbDiameter / 2).toPx() }
-                val orbCenterX = remember { Animatable(0f) }
-                var orbReady by remember { mutableStateOf(false) }
+                val pillInsetPx = with(density) { 4.dp.toPx() }
+                val indX = remember { Animatable(0f) }
+                val indW = remember { Animatable(0f) }
+                var indReady by remember { mutableStateOf(false) }
                 val navSlideSpec = spring<Float>(
                     dampingRatio = Spring.DampingRatioNoBouncy,
                     stiffness = Spring.StiffnessMediumLow,
@@ -443,20 +446,22 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // Snap into place on first measure, slide on every change.
                 LaunchedEffect(selIdx, selBounds) {
                     if (selBounds == Rect.Zero) return@LaunchedEffect
-                    val targetX = selBounds.center.x
-                    if (!orbReady) {
-                        orbCenterX.snapTo(targetX)
-                        orbReady = true
+                    val targetX = selBounds.left - pillInsetPx
+                    val targetW = selBounds.width + pillInsetPx * 2
+                    if (!indReady) {
+                        indX.snapTo(targetX)
+                        indW.snapTo(targetW)
+                        indReady = true
                     } else {
-                        orbCenterX.animateTo(targetX, navSlideSpec)
+                        launch { indX.animateTo(targetX, navSlideSpec) }
+                        indW.animateTo(targetW, navSlideSpec)
                     }
                 }
-                // Bottom pill (Nuvio/mpvRx-style orb, moon's pick 2026-11-06):
-                // a black-tinted blurred bar; the selected tab sits in a big
-                // frosted circle that slides between tabs and bulges past the
-                // bar's edges. Tap and swipe both switch. The container is
-                // unclipped so the orb can bulge; only the background bar
-                // itself is clipped to the pill shape.
+                // Bottom pill (Nuvio-style capsule, moon's pick 2026-11-06):
+                // a black-tinted blurred bar; the selected tab sits in a
+                // frosted capsule that slides between tabs. Tap and swipe
+                // both switch. The capsule is drawn as a child of the
+                // container, behind the tabs, above the blurred bar.
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -528,26 +533,24 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                 }
                                 .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape),
                         )
-                        // Orb highlight: zero-size anchor so it never affects
-                        // the pill's size; the circle is placed freely and
-                        // draws outside the anchor (Box doesn't clip).
-                        if (orbReady) {
+                        // The sliding capsule (behind the tabs): fully
+                        // rounded, frosted white, nearly as tall as the bar.
+                        if (indReady) {
                             Box(
-                                modifier = Modifier.size(0.dp),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .requiredSize(orbDiameter)
-                                        .offset {
-                                            IntOffset(
-                                                (orbCenterX.value - orbRadiusPx).roundToInt(),
-                                                (selBounds.center.y - orbRadiusPx).roundToInt(),
-                                            )
-                                        }
-                                        .clip(CircleShape)
-                                        .background(Color.White.copy(alpha = 0.20f)),
-                                )
-                            }
+                                modifier = Modifier
+                                    .offset {
+                                        IntOffset(
+                                            indX.value.roundToInt(),
+                                            (selBounds.top - pillInsetPx).roundToInt(),
+                                        )
+                                    }
+                                    .size(
+                                        with(density) { indW.value.toDp() },
+                                        with(density) { (selBounds.height + pillInsetPx * 2).toDp() },
+                                    )
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Color.White.copy(alpha = 0.22f)),
+                            )
                         }
                         Row(
                             horizontalArrangement = Arrangement.SpaceEvenly,
