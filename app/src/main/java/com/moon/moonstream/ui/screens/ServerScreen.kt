@@ -826,23 +826,34 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text(
-                        text = formatCount(files.value.toInt()),
-                        style = MaterialTheme.typography.displaySmall.doto(),
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    Text(
-                        text = "files",
-                        style = MaterialTheme.typography.bodyMedium.doto(),
-                        color = MsColors.TextSecondary,
-                        modifier = Modifier.padding(bottom = 6.dp),
-                    )
-                    Spacer(Modifier.weight(1f))
+                    // The number + "files" live in their own weighted Row: it
+                    // takes ALL space left by the titles, and inside it the
+                    // number may only shrink against "files" — never against
+                    // a spacer. (0.15.119 put weight(1f) on the number AND on
+                    // the spacer, splitting the space in half — "18,359"
+                    // clipped to "18…".)
+                    Row(
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(
+                            text = formatCount(files.value.toInt()),
+                            style = MaterialTheme.typography.displaySmall.doto(),
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Text(
+                            text = "files",
+                            style = MaterialTheme.typography.bodyMedium.doto(),
+                            color = MsColors.TextSecondary,
+                            modifier = Modifier.padding(bottom = 6.dp),
+                        )
+                    }
                     Text(
                         text = "${formatCount(titles.value.toInt())} titles",
                         style = MaterialTheme.typography.bodyMedium.doto(),
