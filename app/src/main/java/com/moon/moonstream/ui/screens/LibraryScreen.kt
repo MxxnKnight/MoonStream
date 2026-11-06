@@ -283,6 +283,31 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             // edge. Each tab now gets room, and the row scrolls to reach
             // it — tapping a tab scrolls it into view.
             val tabListState = rememberLazyListState()
+            // Reveal a tab only if it isn't fully visible (moon's video
+            // 2026-11-06: tapping a tab shoved the whole row left on every
+            // tap, because animateScrollToItem drags it to the left edge
+            // even when it was already in view). Fully visible = the row
+            // doesn't move at all; partly visible = scroll just enough to
+            // reveal it; off-screen = scroll it in as before.
+            fun revealTab(idx: Int) {
+                scope.launch {
+                    val info = tabListState.layoutInfo
+                    val item = info.visibleItemsInfo.firstOrNull { it.index == idx }
+                    if (item != null) {
+                        val start = info.viewportStartOffset
+                        val end = info.viewportEndOffset
+                        if (item.offset >= start && item.offset + item.size <= end) return@launch
+                        val delta = if (item.offset < start) {
+                            (item.offset - start).toFloat()
+                        } else {
+                            (item.offset + item.size - end).toFloat()
+                        }
+                        tabListState.animateScrollBy(delta)
+                    } else {
+                        tabListState.animateScrollToItem(idx)
+                    }
+                }
+            }
             LazyRow(
                 state = tabListState,
                 contentPadding = PaddingValues(horizontal = 20.dp),
@@ -297,7 +322,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                             segment = idx
                             // Don't exit select mode on tab switch (moon's bug 2026-11-04:
                             // selection must survive to allow cross-tab merge).
-                            scope.launch { tabListState.animateScrollToItem(idx) }
+                            revealTab(idx)
                         },
                     )
                 }
