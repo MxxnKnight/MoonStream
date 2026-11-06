@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -48,13 +50,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.ui.components.NeutralRippleTheme
 import com.moon.moonstream.ui.screens.ChannelsScreen
@@ -64,6 +69,9 @@ import com.moon.moonstream.ui.screens.LibraryScreen
 import com.moon.moonstream.ui.screens.PlayerScreen
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -80,6 +88,7 @@ import com.moon.moonstream.ui.model.PrefillFile
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MoonStreamTheme
 import com.moon.moonstream.ui.theme.MsColors
+import kotlin.math.roundToInt
 
 /**
  * Phase 1: hand-rolled navigation (no navigation-compose in the offline mirror).
@@ -397,8 +406,41 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // translucent pill like the reference — no GPU blur, light on RAM.
                 var dragAccum by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
                 val pillShape = RoundedCornerShape(24.dp)
+                // Sliding selection pill (moon's 2026-11-06): the same
+                // sliding-pill idea as MsSegmented — a soft accent highlight
+                // RUNS to the newly selected tab instead of the icon/tint
+                // just swapping. Runs on taps and on swipe-to-switch alike.
+                val density = LocalDensity.current
+                val tabBounds = remember {
+                    mutableStateListOf<Rect>().apply {
+                        repeat(tabs.size) { add(Rect.Zero) }
+                    }
+                }
+                val selIdx = tabs.indexOfFirst { it.screen == selectedTab }.coerceAtLeast(0)
+                val selBounds = tabBounds.getOrNull(selIdx) ?: Rect.Zero
+                val indX = remember { Animatable(0f) }
+                val indW = remember { Animatable(0f) }
+                var indReady by remember { mutableStateOf(false) }
+                val navSlideSpec = spring<Float>(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                )
+                // Snap into place on first measure, slide on every change.
+                LaunchedEffect(selIdx, selBounds) {
+                    if (selBounds == Rect.Zero) return@LaunchedEffect
+                    val targetX = selBounds.left
+                    val targetW = selBounds.width
+                    if (!indReady) {
+                        indX.snapTo(targetX)
+                        indW.snapTo(targetW)
+                        indReady = true
+                    } else {
+                        launch { indX.animateTo(targetX, navSlideSpec) }
+                        indW.animateTo(targetW, navSlideSpec)
+                    }
+                }
                 // Plain black pill (hotfix 2026-11-05: BlurView crashed on Android 12).
-                Row(
+                Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(start = 24.dp, end = 24.dp, bottom = 22.dp)
@@ -421,29 +463,53 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             },
                         )
                         .padding(horizontal = 8.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
-                    tabs.forEach { tab ->
-                        val selected = selectedTab == tab.screen
-                        Column(
+                    // The sliding highlight (behind the tabs).
+                    if (indReady) {
+                        Box(
                             modifier = Modifier
+                                .offset {
+                                    IntOffset(
+                                        indX.value.roundToInt(),
+                                        selBounds.top.roundToInt(),
+                                    )
+                                }
+                                .size(
+                                    with(density) { indW.value.toDp() },
+                                    with(density) { selBounds.height.toDp() },
+                                )
                                 .clip(RoundedCornerShape(16.dp))
-                                .clickable { goTab(tab.screen) }
-                                .padding(horizontal = 16.dp, vertical = 6.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Icon(
-                                if (selected) tab.iconFilled else tab.iconOutlined,
-                                contentDescription = tab.label,
-                                tint = if (selected) MsColors.Accent else Color(0xFF98989F),
-                                modifier = Modifier.size(24.dp),
-                            )
-                            Text(
-                                text = tab.label,
-                                fontSize = 10.sp,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (selected) MsColors.Accent else Color(0xFF98989F),
-                            )
+                                .background(MsColors.Accent.copy(alpha = 0.15f)),
+                        )
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        tabs.forEachIndexed { idx, tab ->
+                            val selected = selectedTab == tab.screen
+                            Column(
+                                modifier = Modifier
+                                    .onGloballyPositioned { coords ->
+                                        tabBounds[idx] = coords.boundsInParent()
+                                    }
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .clickable { goTab(tab.screen) }
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Icon(
+                                    if (selected) tab.iconFilled else tab.iconOutlined,
+                                    contentDescription = tab.label,
+                                    tint = if (selected) MsColors.Accent else Color(0xFF98989F),
+                                    modifier = Modifier.size(24.dp),
+                                )
+                                Text(
+                                    text = tab.label,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (selected) MsColors.Accent else Color(0xFF98989F),
+                                )
+                            }
                         }
                     }
                 }
