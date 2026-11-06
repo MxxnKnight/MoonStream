@@ -43,6 +43,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import dev.chrisbanes.haze.ExperimentalHazeApi
+import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
@@ -173,6 +175,7 @@ class MainActivity : ComponentActivity() {
 }
 }
 
+@OptIn(ExperimentalHazeApi::class) // HazeEffectScope.inputScale is experimental
 @Composable
 fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     val authState by telegramManager.authState.collectAsState()
@@ -285,11 +288,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     fadeIn(tween(110)) togetherWith ExitTransition.None
                 },
                 label = "screenSwitch",
-                // inputScale 0.5: the blur reads the screen at half
-                // resolution (4x fewer pixels to blur) — the main
-                // RAM/GPU saving on low-end phones; the upscale softens
-                // the blur slightly, which suits a frosted pill.
-                modifier = Modifier.fillMaxSize().hazeSource(hazeState, inputScale = 0.5f),
+                modifier = Modifier.fillMaxSize().hazeSource(hazeState),
             ) { screen ->
                 when (screen) {
                     AppScreen.Splash -> SplashScreen(
@@ -470,6 +469,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                 tint = HazeTint(Color.Black.copy(alpha = 0.20f)),
                                 blurRadius = 18.dp,
                             )
+                            // Half-resolution blur input (25% of the pixels
+                            // to blur) — the main RAM/GPU saving on low-end
+                            // phones; the upscale softens the blur slightly,
+                            // which suits a frosted pill.
+                            inputScale = HazeInputScale.Fixed(0.5f)
                         }
                         .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape)
                         .pointerInput(selectedTab) {
