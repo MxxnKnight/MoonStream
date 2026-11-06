@@ -285,17 +285,18 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             )
             Spacer(Modifier.height(16.dp))
 
-            // Filter tabs: the old iOS segmented look, back by moon's
-            // pick 2026-11-06 — one dark bar (#1C1C1E) with a sliding gray
-            // selection (#636365, both sampled from his screenshot). The
-            // bar itself scrolls sideways with roomy tabs, so HIDDEN is
-            // reachable and nothing is squeezed. (The old fixed bar
-            // couldn't scroll — that's why the tabs sat too close; the
-            // pills fixed the closeness but lost the look.)
+            // Filter tabs: the old iOS segmented bar, exactly as moon's
+            // screenshot — one dark bar (#1C1C1E) with a sliding gray
+            // selection (#636365, both sampled from his screenshot).
+            // Five EQUAL slots filling the bar, so all five tabs fit on
+            // screen at once like the old bar — no horizontal scroll, no
+            // auto-scroll. The scrolling version (0.15.123) made the tabs
+            // too wide (20dp padding) so HIDDEN fell off-screen, and the
+            // reveal auto-scroll slid the whole bar on every tap — that's
+            // the size and animation difference moon flagged. Now only the
+            // pill slides; the bar never moves.
             val tabLabels = listOf("ALL", "MOVIES", "SERIES", "ANIME", "HIDDEN")
-            val tabScrollState = rememberScrollState()
             val density = LocalDensity.current
-            var viewportWidthPx by remember { mutableStateOf(0) }
             val tabBounds = remember { mutableStateMapOf<Int, Rect>() }
             // Sliding selection pill, measured like the bottom pill's
             // highlight: snap on first measure, spring on later switches.
@@ -317,38 +318,17 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     selW.animateTo(targetW, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow))
                 }
             }
-            // Reveal the selected tab only if it isn't fully visible.
-            fun revealTab(idx: Int) {
-                scope.launch {
-                    val bounds = tabBounds[idx] ?: return@launch
-                    val viewW = viewportWidthPx
-                    if (viewW == 0) return@launch
-                    val scroll = tabScrollState.value
-                    val marginPx = with(density) { 8.dp.toPx() }
-                    if (bounds.left >= scroll && bounds.right <= scroll + viewW) return@launch
-                    val target = if (bounds.left < scroll) {
-                        (bounds.left - marginPx).toInt()
-                    } else {
-                        (bounds.right - viewW + marginPx).toInt()
-                    }
-                    tabScrollState.animateScrollTo(target.coerceIn(0, tabScrollState.maxValue))
-                }
-            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp),
             ) {
-                Row(
+                Box(
                     modifier = Modifier
-                        .horizontalScroll(tabScrollState)
-                        .onGloballyPositioned { viewportWidthPx = it.size.width },
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF1C1C1E)),
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFF1C1C1E)),
-                    ) {
                         // Sliding selection pill, behind the labels.
                         if (selReady) {
                             Box(
@@ -367,10 +347,13 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                                     .background(Color(0xFF636365)),
                             )
                         }
-                        Row {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
                             tabLabels.forEachIndexed { idx, label ->
                                 Box(
                                     modifier = Modifier
+                                        .weight(1f)
                                         .onGloballyPositioned { coords ->
                                             tabBounds[idx] = coords.boundsInParent()
                                         }
@@ -379,9 +362,8 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                                             segment = idx
                                             // Don't exit select mode on tab switch (moon's bug 2026-11-04:
                                             // selection must survive to allow cross-tab merge).
-                                            revealTab(idx)
                                         }
-                                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                                        .padding(vertical = 10.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Text(
@@ -394,7 +376,6 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                                 }
                             }
                         }
-                    }
                 }
             }
             Spacer(Modifier.height(16.dp))
