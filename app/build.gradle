@@ -151,7 +151,10 @@ configurations.all {
             && !(n in ['material3', 'material', 'material-ripple',
                        'material-icons-core', 'material-icons-extended',
                        'material-android', 'material-icons-core-android',
-                       'material-ripple-android', 'material-icons-extended-android'])) {
+                       'material-ripple-android', 'material-icons-extended-android',
+                       // Compose 1.7 split artifacts: material3's version is
+                       // 1.3.0, not 1.7.0 — never force it to the compose version.
+                       'material3-android'])) {
             details.useVersion '1.7.0'
         }
         if (g == 'androidx.annotation') {
