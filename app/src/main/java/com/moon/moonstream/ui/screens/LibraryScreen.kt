@@ -4,9 +4,6 @@ import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.components.IosBottomSheet
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -21,7 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -36,8 +32,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
@@ -245,8 +243,9 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
         }
     }
 
-    // Header (title, search, filters, counts) as one piece, so it can sit
-    // at the top of the scrolling grid AND above the empty state.
+    // Header (title, search, filters, counts) PINNED at the top — it stays
+    // put while the poster grid scrolls (moon's correction 2026-11-06), so
+    // tabs and search are always reachable, even scrolled far down.
     @Composable
     fun LibraryHeader() {
         Column(Modifier.fillMaxWidth()) {
@@ -278,16 +277,30 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             )
             Spacer(Modifier.height(16.dp))
 
-            MsSegmentedControl(
-                segments = listOf("ALL", "MOVIES", "SERIES", "ANIME", "HIDDEN"),
-                selected = segment,
-                onSelect = {
-                    segment = it
-                    // Don't exit select mode on tab switch (moon's bug 2026-11-04:
-                    // selection must survive to allow cross-tab merge).
-                },
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
+            // Filter tabs scroll sideways (moon's correction 2026-11-06):
+            // five tabs crammed in one fixed row squeezed HIDDEN at the
+            // edge. Each tab now gets room, and the row scrolls to reach
+            // it — tapping a tab scrolls it into view.
+            val tabListState = rememberLazyListState()
+            LazyRow(
+                state = tabListState,
+                contentPadding = PaddingValues(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                itemsIndexed(listOf("ALL", "MOVIES", "SERIES", "ANIME", "HIDDEN")) { idx, label ->
+                    FilterTabPill(
+                        text = label,
+                        selected = segment == idx,
+                        onClick = {
+                            segment = idx
+                            // Don't exit select mode on tab switch (moon's bug 2026-11-04:
+                            // selection must survive to allow cross-tab merge).
+                            scope.launch { tabListState.animateScrollToItem(idx) }
+                        },
+                    )
+                }
+            }
             Spacer(Modifier.height(16.dp))
 
             Row(
@@ -335,11 +348,11 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             .background(MsColors.Bg),
     ) {
         Column(Modifier.fillMaxSize()) {
+            LibraryHeader()
             if (filtered.isEmpty()) {
-                LibraryHeader()
                 // Plain-words empty states — never a fake grid.
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -364,13 +377,8 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 120.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.weight(1f),
                 ) {
-                    // Header scrolls away with the grid (moon's 2026-11-06:
-                    // like the old UI — the bars were pinned before).
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        LibraryHeader()
-                    }
                     items(filtered, key = { it.id }) { item ->
                         val isSelected = selectedIds.contains(item.id)
                         PosterCell(
@@ -557,59 +565,23 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
 
 /** Pill segmented control with a sliding accent thumb. */
 @Composable
-private fun MsSegmentedControl(
-    segments: List<String>,
-    selected: Int,
-    onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(40.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF1C1C1E))
-            .padding(2.dp),
+@Composable
+private fun FilterTabPill(text: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(if (selected) MsColors.Accent else Color(0xFF1C1C1E))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        val tabWidth = maxWidth / segments.size
-        val thumbOffset by animateDpAsState(
-            targetValue = tabWidth * selected,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessMedium,
-            ),
-            label = "segmentThumb",
+        Text(
+            text = text,
+            color = if (selected) Color.White else MsColors.TextSecondary,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            fontSize = 13.sp,
+            maxLines = 1,
         )
-        // iOS-style: selected thumb is lighter gray (moon's pick 2026-11-04).
-        Box(
-            modifier = Modifier
-                .offset(x = thumbOffset)
-                .size(width = tabWidth, height = 36.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF636366)),
-        )
-        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-            segments.forEachIndexed { i, label ->
-                val isSel = i == selected
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .height(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { onSelect(i) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = label,
-                        color = Color.White,
-                        fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal,
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
     }
 }
 
