@@ -656,7 +656,12 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     }
                                     .size(
                                         with(density) { indW.value.toDp() },
-                                        54.dp,
+                                        // 58dp (moon's 2026-11-07): the
+                                        // capsule's top/bottom sit a little
+                                        // closer to the bar's ends now
+                                        // (was 54dp). Library tabs thumb
+                                        // stays 36dp — untouched.
+                                        58.dp,
                                     )
                                     .clip(RoundedCornerShape(50))
                                     .background(Color.White.copy(alpha = 0.22f)),
