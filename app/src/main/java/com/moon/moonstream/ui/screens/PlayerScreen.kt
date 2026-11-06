@@ -195,8 +195,6 @@ fun PlayerScreen(
     mediaTitle: String = title,
     mediaId: Long = 0L,
     streamFileId: Long = 0L,
-    /** Header Play = continue watching: skip the resume prompt, play from saved spot. */
-    autoResume: Boolean = false,
     onClose: () -> Unit,
     onSwitchPlayer: (
         videoUrl: String, title: String, mediaTitle: String,
@@ -536,10 +534,6 @@ fun PlayerScreen(
         )
     }
 
-    // Resume state (moon's design 2026-11-02).
-    var awaitingResumeChoice by remember { mutableStateOf(false) }
-    var resumeFrom by remember { mutableLongStateOf(0L) }
-
     // Sheet + track state.
     var sheet by remember { mutableStateOf<PlayerSheet?>(null) }
     var trackOptions by remember { mutableStateOf(listOf<TrackOpt>()) }
@@ -735,17 +729,14 @@ fun PlayerScreen(
                     db.watchProgressDao().get(mediaId, streamFileId)?.positionMs ?: 0L
                 } catch (e: Exception) { 0L }
             }
-            when {
-                // Header Play = continue watching: straight to the saved spot.
-                autoResume && saved > 10_000L -> {
-                    player.seekTo(saved)
-                    player.play()
-                }
-                saved > 10_000L -> {
-                    resumeFrom = saved
-                    awaitingResumeChoice = true
-                }
-                else -> player.play()
+            // Auto-resume (moon's pick 2026-11-06): any saved spot over
+            // 10s jumps straight to it on open — no prompt box. To start
+            // over, drag the seekbar back to the beginning.
+            if (saved > 10_000L) {
+                player.seekTo(saved)
+                player.play()
+            } else {
+                player.play()
             }
         } else if (keepPlaying) {
             player.play()
@@ -818,8 +809,7 @@ fun PlayerScreen(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> player.pause()
-                // Don't auto-resume while the Resume prompt is up.
-                Lifecycle.Event.ON_RESUME -> if (!awaitingResumeChoice) player.play()
+                Lifecycle.Event.ON_RESUME -> player.play()
                 else -> {}
             }
         }
@@ -2024,66 +2014,6 @@ fun PlayerScreen(
             }
         }
 
-        // Resume prompt (moon's design 2026-11-02): shown on open when this
-        // file has a saved position.
-        if (awaitingResumeChoice) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.7f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(
-                    modifier = Modifier
-                        .padding(24.dp)
-                        .background(MsColors.Surface, RoundedCornerShape(16.dp))
-                        .padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        "Resume playback?",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MsColors.TextPrimary,
-                    )
-                    Text(
-                        "Continue from ${formatTime(resumeFrom)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MsColors.TextSecondary,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(
-                            onClick = {
-                                awaitingResumeChoice = false
-                                player.seekTo(0L)
-                                player.play()
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MsColors.Bg,
-                                contentColor = MsColors.TextPrimary,
-                            ),
-                        ) {
-                            Text("Start over")
-                        }
-                        Button(
-                            onClick = {
-                                awaitingResumeChoice = false
-                                player.seekTo(resumeFrom)
-                                player.play()
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MsColors.Accent,
-                                contentColor = Color.Black,
-                            ),
-                        ) {
-                            Text("Resume")
-                        }
-                    }
-                }
-            }
-        }
-
         // Loading spinner while the stream buffers (moon's bug 2026-11-02:
         // Full-screen buffering loader (moon's request 2026-11-03):
         // shows during initial load AND when seeks take time. Uses a small
@@ -2098,7 +2028,7 @@ fun PlayerScreen(
                 showBufferLoader = false
             }
         }
-        if (showBufferLoader && playerError == null && !awaitingResumeChoice) {
+        if (showBufferLoader && playerError == null) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()

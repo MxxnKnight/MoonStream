@@ -116,8 +116,6 @@ sealed interface AppScreen {
         val mediaId: Long = 0L,
         val streamFileId: Long = 0L,
         val mediaTitle: String = "",
-        /** Header Play = continue watching: skip resume prompt, play from saved spot. */
-        val autoResume: Boolean = false,
     ) : AppScreen
 }
 
@@ -323,11 +321,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             mediaId = screen.mediaId,
                             onBack = { backStack.removeLast() },
                             onOpenCreate = { prefill -> go(AppScreen.Create(prefill)) },
-                            onPlayInApp = { videoUrl, title, mediaTitle, mediaId, streamFileId, autoResume ->
+                            onPlayInApp = { videoUrl, title, mediaTitle, mediaId, streamFileId ->
                                 go(
                                     AppScreen.Player(
                                         videoUrl, title,
-                                        mediaId, streamFileId, mediaTitle, autoResume,
+                                        mediaId, streamFileId, mediaTitle,
                                     )
                                 )
                             },
@@ -367,7 +365,6 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         mediaTitle = screen.mediaTitle.ifBlank { screen.title },
                         mediaId = screen.mediaId,
                         streamFileId = screen.streamFileId,
-                        autoResume = screen.autoResume,
                         onClose = { backStack.removeLast() },
                         onSwitchPlayer = { url, t, mt, mid, fid ->
                             // Episode switch: replace this player with the new file's.

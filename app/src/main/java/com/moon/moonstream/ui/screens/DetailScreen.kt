@@ -117,8 +117,8 @@ fun DetailScreen(
     onOpenCreate: (CreatePrefill) -> Unit = {},
     onPlayInApp: (
         videoUrl: String, title: String, mediaTitle: String,
-        mediaId: Long, streamFileId: Long, autoResume: Boolean,
-    ) -> Unit = { _, _, _, _, _, _ -> },
+        mediaId: Long, streamFileId: Long,
+    ) -> Unit = { _, _, _, _, _ -> },
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -233,12 +233,13 @@ fun DetailScreen(
         }
     }
 
-    /** Per-file play: the player shows the Resume prompt when a position is saved.
+    /** Per-file play: the player auto-resumes when a position is saved
+     *  (moon's pick 2026-11-06 — no prompt box).
      *  0.15.0: plays via tdfile:// when the DB knows the size — no server needed. */
     fun playInApp(file: StreamFileEntity) {
         onPlayInApp(
             PlayerUrls.stream(m.id, file.id), playTitle(file), m.title,
-            m.id, file.id, false,
+            m.id, file.id,
         )
         recordWatch(file)
     }
@@ -263,7 +264,7 @@ fun DetailScreen(
                 }
                 onPlayInApp(
                     PlayerUrls.stream(m.id, target.id), playTitle(target), m.title,
-                    m.id, target.id, true,
+                    m.id, target.id,
                 )
                 recordWatch(target)
             }
