@@ -31,7 +31,7 @@ import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.ripple.LocalRippleConfiguration
+import androidx.compose.material.ripple.LocalRippleTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -60,7 +60,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import com.moon.moonstream.backend.BackendProvider
-import com.moon.moonstream.ui.components.NeutralRippleConfiguration
+import com.moon.moonstream.ui.components.NeutralRippleTheme
 import com.moon.moonstream.ui.screens.ChannelsScreen
 import com.moon.moonstream.ui.screens.CreateScreen
 import com.moon.moonstream.ui.screens.DetailScreen
@@ -129,6 +129,10 @@ private val tabs = listOf(
 )
 
 class MainActivity : ComponentActivity() {
+    // RippleTheme is error-deprecated in Compose 1.7, but its replacement
+    // (RippleConfiguration) only exists from 1.8 — suppressed on this
+    // experiment branch; the theme still works exactly as before.
+    @Suppress("DEPRECATION_ERROR")
     override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
@@ -156,7 +160,7 @@ class MainActivity : ComponentActivity() {
 
     setContent {
         MoonStreamTheme {
-            CompositionLocalProvider(LocalRippleConfiguration provides NeutralRippleConfiguration) {
+            CompositionLocalProvider(LocalRippleTheme provides NeutralRippleTheme) {
                 MoonStreamApp(telegramManager = telegramManager)
             }
         }
