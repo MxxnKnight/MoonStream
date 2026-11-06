@@ -2288,7 +2288,8 @@ private fun MoonSeekBar(
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == down.id }
                                 ?: continue
-                            if (change.changedToUpOrCanceled()) {
+                            if (!change.pressed) {
+                                // Finger lifted or the gesture was cancelled.
                                 dragging = false
                             } else {
                                 change.consume()
