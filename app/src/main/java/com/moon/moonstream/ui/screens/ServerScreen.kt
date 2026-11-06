@@ -317,7 +317,12 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
         label = "sheenX",
     )
 
-    var cardState by remember { mutableStateOf(ServerCardState.IDLE) }
+    // Start in the real state (moon's 2026-11-06): on a fresh composition —
+    // first open or back from another screen — an already-running server
+    // must render RUNNING at once, not flip IDLE→RUNNING and replay the
+    // wake-up animation. Also fixes the drag handler reading the wrong
+    // branch if the user swipes in the first instant after returning.
+    var cardState by remember { mutableStateOf(if (on) ServerCardState.RUNNING else ServerCardState.IDLE) }
     LaunchedEffect(on) {
         cardState = if (on) ServerCardState.RUNNING else ServerCardState.IDLE
     }
@@ -336,12 +341,22 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
     val widthPxF = trackWidthPx.toFloat()
 
     // Sync pill if server flips externally (notification Stop button).
+    // Fresh composition (first open, or back from another screen) SNAPS to
+    // the real state instead of sliding — the slide IS the wake-up
+    // animation, and replaying it on every return is the bug moon reported
+    // 2026-11-06. Real flips while the screen is visible still animate.
+    var pillSettled by remember { mutableStateOf(false) }
     LaunchedEffect(on, maxOffset) {
         if (maxOffset <= 0f) return@LaunchedEffect
         val target = if (on) maxOffset else 0f
         if (pillOffsetPx != target && cardState != ServerCardState.STARTING && cardState != ServerCardState.STOPPING) {
-            Animatable(pillOffsetPx).animateTo(target, tween(300)) { pillOffsetPx = value }
+            if (!pillSettled) {
+                pillOffsetPx = target
+            } else {
+                Animatable(pillOffsetPx).animateTo(target, tween(300)) { pillOffsetPx = value }
+            }
         }
+        pillSettled = true
     }
 
     val dragState = rememberDraggableState { delta ->
@@ -640,19 +655,26 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
 @Composable
 private fun ScrambleUrlText(url: String, active: Boolean, modifier: Modifier = Modifier) {
     var display by remember { mutableStateOf(url) }
+    // Only scramble on a real OFF→ON flip while this screen is visible.
+    // A fresh composition with the server already on must show the plain
+    // URL at once (moon's 2026-11-06: the scramble replayed on every return).
+    var wasActive by remember { mutableStateOf(active) }
     LaunchedEffect(url, active) {
-        if (!active || url.isEmpty()) { display = url; return@LaunchedEffect }
-        val pool = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-        val steps = 10
-        repeat(steps) {
-            display = buildString {
-                url.forEach { c ->
-                    if (c.isLetterOrDigit()) append(pool.random()) else append(c)
+        if (!active || url.isEmpty()) { display = url; wasActive = false; return@LaunchedEffect }
+        if (!wasActive) {
+            val pool = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+            val steps = 10
+            repeat(steps) {
+                display = buildString {
+                    url.forEach { c ->
+                        if (c.isLetterOrDigit()) append(pool.random()) else append(c)
+                    }
                 }
+                delay(100)
             }
-            delay(100)
+            display = url
         }
-        display = url
+        wasActive = true
     }
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(
@@ -777,13 +799,24 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
         latest = loaded.second
     }
 
-    // One-shot count-ups toward the real values.
+    // Count-ups toward the real values — once per composition only. A fresh
+    // composition (back from another screen) snaps to the real values at
+    // once instead of counting up from 0 again (moon's 2026-11-06: the
+    // numbers replayed on every return, e.g. "0 files"). Real changes while
+    // the screen is visible still count up.
     val titles = remember { Animatable(0f) }
     val files = remember { Animatable(0f) }
+    var statsSettled by remember { mutableStateOf(false) }
     LaunchedEffect(stats) {
         if (stats.titles > 0 || stats.files > 0) {
-            titles.animateTo(stats.titles.toFloat(), tween(1100))
-            files.animateTo(stats.files.toFloat(), tween(1100))
+            if (!statsSettled) {
+                titles.snapTo(stats.titles.toFloat())
+                files.snapTo(stats.files.toFloat())
+                statsSettled = true
+            } else {
+                titles.animateTo(stats.titles.toFloat(), tween(1100))
+                files.animateTo(stats.files.toFloat(), tween(1100))
+            }
         }
     }
 
