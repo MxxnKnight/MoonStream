@@ -2186,14 +2186,6 @@ private fun MoonSeekBar(
         ),
         label = "seekBarHeight",
     )
-    val thumbSize by animateDpAsState(
-        targetValue = if (isScrubbing) 18.dp else 12.dp,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
-        label = "seekThumbSize",
-    )
     val posFrac = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
     } else 0f
@@ -2264,15 +2256,6 @@ private fun MoonSeekBar(
                     .background(MsColors.Accent),
             )
         }
-        // Thumb at the playhead.
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .offset(x = (maxWidth - thumbSize) * posFrac)
-                .size(thumbSize)
-                .clip(RoundedCornerShape(50))
-                .background(MsColors.Accent),
-        )
     }
 }
 
