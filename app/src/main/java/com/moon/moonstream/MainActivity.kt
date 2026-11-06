@@ -285,7 +285,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     fadeIn(tween(110)) togetherWith ExitTransition.None
                 },
                 label = "screenSwitch",
-                modifier = Modifier.fillMaxSize().hazeSource(hazeState),
+                // inputScale 0.5: the blur reads the screen at half
+                // resolution (4x fewer pixels to blur) — the main
+                // RAM/GPU saving on low-end phones; the upscale softens
+                // the blur slightly, which suits a frosted pill.
+                modifier = Modifier.fillMaxSize().hazeSource(hazeState, inputScale = 0.5f),
             ) { screen ->
                 when (screen) {
                     AppScreen.Splash -> SplashScreen(
@@ -453,6 +457,8 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // Blurred pill (experiment branch, Haze): the screen content
                 // behind the pill is blurred live; the dark tint keeps it
                 // readable. The old plain black is gone (BlurView crashed).
+                // Compact (moon's 2026-11-06: the first blurred pill read too
+                // big) and cheap (half-res blur input + 18dp radius).
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -462,7 +468,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             style = HazeStyle(
                                 backgroundColor = Color.Black.copy(alpha = 0.55f),
                                 tint = HazeTint(Color.Black.copy(alpha = 0.20f)),
-                                blurRadius = 24.dp,
+                                blurRadius = 18.dp,
                             )
                         }
                         .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape)
@@ -508,7 +514,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                 }
                             }
                         }
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                        .padding(horizontal = 6.dp, vertical = 6.dp),
                 ) {
                     // The sliding highlight (behind the tabs).
                     if (indReady) {
@@ -540,7 +546,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     }
                                     .clip(RoundedCornerShape(16.dp))
                                     .clickable { goTab(tab.screen) }
-                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                    .padding(horizontal = 12.dp, vertical = 4.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Icon(
