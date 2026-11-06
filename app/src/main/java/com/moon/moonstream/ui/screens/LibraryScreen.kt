@@ -809,7 +809,6 @@ private fun MsSegmentedControl(
     ) {
         val tabWidth = maxWidth / segments.size
         val tabWidthPx = with(density) { tabWidth.toPx() }
-        val thumbHeightPx = with(density) { 36.dp.toPx() }
         // The thumb's X is a pixel Animatable (not animateDpAsState) so a
         // drag can move it with the finger and it springs back on release.
         // Same bouncy spring as the original, same fixed thumb size, so
@@ -861,20 +860,8 @@ private fun MsSegmentedControl(
                                 requireUnconsumed = false,
                                 pass = PointerEventPass.Initial,
                             )
-                            // Grab-only rule (moon's 2026-11-07): the thumb
-                            // only drags when the finger starts ON the thumb
-                            // itself. A drag that starts on another segment
-                            // must NOT yank the thumb under the finger — it
-                            // just taps that segment instead. thumbX is the
-                            // thumb's LEFT edge; the thumb spans the full
-                            // height of the bar, so the check is the thumb's
-                            // horizontal span.
-                            val onThumb = down.position.x in thumbX.value..(thumbX.value + tabWidthPx) &&
-                                down.position.y in 0f..thumbHeightPx
-                            if (!onThumb) continue
                             var dragging = false
                             var accum = 0f
-                            val startX = thumbX.value
                             while (true) {
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
                                 val change = event.changes.firstOrNull { it.id == down.id }
@@ -901,9 +888,23 @@ private fun MsSegmentedControl(
                                 if (!dragging && kotlin.math.abs(accum) < 24f) continue
                                 dragging = true
                                 change.consume()
+                                // Thumb follows the finger EXACTLY (moon's
+                                // 2026-11-07, mpvRx video): its centre sits
+                                // under the finger, not offset from it.
+                                // thumbX is the thumb's LEFT edge, so the
+                                // centre is thumbX + tabWidthPx/2 — put
+                                // that centre on the finger's X. The old
+                                // code moved it by the finger's delta, so
+                                // the thumb kept its distance from the
+                                // finger. The jump under the finger happens
+                                // the moment the drag engages (past 24px);
+                                // a plain tap never engages, so it still
+                                // slides with the spring.
                                 scope.launch {
                                     val maxX = tabWidthPx * (segments.size - 1)
-                                    thumbX.snapTo((startX + accum).coerceIn(0f, maxX))
+                                    thumbX.snapTo(
+                                        (change.position.x - tabWidthPx / 2).coerceIn(0f, maxX)
+                                    )
                                 }
                             }
                         }

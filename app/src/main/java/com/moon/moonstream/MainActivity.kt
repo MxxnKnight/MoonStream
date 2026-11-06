@@ -461,10 +461,9 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // capsule centre at 636px). Keep this in sync with the
                 // Row's horizontal padding below.
                 val rowHPaddingPx = with(density) { 6.dp.toPx() }
-                // Capsule height (moon's 2026-11-07: taller top-to-bottom,
-                // same width). Kept as a value so the drag-grab check below
-                // uses the same number as the drawn capsule.
-                val capsuleHeightPx = with(density) { 54.dp.toPx() }
+                // (Capsule height is 54dp — moon's 2026-11-07: taller
+                // top-to-bottom, same width. Set in the capsule's .size()
+                // below.)
                 val pillCenterX = remember { Animatable(0f) }
                 val indW = remember { Animatable(0f) }
                 var indReady by remember { mutableStateOf(false) }
@@ -519,18 +518,6 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         requireUnconsumed = false,
                                         pass = PointerEventPass.Initial,
                                     )
-                                    // Grab-only rule (moon's 2026-11-07): the
-                                    // capsule only drags when the finger
-                                    // starts ON the capsule itself. A drag
-                                    // that starts on another tab must NOT
-                                    // yank the capsule under the finger — it
-                                    // just taps that tab instead. So if the
-                                    // down lands outside the capsule's rect,
-                                    // skip this gesture entirely.
-                                    val onCapsule = indW.value > 0f &&
-                                        kotlin.math.abs(down.position.x - pillCenterX.value) <= indW.value / 2 &&
-                                        kotlin.math.abs(down.position.y - size.height / 2) <= capsuleHeightPx / 2
-                                    if (!onCapsule) continue
                                     var accum = 0f
                                     var dragging = false
                                     // The capsule's centre when the drag
@@ -582,9 +569,24 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         if (!dragging && kotlin.math.abs(accum) < 24f) continue
                                         dragging = true
                                         change.consume()
-                                        // Drag the capsule with the finger,
-                                        // clamped to the first/last tab
-                                        // centres so it can't leave the bar.
+                                        // Capsule follows the finger EXACTLY
+                                        // (moon's 2026-11-07, mpvRx video):
+                                        // its centre sits under the finger,
+                                        // not offset from it. The old code
+                                        // moved it by the finger's delta
+                                        // (startCenterX + accum), so the
+                                        // capsule kept its distance from the
+                                        // finger — press on Channels and the
+                                        // capsule on Home would slide in
+                                        // parallel but never come under the
+                                        // finger. Now the centre IS the
+                                        // finger's X, clamped to the
+                                        // first/last tab centres so it can't
+                                        // leave the bar. The jump under the
+                                        // finger happens the moment the drag
+                                        // engages (past 24px); a plain tap
+                                        // never engages, so it still slides
+                                        // to the tab with the spring.
                                         // (Bounds are in Row-content coords;
                                         // add the padding to match pillCenterX.)
                                         val firstCenter = tabBounds.firstOrNull()?.center?.x
@@ -596,7 +598,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                             val maxCenter = lastCenter + rowHPaddingPx
                                             pillScope.launch {
                                                 pillCenterX.snapTo(
-                                                    (startCenterX + accum).coerceIn(minCenter, maxCenter)
+                                                    change.position.x.coerceIn(minCenter, maxCenter)
                                                 )
                                             }
                                         }
