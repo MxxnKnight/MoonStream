@@ -788,9 +788,9 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                         radius = 900f,
                     ),
                 )
-                .padding(20.dp),
+                .padding(16.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -817,6 +817,8 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White,
                         maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 
@@ -829,6 +831,10 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                         style = MaterialTheme.typography.displaySmall.doto(),
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                     Text(
                         text = "files",
@@ -842,22 +848,48 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
                         style = MaterialTheme.typography.bodyMedium.doto(),
                         fontWeight = FontWeight.SemiBold,
                         color = MsColors.TextSecondary,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(bottom = 6.dp),
                     )
                 }
 
                 // Breakdown owns the FULL width now — nothing competes with it.
-                Text(
-                    text = "${formatCount(stats.movies)} Movies  ·  " +
-                        "${formatCount(stats.shows)} Shows  ·  " +
-                        "${formatCount(stats.episodes)} Ep",
-                    style = MaterialTheme.typography.bodySmall.doto(),
-                    color = MsColors.TextSecondary,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
+                // Structured row (moon's 2026-11-06): even gaps, and only the
+                // last group shrinks — Movies/Shows are never cut mid-number.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth(),
-                )
+                ) {
+                    val breakStyle = MaterialTheme.typography.bodySmall.doto()
+                    Text(
+                        text = "${formatCount(stats.movies)} Movies",
+                        style = breakStyle,
+                        color = MsColors.TextSecondary,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                    Text(text = "·", style = breakStyle, color = MsColors.TextSecondary)
+                    Text(
+                        text = "${formatCount(stats.shows)} Shows",
+                        style = breakStyle,
+                        color = MsColors.TextSecondary,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                    Text(text = "·", style = breakStyle, color = MsColors.TextSecondary)
+                    Text(
+                        text = "${formatCount(stats.episodes)} Ep",
+                        style = breakStyle,
+                        color = MsColors.TextSecondary,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
 
                 // Latest indexed titles — one line, NoxMedia-style.
                 if (latest.isNotEmpty()) {
@@ -881,6 +913,10 @@ private fun formatCount(n: Int): String =
 
 private fun formatBytes(bytes: Long): String {
     if (bytes <= 0) return "0 B"
+    val pb = bytes / 1_125_899_906_842_624.0
+    if (pb >= 1) return String.format(Locale.US, "%.1f PB", pb)
+    val tb = bytes / 1_099_511_627_776.0
+    if (tb >= 1) return String.format(Locale.US, "%.1f TB", tb)
     val gb = bytes / 1_073_741_824.0
     if (gb >= 1) return String.format(Locale.US, "%.1f GB", gb)
     val mb = bytes / 1_048_576.0
