@@ -453,6 +453,14 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 val pillScope = rememberCoroutineScope()
                 val selIdx = tabs.indexOfFirst { it.screen == selectedTab }.coerceAtLeast(0)
                 val selBounds = tabBounds.getOrNull(selIdx) ?: Rect.Zero
+                // The tabs' bounds are measured relative to the Row's CONTENT
+                // area (after its 6dp horizontal padding), but the capsule
+                // is positioned relative to the bar (the Row's outer edge).
+                // Without this +6dp the capsule sat 6dp left of its tab
+                // (moon's 2026-11-07 screenshot: Channels icon at 653px,
+                // capsule centre at 636px). Keep this in sync with the
+                // Row's horizontal padding below.
+                val rowHPaddingPx = with(density) { 6.dp.toPx() }
                 val pillCenterX = remember { Animatable(0f) }
                 val indW = remember { Animatable(0f) }
                 var indReady by remember { mutableStateOf(false) }
@@ -463,7 +471,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // Snap into place on first measure, slide on every change.
                 LaunchedEffect(selIdx, selBounds) {
                     if (selBounds == Rect.Zero) return@LaunchedEffect
-                    val targetCenterX = selBounds.center.x
+                    val targetCenterX = selBounds.center.x + rowHPaddingPx
                     val targetW = selBounds.width
                     if (!indReady) {
                         pillCenterX.snapTo(targetCenterX)
@@ -524,7 +532,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                                 var best = Float.MAX_VALUE
                                                 tabBounds.forEachIndexed { i, bounds ->
                                                     if (bounds == Rect.Zero) return@forEachIndexed
-                                                    val d = kotlin.math.abs(bounds.center.x - pillCenterX.value)
+                                                    // Bounds are in Row-content coords;
+                                                    // pillCenterX is in bar coords (+padding).
+                                                    val d = kotlin.math.abs(
+                                                        (bounds.center.x + rowHPaddingPx) - pillCenterX.value
+                                                    )
                                                     if (d < best) {
                                                         best = d
                                                         nearest = i
@@ -535,11 +547,12 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                                 } else {
                                                     // Same tab: spring the
                                                     // capsule back home.
+                                                    // (Bounds are in Row-content
+                                                    // coords; add the padding.)
+                                                    val homeCenter = tabBounds.getOrNull(selIdx)?.center?.x
+                                                        ?.plus(rowHPaddingPx) ?: startCenterX
                                                     pillScope.launch {
-                                                        pillCenterX.animateTo(
-                                                            tabBounds.getOrNull(selIdx)?.center?.x ?: startCenterX,
-                                                            navSlideSpec,
-                                                        )
+                                                        pillCenterX.animateTo(homeCenter, navSlideSpec)
                                                     }
                                                 }
                                             }
@@ -556,9 +569,15 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         // Drag the capsule with the finger,
                                         // clamped to the first/last tab
                                         // centres so it can't leave the bar.
-                                        val minCenter = tabBounds.firstOrNull()?.center?.x ?: 0f
-                                        val maxCenter = tabBounds.lastOrNull()?.center?.x ?: 0f
-                                        if (minCenter != 0f && maxCenter != 0f) {
+                                        // (Bounds are in Row-content coords;
+                                        // add the padding to match pillCenterX.)
+                                        val firstCenter = tabBounds.firstOrNull()?.center?.x
+                                        val lastCenter = tabBounds.lastOrNull()?.center?.x
+                                        if (firstCenter != null && lastCenter != null
+                                            && firstCenter != 0f && lastCenter != 0f
+                                        ) {
+                                            val minCenter = firstCenter + rowHPaddingPx
+                                            val maxCenter = lastCenter + rowHPaddingPx
                                             pillScope.launch {
                                                 pillCenterX.snapTo(
                                                     (startCenterX + accum).coerceIn(minCenter, maxCenter)
