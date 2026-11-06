@@ -16,6 +16,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.width
@@ -289,33 +292,63 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             // screenshot — one dark bar (#1C1C1E) with a sliding gray
             // selection (#636365, both sampled from his screenshot).
             // Five EQUAL slots filling the bar, so all five tabs fit on
-            // screen at once like the old bar — no horizontal scroll, no
-            // auto-scroll. The scrolling version (0.15.123) made the tabs
-            // too wide (20dp padding) so HIDDEN fell off-screen, and the
-            // reveal auto-scroll slid the whole bar on every tap — that's
-            // the size and animation difference moon flagged. Now only the
-            // pill slides; the bar never moves.
+            // screen at once like the old bar. The pill HUGS the selected
+            // label (text width + a little), not the whole slot — moon
+            // flagged the slot-wide pill as bigger than the tab. And the
+            // animation is the ORIGINAL MsSegmentedControl's (0.15.120 and
+            // earlier): a BOUNCY spring (MediumBouncy/Medium), and you can
+            // press-and-drag the bar — the pill follows your finger and
+            // snaps to the nearest tab on release. That drag is the
+            // horizontal gesture moon missed in the fixed bar.
             val tabLabels = listOf("ALL", "MOVIES", "SERIES", "ANIME", "HIDDEN")
             val density = LocalDensity.current
             val tabBounds = remember { mutableStateMapOf<Int, Rect>() }
-            // Sliding selection pill, measured like the bottom pill's
-            // highlight: snap on first measure, spring on later switches.
+            val textWidthPx = remember { mutableStateMapOf<Int, Float>() }
+            // Pill target for a tab: the label centred in its slot, plus
+            // 8dp of gray on each side so it hugs the text.
+            val pillSidePx = with(density) { 8.dp.toPx() }
+            fun pillLeft(idx: Int): Float {
+                val tb = tabBounds[idx] ?: return 0f
+                val tw = textWidthPx[idx] ?: return 0f
+                return tb.left + (tb.width - tw) / 2 - pillSidePx
+            }
+            fun pillWidth(idx: Int): Float {
+                val tw = textWidthPx[idx] ?: return 0f
+                return tw + pillSidePx * 2
+            }
+            // Sliding selection pill: snap on first measure, spring after.
+            // Old bouncy spring (MediumBouncy/Medium) — the lively iOS
+            // overshoot, not the flat NoBouncy slide.
+            val oldSlideSpec = spring<Float>(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium,
+            )
             val selX = remember { Animatable(0f) }
             val selW = remember { Animatable(0f) }
             var selReady by remember { mutableStateOf(false) }
             val selBounds = tabBounds[segment] ?: Rect.Zero
             val pillInsetPx = with(density) { 4.dp.toPx() }
-            LaunchedEffect(segment, selBounds) {
-                if (selBounds == Rect.Zero) return@LaunchedEffect
-                val targetX = selBounds.left
-                val targetW = selBounds.width
+            LaunchedEffect(segment, selBounds, textWidthPx[segment]) {
+                val targetX = pillLeft(segment)
+                val targetW = pillWidth(segment)
+                if (targetX == 0f || targetW == 0f) return@LaunchedEffect
                 if (!selReady) {
                     selX.snapTo(targetX)
                     selW.snapTo(targetW)
                     selReady = true
                 } else {
-                    launch { selX.animateTo(targetX, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)) }
-                    selW.animateTo(targetW, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow))
+                    launch { selX.animateTo(targetX, oldSlideSpec) }
+                    selW.animateTo(targetW, oldSlideSpec)
+                }
+            }
+            // Drag the bar: the pill follows the finger, release snaps to
+            // the nearest tab (same as the old MsSegmented's draggable).
+            val dragState = rememberDraggableState { delta ->
+                scope.launch {
+                    val minX = pillLeft(0)
+                    val maxX = pillLeft(tabLabels.size - 1)
+                    if (minX == 0f || maxX == 0f) return@launch
+                    selX.snapTo((selX.value + delta).coerceIn(minX, maxX))
                 }
             }
             Box(
@@ -327,7 +360,32 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFF1C1C1E)),
+                        .background(Color(0xFF1C1C1E))
+                        .draggable(
+                            state = dragState,
+                            orientation = Orientation.Horizontal,
+                            onDragStopped = {
+                                // Snap to the nearest tab by pill centre.
+                                val centre = selX.value + selW.value / 2f
+                                var nearest = segment
+                                var best = Float.MAX_VALUE
+                                tabLabels.indices.forEach { i ->
+                                    val c = pillLeft(i) + pillWidth(i) / 2f
+                                    val d = kotlin.math.abs(c - centre)
+                                    if (d < best) {
+                                        best = d
+                                        nearest = i
+                                    }
+                                }
+                                if (nearest != segment) {
+                                    segment = nearest
+                                } else {
+                                    // Same tab: spring the pill back home.
+                                    selX.animateTo(pillLeft(segment), oldSlideSpec)
+                                    selW.animateTo(pillWidth(segment), oldSlideSpec)
+                                }
+                            },
+                        ),
                 ) {
                         // Sliding selection pill, behind the labels.
                         if (selReady) {
@@ -372,6 +430,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                                         fontWeight = if (segment == idx) FontWeight.SemiBold else FontWeight.Normal,
                                         fontSize = 15.sp,
                                         maxLines = 1,
+                                        onTextLayout = { textWidthPx[idx] = it.size.width.toFloat() },
                                     )
                                 }
                             }
