@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -444,11 +445,18 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                 .softWipe(pillOffsetPx, featherPx, widthPxF)
                                 .alpha(progress.coerceIn(0f, 1f)),
                         ) {
+                            // ON content is CENTERED in the card MINUS the swipe
+                            // pill (moon's 2026-11-06: the session pill looked
+                            // centre-aligned while the title and uptime/speed
+                            // sat left). The 84dp end padding reserves the
+                            // pill's width, so CenterHorizontally lands on the
+                            // centre of the pill-excluded area, not the card.
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(22.dp),
+                                    .padding(start = 22.dp, top = 22.dp, bottom = 22.dp, end = 22.dp + 84.dp),
                                 verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 val statusLabel = when (cardState) {
                                     ServerCardState.STARTING -> "Server Starting"
@@ -459,13 +467,10 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                     statusLabel,
                                     style = MaterialTheme.typography.titleLarge.copy(fontFamily = Doto),
                                     color = Color.White,
-                                    modifier = Modifier.padding(end = 84.dp),
                                 )
                                 Spacer(Modifier.height(14.dp))
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(end = 84.dp),
+                                    modifier = Modifier.wrapContentWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(24.dp),
                                 ) {
                                     Column(horizontalAlignment = Alignment.Start) {
@@ -492,7 +497,6 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(end = 84.dp)
                                         .clip(RoundedCornerShape(14.dp))
                                         .background(Color.Black.copy(alpha = 0.35f))
                                         .padding(vertical = 10.dp, horizontal = 14.dp),
