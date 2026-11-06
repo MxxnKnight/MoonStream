@@ -606,8 +606,6 @@ fun BareIconButton(
     }
 }
 
-/** Sheet content wrapper: title + body, mockup spacing. */
-@Composable
 /**
  * Tap-outside-to-unfocus (moon's 2026-11-06): tapping empty space inside
  * this container clears text-field focus (outline + keyboard go away).
@@ -622,6 +620,8 @@ fun Modifier.unfocusOnTapOutside(): Modifier {
     }
 }
 
+/** Sheet content wrapper: title + body, mockup spacing. */
+@Composable
 fun MsSheetContent(title: String, scrollable: Boolean = false, body: @Composable () -> Unit) {
     // Every bottom sheet gets tap-outside-to-unfocus (moon's 2026-11-06):
     // Fix Metadata search, Add Custom Stream / Subtitle fields, Add
