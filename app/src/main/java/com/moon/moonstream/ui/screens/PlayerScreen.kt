@@ -214,6 +214,13 @@ fun PlayerScreen(
     // Track if we're switching episodes (not closing) to avoid portrait flicker.
     var isSwitching by remember { mutableStateOf(false) }
 
+    // Scrub preview (moon's 2026-11-07): while the finger drags the
+    // seekbar, this holds the exact target time. The player seeks only
+    // once, when the finger lifts — live-seeking on every move
+    // re-buffered the stream each time, so the player could only land
+    // on a few coarse points and precise seeking was impossible.
+    var scrubMs by remember { mutableStateOf<Long?>(null) }
+
     // moon's rule: video plays in landscape + true fullscreen (like video players).
     // Orientation: landscape while playing. Keyed on streamFileId so it
     // re-applies when switching episodes (moon's bug 2026-11-02: Next
@@ -1303,7 +1310,10 @@ fun PlayerScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            formatTime(currentPosition),
+                            // While scrubbing, show the exact target time
+                            // (not the current position) so the seek lands
+                            // precisely where the finger is pointing.
+                            formatTime(scrubMs ?: currentPosition),
                             color = Color.White.copy(alpha = 0.9f),
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontFamily = FontFamily.Monospace
@@ -1327,6 +1337,7 @@ fun PlayerScreen(
                                 durationMs = duration,
                                 bufferFrac = bufferFrac,
                                 onSeek = { player.seekTo(it) },
+                                onScrubChange = { scrubMs = it },
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
@@ -2166,8 +2177,14 @@ private fun PlayerIconButton(
  * (Accent), buffered ahead (white 0.62, from the bytes actually downloaded
  * ahead) and remaining (white 0.20). The buffer is drawn as its own segment,
  * never hidden under a Slider track (the old Slider's active track is why
- * the buffer kept looking invisible). Tap anywhere to seek; drag to scrub
- * (seeks live, like the old Slider).
+ * the buffer kept looking invisible). Tap anywhere to seek; drag to scrub.
+ *
+ * Precise seeking (moon's 2026-11-07): the bar does NOT seek live while
+ * the finger moves. Every live seek re-buffered the stream, so the player
+ * could only land on a few coarse points (05:16 → 09:06 → 23:07) and
+ * precise seeking was impossible. Instead, dragging only moves a preview:
+ * the played fill follows the finger and onScrubChange reports the exact
+ * target time, and the player seeks ONCE when the finger lifts.
  */
 @Composable
 private fun MoonSeekBar(
@@ -2175,9 +2192,11 @@ private fun MoonSeekBar(
     durationMs: Long,
     bufferFrac: Float,
     onSeek: (Long) -> Unit,
+    onScrubChange: (Long?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var isScrubbing by remember { mutableStateOf(false) }
+    var scrubMs by remember { mutableStateOf<Long?>(null) }
     val barHeight by animateDpAsState(
         targetValue = if (isScrubbing) 10.dp else 4.dp,
         animationSpec = spring(
@@ -2189,6 +2208,12 @@ private fun MoonSeekBar(
     val posFrac = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
     } else 0f
+    // While scrubbing, the played fill follows the finger's target, not
+    // the actual playback position — so the bar shows exactly where the
+    // seek will land before the finger lifts.
+    val displayFrac = if (isScrubbing && scrubMs != null && durationMs > 0L) {
+        (scrubMs!!.toFloat() / durationMs).coerceIn(0f, 1f)
+    } else posFrac
     BoxWithConstraints(
         modifier = modifier
             .height(24.dp)
@@ -2199,9 +2224,13 @@ private fun MoonSeekBar(
                         isScrubbing = true
                         down.consume()
                         val w = size.width.toFloat()
-                        if (w > 0f && durationMs > 0L) {
-                            onSeek(((down.position.x / w).coerceIn(0f, 1f) * durationMs).toLong())
+                        fun targetMs(x: Float): Long? {
+                            if (w <= 0f || durationMs <= 0L) return null
+                            return ((x / w).coerceIn(0f, 1f) * durationMs).toLong()
                         }
+                        // Finger down: preview only, do NOT seek yet.
+                        scrubMs = targetMs(down.position.x)
+                        onScrubChange(scrubMs)
                         // Track the drag manually: awaitHorizontalDragOrCancellation
                         // takes no drag callback in this Compose version, so read
                         // pointer events until this finger lifts or cancels.
@@ -2211,15 +2240,17 @@ private fun MoonSeekBar(
                             val change = event.changes.firstOrNull { it.id == down.id }
                                 ?: continue
                             if (!change.pressed) {
-                                // Finger lifted or the gesture was cancelled.
+                                // Finger lifted: seek ONCE to the previewed spot.
                                 dragging = false
+                                scrubMs?.let { onSeek(it) }
                             } else {
                                 change.consume()
-                                if (w > 0f && durationMs > 0L) {
-                                    onSeek(((change.position.x / w).coerceIn(0f, 1f) * durationMs).toLong())
-                                }
+                                scrubMs = targetMs(change.position.x)
+                                onScrubChange(scrubMs)
                             }
                         }
+                        scrubMs = null
+                        onScrubChange(null)
                         isScrubbing = false
                     }
                 }
@@ -2245,12 +2276,12 @@ private fun MoonSeekBar(
                     .background(Color.White.copy(alpha = 0.62f)),
             )
         }
-        // Played fill.
-        if (posFrac > 0f) {
+        // Played fill (follows the scrub preview while dragging).
+        if (displayFrac > 0f) {
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .fillMaxWidth(posFrac)
+                    .fillMaxWidth(displayFrac)
                     .height(barHeight)
                     .clip(RoundedCornerShape(50))
                     .background(MsColors.Accent),
