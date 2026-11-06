@@ -4,8 +4,8 @@ import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.components.IosBottomSheet
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -16,14 +16,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -59,7 +57,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -70,14 +67,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInParent
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -288,155 +281,24 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             )
             Spacer(Modifier.height(16.dp))
 
-            // Filter tabs: the old iOS segmented bar, exactly as moon's
-            // screenshot — one dark bar (#1C1C1E) with a sliding gray
-            // selection (#636365, both sampled from his screenshot).
-            // Five EQUAL slots filling the bar, so all five tabs fit on
-            // screen at once like the old bar. The pill HUGS the selected
-            // label (text width + a little), not the whole slot — moon
-            // flagged the slot-wide pill as bigger than the tab. And the
-            // animation is the ORIGINAL MsSegmentedControl's (0.15.120 and
-            // earlier): a BOUNCY spring (MediumBouncy/Medium), and you can
-            // press-and-drag the bar — the pill follows your finger and
-            // snaps to the nearest tab on release. That drag is the
-            // horizontal gesture moon missed in the fixed bar.
-            val tabLabels = listOf("ALL", "MOVIES", "SERIES", "ANIME", "HIDDEN")
-            val density = LocalDensity.current
-            val tabBounds = remember { mutableStateMapOf<Int, Rect>() }
-            val textWidthPx = remember { mutableStateMapOf<Int, Float>() }
-            // Pill target for a tab: the label centred in its slot, plus
-            // 8dp of gray on each side so it hugs the text.
-            val pillSidePx = with(density) { 8.dp.toPx() }
-            fun pillLeft(idx: Int): Float {
-                val tb = tabBounds[idx] ?: return 0f
-                val tw = textWidthPx[idx] ?: return 0f
-                return tb.left + (tb.width - tw) / 2 - pillSidePx
-            }
-            fun pillWidth(idx: Int): Float {
-                val tw = textWidthPx[idx] ?: return 0f
-                return tw + pillSidePx * 2
-            }
-            // Sliding selection pill: snap on first measure, spring after.
-            // Old bouncy spring (MediumBouncy/Medium) — the lively iOS
-            // overshoot, not the flat NoBouncy slide.
-            val oldSlideSpec = spring<Float>(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessMedium,
+            // Filter tabs: the ORIGINAL iOS segmented bar, restored
+            // exactly (moon's reference screenshot, 2026-11-07). The pill
+            // is a rounded rectangle that fills the whole selected slot
+            // (36dp tall, 8dp corners) — NOT a round capsule hugging the
+            // text, and NOT a slot-wide flat slide. The thumb has ONE fixed
+            // size and only its X animates (bouncy spring), so the click
+            // animation is the clean iOS slide, not a stretching wobble.
+            // The bar is fixed — all five tabs visible, no scroll, no drag.
+            MsSegmentedControl(
+                segments = listOf("ALL", "MOVIES", "SERIES", "ANIME", "HIDDEN"),
+                selected = segment,
+                onSelect = {
+                    segment = it
+                    // Don't exit select mode on tab switch (moon's bug 2026-11-04:
+                    // selection must survive to allow cross-tab merge).
+                },
+                modifier = Modifier.padding(horizontal = 20.dp),
             )
-            val selX = remember { Animatable(0f) }
-            val selW = remember { Animatable(0f) }
-            var selReady by remember { mutableStateOf(false) }
-            val selBounds = tabBounds[segment] ?: Rect.Zero
-            val pillInsetPx = with(density) { 4.dp.toPx() }
-            LaunchedEffect(segment, selBounds, textWidthPx[segment]) {
-                val targetX = pillLeft(segment)
-                val targetW = pillWidth(segment)
-                if (targetX == 0f || targetW == 0f) return@LaunchedEffect
-                if (!selReady) {
-                    selX.snapTo(targetX)
-                    selW.snapTo(targetW)
-                    selReady = true
-                } else {
-                    launch { selX.animateTo(targetX, oldSlideSpec) }
-                    selW.animateTo(targetW, oldSlideSpec)
-                }
-            }
-            // Drag the bar: the pill follows the finger, release snaps to
-            // the nearest tab (same as the old MsSegmented's draggable).
-            val dragState = rememberDraggableState { delta ->
-                scope.launch {
-                    val minX = pillLeft(0)
-                    val maxX = pillLeft(tabLabels.size - 1)
-                    if (minX == 0f || maxX == 0f) return@launch
-                    selX.snapTo((selX.value + delta).coerceIn(minX, maxX))
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFF1C1C1E))
-                        .draggable(
-                            state = dragState,
-                            orientation = Orientation.Horizontal,
-                            onDragStopped = {
-                                // Snap to the nearest tab by pill centre.
-                                val centre = selX.value + selW.value / 2f
-                                var nearest = segment
-                                var best = Float.MAX_VALUE
-                                tabLabels.indices.forEach { i ->
-                                    val c = pillLeft(i) + pillWidth(i) / 2f
-                                    val d = kotlin.math.abs(c - centre)
-                                    if (d < best) {
-                                        best = d
-                                        nearest = i
-                                    }
-                                }
-                                if (nearest != segment) {
-                                    segment = nearest
-                                } else {
-                                    // Same tab: spring the pill back home.
-                                    selX.animateTo(pillLeft(segment), oldSlideSpec)
-                                    selW.animateTo(pillWidth(segment), oldSlideSpec)
-                                }
-                            },
-                        ),
-                ) {
-                        // Sliding selection pill, behind the labels.
-                        if (selReady) {
-                            Box(
-                                modifier = Modifier
-                                    .offset {
-                                        IntOffset(
-                                            selX.value.roundToInt(),
-                                            (selBounds.top + pillInsetPx).roundToInt(),
-                                        )
-                                    }
-                                    .size(
-                                        with(density) { selW.value.toDp() },
-                                        with(density) { (selBounds.height - pillInsetPx * 2).toDp() },
-                                    )
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color(0xFF636365)),
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            tabLabels.forEachIndexed { idx, label ->
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .onGloballyPositioned { coords ->
-                                            tabBounds[idx] = coords.boundsInParent()
-                                        }
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .clickable {
-                                            segment = idx
-                                            // Don't exit select mode on tab switch (moon's bug 2026-11-04:
-                                            // selection must survive to allow cross-tab merge).
-                                        }
-                                        .padding(vertical = 10.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        text = label,
-                                        color = if (segment == idx) Color.White else Color(0xFF98989F),
-                                        fontWeight = if (segment == idx) FontWeight.SemiBold else FontWeight.Normal,
-                                        fontSize = 15.sp,
-                                        maxLines = 1,
-                                        onTextLayout = { textWidthPx[idx] = it.size.width.toFloat() },
-                                    )
-                                }
-                            }
-                        }
-                }
-            }
             Spacer(Modifier.height(16.dp))
 
             Row(
@@ -912,6 +774,64 @@ private fun FilterRow(
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal,
                         color = if (isSel) MsColors.OnAccent else MsColors.TextSecondary,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Pill segmented control with a sliding accent thumb. */
+@Composable
+private fun MsSegmentedControl(
+    segments: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF1C1C1E))
+            .padding(2.dp),
+    ) {
+        val tabWidth = maxWidth / segments.size
+        val thumbOffset by animateDpAsState(
+            targetValue = tabWidth * selected,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium,
+            ),
+            label = "segmentThumb",
+        )
+        // iOS-style: selected thumb is lighter gray (moon's pick 2026-11-04).
+        Box(
+            modifier = Modifier
+                .offset(x = thumbOffset)
+                .size(width = tabWidth, height = 36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF636366)),
+        )
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            segments.forEachIndexed { i, label ->
+                val isSel = i == selected
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onSelect(i) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = label,
+                        color = Color.White,
+                        fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal,
+                        fontSize = 13.sp,
                         maxLines = 1,
                     )
                 }

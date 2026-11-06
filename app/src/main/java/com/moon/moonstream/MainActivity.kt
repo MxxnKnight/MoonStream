@@ -7,7 +7,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -418,16 +417,21 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // Basic black blur look (moon's request 2026-11-04): simple dark
                 // translucent pill like the reference — no GPU blur, light on RAM.
                 val pillShape = RoundedCornerShape(24.dp)
-                // Pill highlight (moon's pick 2026-11-06, Nuvio-style):
-                // a frosted capsule that hugs the selected tab and slides
-                // between tabs. The capsule is a proper horizontal stadium:
-                // FIXED 48dp tall (fits inside the ~57dp bar, never bulges
-                // past it) and as wide as the tab plus a little, fully
-                // rounded. It is vertically centered by the container's
-                // alignment — not by the tab's measured Y — so it can never
-                // drift high or low the way the 0.15.123 orb did. Only its
-                // centre X and its width animate (snap on first measure,
-                // spring on later switches). Tap and swipe both switch.
+                // Pill highlight — NUVIO geometry (moon's pick 2026-11-07):
+                // the selection FILLS the whole selected tab slot, like
+                // Nuvio's pill. The old versions failed because the bar
+                // was only as wide as the tab contents (no fillMaxWidth,
+                // no weight), so each slot was narrow and the capsule in
+                // it read as a rounded square — small and pure next to
+                // the bar. Now the bar spans the full width and the four
+                // tabs share it equally (weight 1f each), so a slot is
+                // ~75dp wide and ~46dp tall: the capsule filling it is a
+                // proper horizontal stadium (50dp tall, bar height minus
+                // 4dp top and bottom, fully rounded). Only its centre X
+                // and its width animate (snap on first measure, spring
+                // on later switches). It is vertically centered by the
+                // container's alignment, so it can never drift high or
+                // low the way the 0.15.123 orb did. Tap and swipe switch.
                 val density = LocalDensity.current
                 val tabBounds = remember {
                     mutableStateListOf<Rect>().apply {
@@ -436,7 +440,6 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 }
                 val selIdx = tabs.indexOfFirst { it.screen == selectedTab }.coerceAtLeast(0)
                 val selBounds = tabBounds.getOrNull(selIdx) ?: Rect.Zero
-                val pillSidePx = with(density) { 6.dp.toPx() }
                 val pillCenterX = remember { Animatable(0f) }
                 val indW = remember { Animatable(0f) }
                 var indReady by remember { mutableStateOf(false) }
@@ -448,7 +451,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 LaunchedEffect(selIdx, selBounds) {
                     if (selBounds == Rect.Zero) return@LaunchedEffect
                     val targetCenterX = selBounds.center.x
-                    val targetW = selBounds.width + pillSidePx * 2
+                    val targetW = selBounds.width
                     if (!indReady) {
                         pillCenterX.snapTo(targetCenterX)
                         indW.snapTo(targetW)
@@ -466,6 +469,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
                         .padding(start = 24.dp, end = 24.dp, bottom = 22.dp)
                         .pointerInput(selectedTab) {
                             // Swipe-to-switch (moon's 2026-11-06): the old
@@ -543,9 +547,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                 }
                                 .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape),
                         )
-                        // The sliding capsule (behind the tabs): fully
-                        // rounded, frosted white, fixed height so it stays
-                        // a horizontal capsule and never bulges past the bar.
+                        // The sliding capsule (behind the tabs): it fills
+                        // the whole selected slot — Nuvio's shape. Fully
+                        // rounded, frosted white, 50dp tall (bar height
+                        // minus 4dp top and bottom) so it reads as a wide
+                        // horizontal capsule, never a rounded square.
                         if (indReady) {
                             Box(
                                 modifier = Modifier
@@ -558,20 +564,22 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     }
                                     .size(
                                         with(density) { indW.value.toDp() },
-                                        48.dp,
+                                        50.dp,
                                     )
                                     .clip(RoundedCornerShape(50))
                                     .background(Color.White.copy(alpha = 0.22f)),
                             )
                         }
                         Row(
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 6.dp, vertical = 6.dp),
                         ) {
                         tabs.forEachIndexed { idx, tab ->
                             val selected = selectedTab == tab.screen
                             Column(
                                 modifier = Modifier
+                                    .weight(1f)
                                     .onGloballyPositioned { coords ->
                                         tabBounds[idx] = coords.boundsInParent()
                                     }
