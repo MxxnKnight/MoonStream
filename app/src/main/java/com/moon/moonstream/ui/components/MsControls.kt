@@ -2,6 +2,7 @@ package com.moon.moonstream.ui.components
 
 import com.moon.moonstream.index.tools.LibraryToolsRunner
 import com.moon.moonstream.ui.components.MsToast
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -17,6 +18,9 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.verticalScroll
@@ -100,8 +104,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.ui.theme.MsRadii
@@ -733,14 +739,16 @@ fun MsDropdown(
 }
 
 /**
- * Small pill segmented control for settings (poster style, anime numbering).
+ * Sliding-pill segmented control for settings (poster style, anime numbering).
  * Selected pill = accent fill + dark text; unselected = dark fill + gray text.
  *
- * Hardened (v0.5.2): labels can NEVER stack vertically. The track fills the
- * available width and scrolls horizontally if the segments overflow; each
- * segment keeps a minimum width and its label is single-line, no-wrap,
- * ellipsized. Whatever the labels, the worst case is a scrollable row —
- * never letter-by-letter vertical text.
+ * Rebuilt (moon's 2026-11-06): segments are EQUAL widths that fill the track
+ * (the old content-sized segments left dead space after short labels like
+ * "Absolute"), and the selected pill is one sliding indicator — it RUNS to
+ * the new option on tap (spring) instead of appearing there, and you can
+ * press-and-drag the pill (or swipe across the control) to switch: on
+ * release it snaps to the nearest segment. Labels stay single-line,
+ * no-wrap, ellipsized — they can never stack vertically.
  */
 @Composable
 fun MsSegmented(
@@ -752,40 +760,114 @@ fun MsSegmented(
      *  Fanart.tv poster option uses this until a key is saved. */
     disabled: Set<Int> = emptySet(),
 ) {
-    Row(
+    if (options.isEmpty()) return
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val padPx = with(density) { 4.dp.toPx() }
+    var trackWidthPx by remember { mutableIntStateOf(0) }
+    var rowHeightPx by remember { mutableIntStateOf(0) }
+
+    // Equal segments from the track width alone: segment i runs from
+    // i * segW to (i + 1) * segW inside the 4dp track padding.
+    val segW = if (trackWidthPx > 0) (trackWidthPx - 2 * padPx) / options.size else 0f
+    val pillW = (segW - 2 * padPx).coerceAtLeast(0f)
+    fun pillX(i: Int) = i.coerceIn(0, options.size - 1) * segW + padPx
+
+    val pillXAnim = remember { Animatable(0f) }
+    var pillReady by remember { mutableStateOf(false) }
+
+    // Snap into place on first measure, slide on every change after that.
+    LaunchedEffect(selected, segW) {
+        if (segW <= 0f) return@LaunchedEffect
+        val target = pillX(selected.coerceIn(options.indices))
+        if (!pillReady) {
+            pillXAnim.snapTo(target)
+            pillReady = true
+        } else {
+            pillXAnim.animateTo(
+                target,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+            )
+        }
+    }
+
+    val slideSpec = spring<Float>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessMediumLow,
+    )
+    val dragState = rememberDraggableState { delta ->
+        scope.launch {
+            pillXAnim.snapTo(
+                (pillXAnim.value + delta).coerceIn(pillX(0), pillX(options.size - 1)),
+            )
+        }
+    }
+
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
+            .onSizeChanged { trackWidthPx = it.width }
             .clip(CircleShape)
             .background(MsColors.SurfaceAlt)
+            .draggable(
+                state = dragState,
+                orientation = Orientation.Horizontal,
+                onDragStopped = {
+                    if (segW > 0f) {
+                        val center = pillXAnim.value + pillW / 2f
+                        val nearest = (center / segW).toInt()
+                            .coerceIn(0, options.size - 1)
+                        if (nearest != selected && nearest !in disabled) {
+                            onSelect(nearest) // LaunchedEffect slides the pill there.
+                        } else {
+                            pillXAnim.animateTo(pillX(selected), slideSpec)
+                        }
+                    }
+                },
+            )
             .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        options.forEachIndexed { i, label ->
-            val isSel = i == selected
-            val isDisabled = i in disabled
-            Box(
-                modifier = Modifier
-                    .defaultMinSize(minWidth = 96.dp)
-                    .clip(CircleShape)
-                    .background(if (isSel) MsColors.Accent else Color.Transparent)
-                    .clickable(enabled = !isDisabled) { onSelect(i) }
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
-                    color = when {
-                        isDisabled -> MsColors.TextSecondary.copy(alpha = 0.45f)
-                        isSel -> MsColors.OnAccent
-                        else -> MsColors.TextSecondary
-                    },
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        // The sliding pill (behind the labels).
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(pillXAnim.value.roundToInt(), 0) }
+                .width(with(density) { pillW.toDp() })
+                .height(with(density) { rowHeightPx.toDp() })
+                .clip(CircleShape)
+                .background(MsColors.Accent),
+        )
+        // Labels on top — equal segments, taps select.
+        Row(modifier = Modifier
+            .fillMaxWidth()
+            .onSizeChanged { rowHeightPx = it.height }) {
+            options.forEachIndexed { i, label ->
+                val isSel = i == selected
+                val isDisabled = i in disabled
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(CircleShape)
+                        .clickable(enabled = !isDisabled) { onSelect(i) }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                        color = when {
+                            isDisabled -> MsColors.TextSecondary.copy(alpha = 0.45f)
+                            isSel -> MsColors.OnAccent
+                            else -> MsColors.TextSecondary
+                        },
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
