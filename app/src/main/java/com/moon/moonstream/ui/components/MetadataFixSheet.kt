@@ -23,6 +23,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,6 +39,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,11 +48,11 @@ import coil.compose.AsyncImage
 import com.moon.moonstream.index.match.EnrichedMeta
 import com.moon.moonstream.index.match.MetadataMatcher
 import com.moon.moonstream.index.db.MsDatabase
+import com.moon.moonstream.index.parse.FilenameParser
 import com.moon.moonstream.index.parse.normalizeTitle
 import com.moon.moonstream.index.scan.ScanPrefs
 import com.moon.moonstream.ui.theme.MsColors
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -97,7 +101,20 @@ fun MetadataFixSheet(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var query by remember { mutableStateOf(initialQuery) }
+    val focusManager = LocalFocusManager.current
+    // Prefill with the CLEAN title (moon's 2026-11-06): the raw filename
+    // carries the @promo handle, quality tags and "- 10.mkv", which
+    // pollutes the search (and is too long to read in the box — the full
+    // filename is already shown just above the field). Parse it to the
+    // bare title, e.g. "Meesaya Murukku 2".
+    val initialSearch = remember(initialQuery, isAnime) {
+        FilenameParser.parse(initialQuery, isAnime, "").title.trim()
+            .ifBlank { initialQuery.trim() }
+    }
+    var query by remember { mutableStateOf(initialSearch) }
+    // True once a search has actually run for the current query — gates
+    // the "No results." line so it never shows while just typing.
+    var searched by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf<List<EnrichedMeta>>(emptyList()) }
     // IMDb IDs + normalized titles already in the library — for the "In library" badge
     // (moon's request 2026-11-01: know when an entry already exists).
@@ -115,19 +132,24 @@ fun MetadataFixSheet(
         FixMode.LINK -> "Link to Title"
     }
 
-    // Debounced live search.
-    LaunchedEffect(query, searchType) {
+    // Manual search (moon's 2026-11-06): the old debounced live search
+    // fired an API call on every keystroke — even clearing a letter —
+    // which burns the free TMDB/Cinemeta rate limits. Searches now run
+    // only when the user taps Search (or the keyboard's search key, or
+    // flips Movies/Series), plus once on open for the prefilled title.
+    fun runSearch() {
         searchJob?.cancel()
         selected = null
         if (query.isBlank()) {
             results = emptyList()
             searching = false
             noKeyHint = false
-            return@LaunchedEffect
+            searched = false
+            return
         }
+        searching = true
+        searched = true
         searchJob = scope.launch {
-            delay(450)
-            searching = true
             val key = ScanPrefs.getTmdbKey(context)
             // Cinemeta needs no key — only hint when TMDB is the sole source.
             noKeyHint = false
@@ -146,6 +168,9 @@ fun MetadataFixSheet(
             searching = false
         }
     }
+    // Once on open (covers the prefill), and again when the Movies/Series
+    // toggle flips.
+    LaunchedEffect(searchType) { runSearch() }
 
     IosBottomSheet(
         onDismissRequest = onDismiss,
@@ -162,20 +187,36 @@ fun MetadataFixSheet(
             )
             MsTextField(
                 value = query,
-                onValueChange = { query = it },
+                onValueChange = {
+                    query = it
+                    // Don't show stale results for a query that's no
+                    // longer in the box — they clear until Search is
+                    // tapped again.
+                    results = emptyList()
+                    selected = null
+                    searched = false
+                },
                 hint = "Search title or IMDb ID (e.g. tt0320661)",
                 modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(
+                    onSearch = {
+                        focusManager.clearFocus()
+                        runSearch()
+                    },
+                ),
                 trailingIcon = {
-                    // Paste button (moon's report 2026-11-02): long-press
-                    // paste is unreliable inside the bottom sheet, so offer
-                    // an explicit paste action for IMDb IDs.
-                    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                    // Search button (moon's 2026-11-06): searches run only
+                    // on tap, so the free APIs aren't burned on every
+                    // keystroke. The old Paste button is gone — long-press
+                    // paste works in the field itself (moon's video).
                     androidx.compose.material3.TextButton(
                         onClick = {
-                            clipboard.getText()?.text?.let { query = it.trim() }
+                            focusManager.clearFocus() // hide keyboard, show results
+                            runSearch()
                         }
                     ) {
-                        Text("Paste", color = MsColors.Accent)
+                        Text("Search", color = MsColors.Accent)
                     }
                 },
             )
@@ -227,7 +268,7 @@ fun MetadataFixSheet(
                         modifier = Modifier.padding(vertical = 8.dp),
                     )
                 }
-                results.isEmpty() && query.isNotBlank() -> {
+                results.isEmpty() && searched -> {
                     Text(
                         "No results.",
                         style = MaterialTheme.typography.bodyMedium,

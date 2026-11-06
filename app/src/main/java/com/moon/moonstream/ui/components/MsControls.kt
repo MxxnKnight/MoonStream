@@ -16,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -236,6 +237,7 @@ fun MsTextField(
     singleLine: Boolean = true,
     minLines: Int = 1,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
     trailingIcon: @Composable (() -> Unit)? = null,
 ) {
     // Single-line fields get a compact 48dp field so the box hugs the text
@@ -254,6 +256,7 @@ fun MsTextField(
             modifier = modifier,
             hint = hint,
             keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
             trailingIcon = trailingIcon,
         )
     } else {
@@ -268,6 +271,7 @@ fun MsTextField(
             singleLine = singleLine,
             minLines = minLines,
             keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
             shape = RoundedCornerShape(MsRadii.Field),
             trailingIcon = trailingIcon,
             colors = OutlinedTextFieldDefaults.colors(
@@ -295,6 +299,7 @@ private fun CompactTextField(
     modifier: Modifier = Modifier,
     hint: String = "",
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
     trailingIcon: @Composable (() -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -312,6 +317,7 @@ private fun CompactTextField(
         textStyle = MaterialTheme.typography.bodyMedium.copy(color = textColor),
         singleLine = true,
         keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
         cursorBrush = SolidColor(MsColors.Accent),
         interactionSource = interactionSource,
         decorationBox = { innerTextField ->
