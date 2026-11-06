@@ -104,6 +104,8 @@ object AppUiState {
     // the server streams video straight from Telegram, it doesn't cache it).
     var cacheUsedMb by mutableStateOf(0)
     var cacheMaxMb by mutableStateOf(2048)
+    /** MB of video the player downloads ahead (Settings "Buffer MB"). Default 20. */
+    var bufferMb by mutableStateOf(20)
     /** MB under filesDir/tdlib_files — bytes Telegram downloaded while playing video. Read-only. */
     var streamCacheMb by mutableStateOf(0)
 
@@ -135,6 +137,7 @@ object AppUiState {
         amoledCardBorders = prefs.getBoolean("amoled_card_borders", true)
         loggedIn = prefs.getBoolean("logged_in", false)
         cacheMaxMb = prefs.getInt("cache_max_mb", 2048).coerceAtLeast(0)
+        bufferMb = prefs.getInt("buffer_mb", 20).coerceAtLeast(0)
         currentIp = com.moon.moonstream.server.MoonStreamServer.getLocalIpAddress()
         if (logLines.isEmpty()) {
             seedFakeLogs()
@@ -193,6 +196,12 @@ object AppUiState {
         cacheMaxMb = mb.coerceAtLeast(0)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putInt("cache_max_mb", cacheMaxMb).apply()
+    }
+
+    fun setBufferMb(mb: Int, context: Context) {
+        bufferMb = mb.coerceAtLeast(0)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putInt("buffer_mb", bufferMb).apply()
     }
 
     /** Refresh the used-cache meter from the real cache dir size. */

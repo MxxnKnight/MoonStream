@@ -160,7 +160,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
 
     // --- Streaming & Storage state ---
     var cacheMb by remember { mutableStateOf(AppUiState.cacheMaxMb.toString()) }
-    var bufferMb by remember { mutableStateOf("20") }
+    var bufferMb by remember { mutableStateOf(AppUiState.bufferMb.toString()) }
     var maxSizeMb by remember { mutableStateOf("") }
     var minSearchMb by remember { mutableStateOf("") }
     var maxSearchMb by remember { mutableStateOf("") }
@@ -928,7 +928,12 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             ) {
                 MsTextField(
                     value = bufferMb,
-                    onValueChange = { bufferMb = it },
+                    onValueChange = {
+                        bufferMb = it
+                        it.toIntOrNull()?.let { mb ->
+                            if (mb >= 0) AppUiState.setBufferMb(mb, context)
+                        }
+                    },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.width(100.dp),
                 )

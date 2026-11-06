@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.SystemClock
 import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.cache.TdStreamCache
+import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.util.AppLog
 import java.io.File
 import java.io.IOException
@@ -142,7 +143,7 @@ internal class TdByteWindow(
         if (index == lastAdvanceIndex) return
         lastAdvanceIndex = index
         evictBefore(LowStorageWindow.keepFromChunk(index, fileSize), index)
-        prefetch(index + 1, LowStorageWindow.PREFETCH_CHUNKS)
+        prefetch(index + 1, LowStorageWindow.prefetchChunks(AppUiState.bufferMb))
         if (deletedSincePurge >= PURGE_AFTER_BYTES) purgeTelegramCopy()
     }
 
@@ -300,6 +301,23 @@ internal class TdByteWindow(
                 }
             }
         }
+    }
+
+    /**
+     * End byte of the contiguous downloaded run starting at [fromByte]'s
+     * chunk — i.e. how far ahead of the playhead the video is already on
+     * the phone. Only finished chunk files (.bin) count; a partial (.part)
+     * or missing chunk ends the run. Used by the player seekbar to show
+     * the buffered band the way mpv does (moon's 2026-11-06).
+     */
+    fun downloadedAheadBytes(fromByte: Long): Long {
+        var idx = LowStorageWindow.chunkIndex(fromByte.coerceAtLeast(0L))
+        while (true) {
+            val f = chunkFile(idx)
+            if (!f.exists() || f.length() <= 0L) break
+            idx++
+        }
+        return minOf(LowStorageWindow.chunkStart(idx), fileSize)
     }
 
     /**

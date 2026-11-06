@@ -31,6 +31,18 @@ object LowStorageWindow {
     /** How many chunks ahead of the play position to fetch in the background. */
     const val PREFETCH_CHUNKS = 2
 
+    /** Upper bound for prefetch (the window itself caps held bytes at 200 MB). */
+    const val MAX_PREFETCH_CHUNKS = 25
+
+    /**
+     * Chunks to prefetch for a Buffer MB setting: one chunk is 8 MB, so the
+     * Settings default of 20 MB is exactly today's 2 chunks. Pure arithmetic;
+     * the setting itself is wired in TdByteWindow.
+     */
+    fun prefetchChunks(bufferMb: Int): Int =
+        ((bufferMb.toLong() * 1024 * 1024) / CHUNK_BYTES).toInt()
+            .coerceIn(1, MAX_PREFETCH_CHUNKS)
+
     /**
      * Give up (and surface an error) after this many empty backend replies in
      * a row. With the player's exponential backoff this spends roughly 20 s

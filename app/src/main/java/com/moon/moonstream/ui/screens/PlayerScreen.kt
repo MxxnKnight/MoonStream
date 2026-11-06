@@ -20,7 +20,10 @@ import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -30,6 +33,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalDragOrCancellation
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -91,6 +96,7 @@ import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.player.MsDataSourceFactory
 import com.moon.moonstream.ui.player.PlayerUrls
 import com.moon.moonstream.ui.player.SubDelayPrefs
+import com.moon.moonstream.ui.player.TdDataSource
 import com.moon.moonstream.ui.player.TdStreamUri
 import com.moon.moonstream.ui.player.TdSubUri
 import com.moon.moonstream.ui.state.LanguagePrefs
@@ -889,6 +895,7 @@ fun PlayerScreen(
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var bufferedPosition by remember { mutableLongStateOf(0L) }
+    var bufferFrac by remember { mutableFloatStateOf(0f) }
     // Playback state UI (moon's bug 2026-11-02: black screen, no feedback).
     var isBuffering by remember { mutableStateOf(true) }
     var playerError by remember { mutableStateOf<String?>(null) }
@@ -940,6 +947,18 @@ fun PlayerScreen(
             while (true) {
                 currentPosition = player.currentPosition.coerceAtLeast(0L)
                 bufferedPosition = player.bufferedPosition.coerceAtLeast(0L)
+                // Buffer band (moon's 2026-11-06): prefer the bytes actually
+                // downloaded ahead (mpv-style) over ExoPlayer's ~50s sliver;
+                // fall back to ExoPlayer for http/server streams.
+                val td = TdDataSource.current
+                val winFrac = td?.downloadedAheadFraction(currentPosition, duration)
+                val exoFrac = if (duration > 0L) {
+                    (bufferedPosition.toFloat() / duration).coerceIn(0f, 1f)
+                } else 0f
+                val posFrac = if (duration > 0L) {
+                    (currentPosition.toFloat() / duration).coerceIn(0f, 1f)
+                } else 0f
+                bufferFrac = (winFrac ?: exoFrac).coerceAtLeast(posFrac).coerceIn(0f, 1f)
                 if (duration <= 0L) duration = player.duration.coerceAtLeast(0L)
                 delay(500)
             }
@@ -1309,58 +1328,18 @@ fun PlayerScreen(
                                 .padding(vertical = 2.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            // Buffer track (moon's request): white/gray behind the blue progress.
-                            // Fixed-height container so the buffer aligns with the Slider's track.
-                            // Visibility fix 2026-11-05: the old 25% → 50% white step on a
-                            // 4dp line over a dark player was effectively invisible, and on a
-                            // LAN/local stream `bufferedPosition` reaches 100% within a second,
-                            // so the whole track became one flat grey. The buffer now sits far
-                            // enough above the base track to read at a glance. Height stays 4dp
-                            // because Material3 1.1.1's slider track is exactly 4dp
-                            // (SliderTokens.ActiveTrackHeight) — both are centred in this 24dp box.
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(24.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                if (duration > 0L) {
-                                    val bufferFrac = (bufferedPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-                                    // Background track (dark)
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(4.dp)
-                                            .clip(RoundedCornerShape(2.dp))
-                                            .background(Color.White.copy(alpha = 0.20f)),
-                                    )
-                                    // Buffer fill (white/gray, behind the blue progress)
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(4.dp)
-                                            .clip(RoundedCornerShape(2.dp)),
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth(bufferFrac)
-                                                .fillMaxHeight()
-                                                .background(Color.White.copy(alpha = 0.62f)),
-                                        )
-                                    }
-                                }
-                                Slider(
-                                    value = currentPosition.toFloat(),
-                                    onValueChange = { player.seekTo(it.toLong()) },
-                                    valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = SliderDefaults.colors(
-                                        thumbColor = MsColors.Accent,
-                                        activeTrackColor = MsColors.Accent,
-                                        inactiveTrackColor = Color.Transparent,
-                                    ),
-                                )
-                            }
+                            // Mpv-style seekbar (moon's 2026-11-06): thin at rest,
+                            // thick while seeking; played / buffered / remaining
+                            // as three distinct shades. The buffer is its own
+                            // segment now — the old Slider's track is what kept
+                            // hiding it.
+                            MoonSeekBar(
+                                positionMs = currentPosition,
+                                durationMs = duration,
+                                bufferFrac = bufferFrac,
+                                onSeek = { player.seekTo(it) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                         }
                         Text(
                             if (showRemaining) {
@@ -2257,6 +2236,110 @@ private fun PlayerIconButton(
  * Shown when controls are locked and the user taps the screen.
  */
 @Composable
+/**
+ * Mpv-style seekbar (moon's 2026-11-06): thin (4dp) at rest, thick (10dp)
+ * while pressing/dragging to seek, with three distinct shades — played
+ * (Accent), buffered ahead (white 0.62, from the bytes actually downloaded
+ * ahead) and remaining (white 0.20). The buffer is drawn as its own segment,
+ * never hidden under a Slider track (the old Slider's active track is why
+ * the buffer kept looking invisible). Tap anywhere to seek; drag to scrub
+ * (seeks live, like the old Slider).
+ */
+@Composable
+private fun MoonSeekBar(
+    positionMs: Long,
+    durationMs: Long,
+    bufferFrac: Float,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var isScrubbing by remember { mutableStateOf(false) }
+    val barHeight by animateDpAsState(
+        targetValue = if (isScrubbing) 10.dp else 4.dp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "seekBarHeight",
+    )
+    val thumbSize by animateDpAsState(
+        targetValue = if (isScrubbing) 18.dp else 12.dp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "seekThumbSize",
+    )
+    val posFrac = if (durationMs > 0L) {
+        (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+    } else 0f
+    BoxWithConstraints(
+        modifier = modifier
+            .height(24.dp)
+            .pointerInput(durationMs) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val down = awaitFirstDown()
+                        isScrubbing = true
+                        down.consume()
+                        val w = size.width.toFloat()
+                        if (w > 0f && durationMs > 0L) {
+                            onSeek(((down.position.x / w).coerceIn(0f, 1f) * durationMs).toLong())
+                        }
+                        awaitHorizontalDragOrCancellation(down.id) { change ->
+                            change.consume()
+                            if (w > 0f && durationMs > 0L) {
+                                onSeek(((change.position.x / w).coerceIn(0f, 1f) * durationMs).toLong())
+                            }
+                        }
+                        isScrubbing = false
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        // Base track (remaining).
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(barHeight)
+                .clip(RoundedCornerShape(50))
+                .background(Color.White.copy(alpha = 0.20f)),
+        )
+        // Buffer fill, from the start to the downloaded-ahead point.
+        if (bufferFrac > 0f) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxWidth(bufferFrac.coerceIn(0f, 1f))
+                    .height(barHeight)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.62f)),
+            )
+        }
+        // Played fill.
+        if (posFrac > 0f) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxWidth(posFrac)
+                    .height(barHeight)
+                    .clip(RoundedCornerShape(50))
+                    .background(MsColors.Accent),
+            )
+        }
+        // Thumb at the playhead.
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset(x = (maxWidth - thumbSize) * posFrac)
+                .size(thumbSize)
+                .clip(RoundedCornerShape(50))
+                .background(MsColors.Accent),
+        )
+    }
+}
+
 private fun UnlockSlider(
     onUnlock: () -> Unit,
     modifier: Modifier = Modifier,

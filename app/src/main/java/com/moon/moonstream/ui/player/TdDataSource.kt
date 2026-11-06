@@ -93,11 +93,32 @@ object TdStreamUri {
 @UnstableApi
 class TdDataSource(private val context: Context) : BaseDataSource(true) {
 
+    companion object {
+        /** The TdDataSource currently serving the player, if any (one player at a time). */
+        @Volatile
+        var current: TdDataSource? = null
+            private set
+    }
+
     private var window: TdByteWindow? = null
     private var position = 0L
     private var bytesRemaining = 0L
     private var uri: Uri? = null
     private var headers: Map<String, List<String>> = emptyMap()
+    private var fileSize = -1L
+
+    /**
+     * Fraction of the file (0..1) downloaded contiguously from the playhead
+     * onward — the seekbar's buffer band. Null when this source isn't serving
+     * (no window). Byte fraction ≈ time fraction; the band is indicative.
+     */
+    fun downloadedAheadFraction(playheadMs: Long, durationMs: Long): Float? {
+        val w = window ?: return null
+        val size = fileSize
+        if (size <= 0L || durationMs <= 0L) return null
+        val playheadByte = (playheadMs.toDouble() / durationMs * size).toLong()
+        return (w.downloadedAheadBytes(playheadByte).toFloat() / size).coerceIn(0f, 1f)
+    }
 
     /**
      * Read-ahead for small reads.
@@ -138,6 +159,8 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
 
         TdStreamCache.markActive(parsed.channelId, parsed.messageId)
         window = TdByteWindow(context, parsed.channelId, parsed.messageId, size)
+        fileSize = size
+        current = this
         position = dataSpec.position
         bytesRemaining = if (dataSpec.length == C.LENGTH_UNSET.toLong()) {
             size - position
@@ -200,6 +223,7 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
         try {
             window?.release()
         } catch (e: Exception) { /* never break playback on close */ }
+        if (current == this) current = null
         window = null
         uri = null
         headers = emptyMap()
@@ -207,6 +231,7 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
         bytesRemaining = 0L
         aheadAt = -1L
         aheadLength = 0
+        fileSize = -1L
         transferEnded()
     }
 
