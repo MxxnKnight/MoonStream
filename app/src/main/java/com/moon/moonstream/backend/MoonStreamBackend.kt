@@ -101,6 +101,13 @@ interface MoonStreamBackend {
     /** The newest #MoonStreamBackup document in Saved Messages, or null. */
     suspend fun findLatestBackup(): BackupRef?
 
+    /**
+     * Fetch one backup message by its id (direct lookup, no text search).
+     * Used to verify an upload: a just-sent message isn't in Telegram's
+     * search index yet, so the search-based check missed it every time.
+     */
+    suspend fun getBackupMessage(messageId: Long): BackupRef? = null
+
     /** ALL #MoonStreamBackup documents in Saved Messages (newest first). */
     suspend fun findAllBackups(): List<BackupRef> = emptyList()
 

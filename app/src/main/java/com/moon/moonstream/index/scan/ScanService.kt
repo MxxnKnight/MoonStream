@@ -3,6 +3,7 @@ package com.moon.moonstream.index.scan
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -33,6 +34,7 @@ class ScanService : Service() {
     companion object {
         private const val TAG = "ScanService"
         private const val ACTION_START = "com.moon.moonstream.index.scan.START"
+        private const val ACTION_STOP = "com.moon.moonstream.index.scan.STOP"
         private const val NOTIF_ID = 42
         private const val CHANNEL_ID = "moonstream_scan"
 
@@ -65,6 +67,18 @@ class ScanService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Stop-scan (moon's 2026-11-07): the notification's Stop action
+        // and the Channels-screen Stop button land here. Cancel the scan
+        // work, drop the notification and stop the service at once —
+        // closing the app (or tapping Stop) now actually ends the scan.
+        if (intent?.action == ACTION_STOP) {
+            Log.i(TAG, "stop requested — cancelling scan")
+            running = false
+            scope.cancel()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (intent?.action != ACTION_START) return START_NOT_STICKY
         if (running) {
             Log.i(TAG, "scan already running — ignoring duplicate start")
@@ -196,7 +210,21 @@ class ScanService : Service() {
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_stat_scan)
             .setOngoing(true)
+            // Stop-scan (moon's 2026-11-07): a Stop action right on the
+            // notification, so the scan can be cancelled without
+            // reopening the app. FLAG_IMMUTABLE is required on Android 12+.
+            .addAction(R.drawable.ic_stat_stop, "Stop", stopPendingIntent())
             .build()
+
+    private fun stopPendingIntent(): PendingIntent {
+        val intent = Intent(this, ScanService::class.java).apply {
+            action = ACTION_STOP
+        }
+        return PendingIntent.getService(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
 
     private fun startForegroundCompat(notif: Notification) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

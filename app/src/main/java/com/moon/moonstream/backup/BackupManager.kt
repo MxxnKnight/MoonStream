@@ -72,7 +72,14 @@ object BackupManager {
             return PushResult(null, false)
         }
         log.i("BACKUP", "Push: uploaded new backup msg $msgId, verifying it is in Saved Messages")
-        val latest = runCatching { backend.findLatestBackup() }.getOrNull()
+        // Verify by direct fetch first (moon's 2026-11-07 fix): the old
+        // text-search check missed the just-sent message every time,
+        // because a new message isn't in Telegram's search index yet.
+        // GetMessage looks it up directly, so it works immediately.
+        // The text search stays as a fallback.
+        val direct = runCatching { backend.getBackupMessage(msgId) }.getOrNull()
+        val latest = if (direct?.messageId == msgId) direct
+        else runCatching { backend.findLatestBackup() }.getOrNull()
         if (latest?.messageId != msgId) {
             log.e(
                 "BACKUP",

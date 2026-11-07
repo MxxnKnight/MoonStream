@@ -71,6 +71,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -389,6 +390,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                         doneCount = doneCount,
                         total = scanMap.size.coerceAtLeast(channels.size),
                         onClick = ::scanAll,
+                        onStop = { ScanService.stop(context) },
                     )
                 }
             }
@@ -899,6 +901,7 @@ private fun ScanAllButton(
     doneCount: Int,
     total: Int,
     onClick: () -> Unit,
+    onStop: () -> Unit = {},
 ) {
     when {
         scanning -> {
@@ -925,6 +928,18 @@ private fun ScanAllButton(
                         .clip(RoundedCornerShape(2.dp)),
                     color = MsColors.Accent,
                     trackColor = MsColors.TrackOff,
+                )
+                // Stop-scan (moon's 2026-11-07): cancelling the scan
+                // ends the service and clears its notification at once.
+                Text(
+                    text = "Stop",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFFF453A),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable(onClick = onStop)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
                 )
             }
         }

@@ -302,6 +302,24 @@ class TdlibMoonStreamBackend(
         }
     }
 
+    override suspend fun getBackupMessage(messageId: Long): BackupRef? {
+        val chatId = getSavedMessagesChatId() ?: return null
+        return try {
+            // Direct fetch by id (moon's 2026-11-07 fix): unlike the
+            // text search, this works the moment the message is sent.
+            val res = telegramManager.send(TdApi.GetMessage(chatId, messageId))
+            if (res.isFailure) return null
+            val msg = res.getOrThrow()
+            if (msg.content !is TdApi.MessageDocument) return null
+            val doc = (msg.content as TdApi.MessageDocument).document
+            val fileId = doc.document?.id ?: return null
+            BackupRef(messageId = msg.id, fileId = fileId, date = msg.date.toLong())
+        } catch (e: Exception) {
+            Log.e("TdlibBackend", "getBackupMessage failed", e)
+            null
+        }
+    }
+
     override suspend fun findLatestBackup(): BackupRef? {
         val chatId = getSavedMessagesChatId() ?: return null
         return try {

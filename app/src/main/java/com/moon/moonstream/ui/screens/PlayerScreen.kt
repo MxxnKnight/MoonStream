@@ -811,12 +811,25 @@ fun PlayerScreen(
         }
     }
 
+    // Remember whether the video was playing when the app went to the
+    // background, so a MANUAL pause survives re-entry (moon's 2026-11-07:
+    // ON_RESUME used to play() unconditionally, restarting a video the
+    // user had paused on purpose). playWhenReady is the user's intent:
+    // false when they paused, true when it was playing (even while
+    // buffering).
+    var wasPlayingBeforePause by remember { mutableStateOf(false) }
+
     // Release on lifecycle destroy / dispose.
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_PAUSE -> player.pause()
-                Lifecycle.Event.ON_RESUME -> player.play()
+                Lifecycle.Event.ON_PAUSE -> {
+                    wasPlayingBeforePause = player.playWhenReady
+                    player.pause()
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    if (wasPlayingBeforePause) player.play()
+                }
                 else -> {}
             }
         }
@@ -888,6 +901,8 @@ fun PlayerScreen(
     var controlsLocked by remember { mutableStateOf(false) }
     var showUnlockPill by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
+    // Set when playback reaches the end (auto-play next reads this).
+    var isEnded by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var bufferedPosition by remember { mutableLongStateOf(0L) }
@@ -920,6 +935,34 @@ fun PlayerScreen(
                     playerError = null
                 } else if (state == Player.STATE_BUFFERING) {
                     isBuffering = true
+                }
+                // Auto-play next (moon's 2026-11-07): track ENDED so the
+                // auto-play effect below can start the next episode.
+                isEnded = (state == Player.STATE_ENDED)
+            }
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                // Save the spot the moment the user seeks (moon's
+                // 2026-11-07: the 5s loop alone could lose the spot if
+                // the player closed right after a seek). Covers every
+                // seek path at once — seekbar, ±10s buttons, double-tap.
+                // Only real seeks, and only past 10s (same rule as the
+                // 5s loop); the close handler still does the final save.
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                    val pos = player.currentPosition.coerceAtLeast(0L)
+                    val dur = player.duration.coerceAtLeast(0L)
+                    if (streamFileId != 0L && pos > 10_000L) {
+                        ioScope.launch(Dispatchers.IO) {
+                            try {
+                                db.watchProgressDao().updatePosition(
+                                    streamFileId, pos, dur, System.currentTimeMillis(),
+                                )
+                            } catch (e: Exception) { /* never break playback */ }
+                        }
+                    }
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
@@ -999,6 +1042,20 @@ fun PlayerScreen(
     val showNextUp = nextUpFile != null && !nextUpDismissed &&
         duration > 60_000L && duration - currentPosition in 1..30_000L
     val nextUpSecs = ((duration - currentPosition) / 1000).toInt().coerceAtLeast(0)
+
+    // Auto-play next episode (moon's 2026-11-07): when the video ends,
+    // start the next episode by itself — unless the user hid the NextUp
+    // card. The card already counts down ("Starting in Xs"); reaching 0
+    // is the video ending, so this fires right then. Movies and last
+    // episodes have no next file, so nothing happens for them.
+    LaunchedEffect(isEnded) {
+        if (!isEnded) return@LaunchedEffect
+        val next = nextUpFile
+        if (next != null && !nextUpDismissed) {
+            AppLog.i("PLAYER", "Auto-playing next episode: ${next.fileName}")
+            switchEpisode(next)
+        }
+    }
 
     Box(
         modifier = Modifier
