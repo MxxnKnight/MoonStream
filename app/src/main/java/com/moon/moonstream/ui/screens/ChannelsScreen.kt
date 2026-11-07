@@ -943,7 +943,11 @@ private fun ScanAllButton(
                 )
             }
         }
-        else -> LimePillButton(
+        // iOS secondary (moon's 2026-11-07): the top Scan All button
+        // was the one blue primary left on this screen — the other
+        // three actions are already gray pills with blue text. Making
+        // it match keeps the whole screen one consistent iOS style.
+        else -> MsOutlinePill(
             text = "Scan All Now",
             onClick = onClick,
             fontSize = 14,
