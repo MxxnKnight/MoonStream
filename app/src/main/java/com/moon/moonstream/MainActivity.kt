@@ -418,7 +418,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // blue selected, gray unselected. Keeps floating pill + swipe.
                 // Basic black blur look (moon's request 2026-11-04): simple dark
                 // translucent pill like the reference — no GPU blur, light on RAM.
-                val pillShape = RoundedCornerShape(24.dp)
+                // Full pill (moon's 2026-11-07: "more rounded like nuvio"):
+                // 50dp clamps to half the bar height, so the ends are true
+                // semicircles like Nuvio's bar — was 24dp, which left the
+                // ends visibly flatter than a capsule.
+                val pillShape = RoundedCornerShape(50)
                 // Pill highlight — NUVIO geometry (moon's pick 2026-11-07):
                 // the selection FILLS the whole selected tab slot, like
                 // Nuvio's pill. The old versions failed because the bar
@@ -665,13 +669,17 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     }
                                     .size(
                                         with(density) { indW.value.toDp() },
-                                        // 63dp (moon's 2026-11-07, taller
-                                        // again — was 58dp): the bar is
+                                        // 64dp (moon's 2026-11-07, bigger
+                                        // again — was 63dp): the bar is
                                         // ~65dp now (Row padding 10dp), so
-                                        // the capsule sits just 1dp from the
-                                        // bar's top/bottom ends. Library
-                                        // tabs thumb stays 36dp — untouched.
-                                        63.dp,
+                                        // the capsule sits just 0.5dp from
+                                        // the bar's top/bottom ends. Same
+                                        // full-pill shape as the bar
+                                        // (RoundedCornerShape 50), so its
+                                        // curved ends nest inside the bar's
+                                        // and never poke out. Library tabs
+                                        // thumb stays 36dp — untouched.
+                                        64.dp,
                                     )
                                     .clip(RoundedCornerShape(50))
                                     .background(Color.White.copy(alpha = 0.22f)),
