@@ -100,9 +100,12 @@ import com.moon.moonstream.ui.player.TdStreamUri
 import com.moon.moonstream.ui.player.TdSubUri
 import com.moon.moonstream.ui.state.LanguagePrefs
 import com.moon.moonstream.ui.theme.MsColors
+import com.moon.moonstream.index.scan.ScanPrefs
+import com.moon.moonstream.util.AnimeSkip
 import com.moon.moonstream.util.AppLog
 import com.moon.moonstream.util.AniSkip
 import com.moon.moonstream.util.IntroDb
+import com.moon.moonstream.util.SkipDb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1568,10 +1571,14 @@ fun PlayerScreen(
         }
 
         // Skip Intro button (moon's request 2026-11-02): Netflix-style pill
-        // at bottom-right. Anime → AniSkip (Kitsu ID), series/movies → IntroDB
-        // (IMDb ID). No manual fallback — no API data = no button.
+        // at bottom-right. Anime → AniSkip, then Anime Skip (both need the
+        // AniList id; Anime Skip also needs its client id in Settings →
+        // Metadata). Series/movies → IntroDB, then SkipDB (both need the
+        // IMDb id; SkipDB needs no key). No manual fallback — no API data
+        // = no button.
         var skipTimes by remember { mutableStateOf<AniSkip.SkipTimes?>(null) }
         var introSegs by remember { mutableStateOf<IntroDb.Segments?>(null) }
+        var skipSource by remember { mutableStateOf<String?>(null) }
         var skipFetched by remember { mutableStateOf(false) }
 
         // Fetch skip data once per episode.
@@ -1589,13 +1596,26 @@ fun PlayerScreen(
             } catch (e: Exception) { null }
             val isAnime = media?.type == "anime"
             val isMovie = media?.type == "movie"
-            // Anime → AniSkip via AniList ID (mapped from Kitsu at index).
+            // Anime → AniSkip via AniList ID (mapped from Kitsu at index),
+            // then Anime Skip when AniSkip has no opening.
             if (isAnime && ep != null && !media?.anilistId.isNullOrBlank()) {
                 val durSecs = duration.coerceAtLeast(1L) / 1000
-                skipTimes = AniSkip.getSkipTimes(media!!.anilistId!!, ep, durSecs)
+                val aniskip = AniSkip.getSkipTimes(media!!.anilistId!!, ep, durSecs)
+                if (aniskip?.opEnd != null) {
+                    skipTimes = aniskip
+                    skipSource = "AniSkip"
+                } else {
+                    val clientId = ScanPrefs.getAnimeSkipClientId(context)
+                    val animeskip = AnimeSkip.getSkipTimes(media.anilistId!!, season, ep, clientId)
+                    if (animeskip?.opEnd != null) {
+                        skipTimes = AniSkip.SkipTimes(animeskip.opStart, animeskip.opEnd, animeskip.edStart, animeskip.edEnd)
+                        skipSource = "AnimeSkip"
+                    }
+                }
                 return@LaunchedEffect
             }
-            // Series/movies → IntroDB via IMDb ID.
+            // Series/movies → IntroDB via IMDb ID, then SkipDB when IntroDB
+            // has no intro.
             val imdb = media?.imdbId
             if (!imdb.isNullOrBlank()) {
                 if (!isMovie && (season == null || ep == null)) {
@@ -1603,12 +1623,27 @@ fun PlayerScreen(
                     // it would 400. Log why instead of a silent failure.
                     AppLog.i("PLAYER", "Skip: no season/episode for series, IntroDB skipped (S=$season E=$ep)")
                 } else {
-                    introSegs = IntroDb.getSegments(
+                    val introdb = IntroDb.getSegments(
                         imdbId = imdb,
                         season = if (isMovie) null else season,
                         episode = if (isMovie) null else ep,
                         isMovie = isMovie,
                     )
+                    if (introdb?.introEndSec != null) {
+                        introSegs = introdb
+                        skipSource = "IntroDB"
+                    } else {
+                        val skipdb = SkipDb.getSegments(
+                            imdbId = imdb,
+                            season = if (isMovie) null else season,
+                            episode = if (isMovie) null else ep,
+                            isMovie = isMovie,
+                        )
+                        if (skipdb?.introEndSec != null) {
+                            introSegs = IntroDb.Segments(skipdb.introStartSec, skipdb.introEndSec, skipdb.outroStartSec, skipdb.outroEndSec)
+                            skipSource = "SkipDB"
+                        }
+                    }
                 }
             } else {
                 AppLog.i("PLAYER", "Skip: no anilistId/imdbId, no button")
@@ -1621,8 +1656,7 @@ fun PlayerScreen(
         val apiStartMs: Long = skipTimes?.opStart?.let { (it * 1000).toLong() }
             ?: introSegs?.introStartSec?.let { (it * 1000).toLong() }
             ?: 0L
-        val apiSource = if (skipTimes?.opEnd != null) "AniSkip"
-            else if (introSegs?.introEndSec != null) "IntroDB" else null
+        val apiSource = skipSource
         // Show ONLY during the actual intro from the API. No data = no button.
         val showSkipIntro = apiEndMs != null &&
             currentPosition in apiStartMs until apiEndMs &&
