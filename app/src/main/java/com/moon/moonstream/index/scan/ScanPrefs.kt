@@ -26,6 +26,13 @@ object ScanPrefs {
     // id of the private gist the backups live in.
     private const val KEY_GIST_TOKEN = "gist_token"
     private const val KEY_GIST_ID = "gist_id"
+    // Extra metadata/skip providers (moon's 2026-11-07): OMDb is a free
+    // API key (omdbapi.com, 1,000 calls/day) used as a last-resort
+    // metadata fallback. Anime Skip is a free client id (create one at
+    // anime-skip.com/account/api-clients) used as an extra anime
+    // skip-times source in the player.
+    private const val KEY_OMDB = "omdb_key"
+    private const val KEY_ANIMESKIP = "animeskip_client_id"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -65,6 +72,22 @@ object ScanPrefs {
 
     fun setFanartKey(context: Context, key: String) {
         prefs(context).edit().putString(KEY_FANART, key.trim()).apply()
+    }
+
+    /** OMDb personal API key (free, from omdbapi.com), or "". */
+    fun getOmdbKey(context: Context): String =
+        prefs(context).getString(KEY_OMDB, "") ?: ""
+
+    fun setOmdbKey(context: Context, key: String) {
+        prefs(context).edit().putString(KEY_OMDB, key.trim()).apply()
+    }
+
+    /** Anime Skip client id (free, from anime-skip.com/account/api-clients), or "". */
+    fun getAnimeSkipClientId(context: Context): String =
+        prefs(context).getString(KEY_ANIMESKIP, "") ?: ""
+
+    fun setAnimeSkipClientId(context: Context, id: String) {
+        prefs(context).edit().putString(KEY_ANIMESKIP, id.trim()).apply()
     }
 
     /** GitHub personal access token with the `gist` scope, or "". */

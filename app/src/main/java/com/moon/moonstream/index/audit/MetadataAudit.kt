@@ -41,6 +41,7 @@ object MetadataAudit {
     ): Report {
         val db = MsDatabase.get(context)
         val tmdbKey = ScanPrefs.getTmdbKey(context)
+        val omdbKey = ScanPrefs.getOmdbKey(context)
         val items = db.mediaDao().listVisible()
         val details = mutableListOf<String>()
         var moved = 0
@@ -89,6 +90,7 @@ object MetadataAudit {
                             parsed.title, parsed.year, type,
                             media.type == "anime", tmdbKey,
                             hasEpisode = parsed.episode != null,
+                            omdbKey = omdbKey,
                             )
                         }
                         }

@@ -83,6 +83,7 @@ object ScanManager {
         if (targets.isEmpty()) return
         val db = MsDatabase.get(context)
         val tmdbKey = ScanPrefs.getTmdbKey(context)
+        val omdbKey = ScanPrefs.getOmdbKey(context)
         // Anime numbering mode (moon's 2026-11-06 setting): Absolute counts
         // One Piece 1..1012, Seasonal uses S/E. Read once per run.
         val absoluteAnime = ScanPrefs.isAnimeAbsolute(context)
@@ -103,7 +104,7 @@ object ScanManager {
         try {
             targets.forEachIndexed { index, target ->
                 try {
-                    scanOneChannel(db, backend, target, mode, tmdbKey, metaCache, animeCache, absoluteAnime, posterStyle, fanartKey, fanartCache)
+                    scanOneChannel(db, backend, target, mode, tmdbKey, omdbKey, metaCache, animeCache, absoluteAnime, posterStyle, fanartKey, fanartCache)
                 } catch (e: Exception) {
                     Log.e(TAG, "channel ${target.channelId} failed: ${e.message}")
                     com.moon.moonstream.util.AppLog.e("SCAN", "Channel ${target.title} failed: ${e.message}")
@@ -136,6 +137,7 @@ object ScanManager {
         target: ScanTarget,
         mode: ScanMode,
         tmdbKey: String,
+        omdbKey: String,
         metaCache: MutableMap<String, EnrichedMeta?>,
         animeCache: MutableMap<String, Boolean>,
         absoluteAnime: Boolean,
@@ -248,7 +250,7 @@ object ScanManager {
                     unmatched++
                     continue
                 }
-                val matched = indexFile(db, target, msg.id, msg.fileName, msg.fileSize, parsed, tmdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache)
+                val matched = indexFile(db, target, msg.id, msg.fileName, msg.fileSize, parsed, tmdbKey, omdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache)
                 if (matched) {
                     indexed++
                 } else {
@@ -311,6 +313,7 @@ object ScanManager {
         fileSize: Long,
         parsed: ParsedMedia,
         tmdbKey: String,
+        omdbKey: String,
         metaCache: MutableMap<String, EnrichedMeta?>,
         animeCache: MutableMap<String, Boolean>,
         posterStyle: Int,
@@ -344,6 +347,7 @@ object ScanManager {
                 parsed.title, parsed.year, type, target.isAnime, tmdbKey,
                 hasEpisode = parsed.episode != null,
                 imdbId = parsed.imdbId,
+                omdbKey = omdbKey,
             )
             if (m?.imdbId != null) MetadataMatcher.enrichFromCinemeta(m, type) else m
         }

@@ -344,13 +344,14 @@ fun DetailScreen(
     fun applyFixTitle(picked: MetaPick) {
         scope.launch(Dispatchers.IO) {
             val key = ScanPrefs.getTmdbKey(context)
+            val omdbKey = ScanPrefs.getOmdbKey(context)
             // Use the PICKED type (the tab the result came from), not the
             // entry's old type — fixing a wrongly-typed entry (e.g. a series
             // indexed as a movie) must re-match as the correct type,
             // otherwise the matcher finds the old wrong title again and the
             // update appears to do nothing (moon's #Love case 2026-11-02).
             val targetType = picked.type ?: m.type
-            val full = MetadataMatcher.match(picked.title, picked.year, targetType, isAnime, key)
+            val full = MetadataMatcher.match(picked.title, picked.year, targetType, isAnime, key, omdbKey = omdbKey)
                 ?.let { MetadataMatcher.enrichFromCinemeta(it, targetType) }
             db.mediaDao().updateMetadata(
                 id = m.id,
@@ -412,7 +413,8 @@ fun DetailScreen(
             }
             if (target == null) {
                 val key = ScanPrefs.getTmdbKey(context)
-                val full = MetadataMatcher.match(picked.title, picked.year, targetType, isAnime, key)
+                val omdbKey = ScanPrefs.getOmdbKey(context)
+                val full = MetadataMatcher.match(picked.title, picked.year, targetType, isAnime, key, omdbKey = omdbKey)
                     ?.let { MetadataMatcher.enrichFromCinemeta(it, targetType) }
                 val newId = db.mediaDao().upsert(
                     MediaItemEntity(

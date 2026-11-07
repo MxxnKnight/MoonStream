@@ -1,6 +1,7 @@
 package com.moon.moonstream.index.match
 
 import android.util.Log
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -10,11 +11,13 @@ import java.net.URLEncoder
  * Phase 3 metadata matcher — written fresh for MoonStream.
  *
  * Resolution order (learned from NoxMedia / TeleStremio patterns):
- *  1. TMDB search — only when the user pasted an API key in Settings.
- *  2. Kitsu — anime channels, no key needed.
- *  3. Cinemeta — free IMDb-id lookup, no key needed (only when an IMDb id
- *     is already known, e.g. from TMDB's external ids).
- *  4. Nothing matched → null, and the caller still indexes the entry with
+ *  1. IMDb id in the filename/caption — exact, trusted over any search.
+ *  2. Anime: Kitsu (no key) → Jikan / MyAnimeList (no key).
+ *  3. TMDB search — only when the user pasted an API key in Settings.
+ *  4. Series: TVmaze (no key) — TV-focused, returns an IMDb id.
+ *  5. Cinemeta — free, no key needed.
+ *  6. OMDb — last resort, only when the user saved a key (1,000/day cap).
+ *  7. Nothing matched → null, and the caller still indexes the entry with
  *     its parsed title/year (title-only entry).
  *
  * Uses only HttpURLConnection + org.json — no extra dependencies.
@@ -55,6 +58,7 @@ object MetadataMatcher {
         tmdbKey: String,
         hasEpisode: Boolean = false,
         imdbId: String? = null,
+        omdbKey: String = "",
     ): EnrichedMeta? {
         // An IMDb id in the filename/caption is exact — trust it over any search.
         if (!imdbId.isNullOrBlank()) {
@@ -73,6 +77,11 @@ object MetadataMatcher {
                     com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → Kitsu: ${it.title}")
                     return it
                 }
+                // Kitsu missed it — Jikan (MyAnimeList, no key) is the anime fallback.
+                tryJikan(title)?.let {
+                    com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → Jikan: ${it.title}")
+                    return it
+                }
             }
             if (tmdbKey.isNotBlank()) {
                 tryTmdb(title, year, type, tmdbKey)?.let {
@@ -80,9 +89,25 @@ object MetadataMatcher {
                     return it
                 }
             }
+            // Series fallback: TVmaze is keyless and TV-focused (episode
+            // lists, air dates, and an IMDb id per show).
+            if (type == "series") {
+                tryTvMaze(title, year)?.let {
+                    com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → TVmaze: ${it.title}")
+                    return it
+                }
+            }
             tryCinemeta(title, type, year)?.let {
                 com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → Cinemeta: ${it.title}")
                 return it
+            }
+            // Last resort: OMDb, only when the user saved a key — the free
+            // tier is capped at 1,000 calls/day.
+            if (omdbKey.isNotBlank()) {
+                tryOmdb(title, year, type, omdbKey)?.let {
+                    com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → OMDb: ${it.title}")
+                    return it
+                }
             }
             com.moon.moonstream.util.AppLog.w("MATCH", "No match for '$title'")
             null
@@ -421,6 +446,126 @@ object MetadataMatcher {
         return best?.takeIf { bestScore >= 0.55 }
     }
 
+    // ---------- TVmaze (TV only, no key) ----------
+    // Keyless TV metadata: episode lists, air dates, cast, and an IMDb id
+    // per show. Series fallback when TMDB has no key or no match.
+    // Rate limit ~20 calls / 10s per IP; the per-run match cache means
+    // one call per distinct title, so a normal scan stays well under it.
+    private fun tryTvMaze(title: String, year: String?): EnrichedMeta? {
+        val q = URLEncoder.encode(title, "UTF-8")
+        val arr = getJsonArray("https://api.tvmaze.com/search/shows?q=$q") ?: return null
+        val wantYear = year?.take(4)?.toIntOrNull()
+        var best: EnrichedMeta? = null
+        var bestScore = 0.55
+        for (i in 0 until arr.length()) {
+            val show = arr.optJSONObject(i)?.optJSONObject("show") ?: continue
+            val name = show.optString("name").takeIf { it.isNotBlank() } ?: continue
+            val sim = similarity(title, name)
+            val candYear = show.optString("premiered").take(4).toIntOrNull()
+            val score = if (wantYear == null || candYear == null) sim
+            else if (candYear == wantYear) sim + 0.35
+            else if (kotlin.math.abs(candYear - wantYear) > 1) sim - 0.35
+            else sim
+            if (score > bestScore) {
+                bestScore = score
+                val image = show.optJSONObject("image")
+                val poster = image?.optString("medium")?.takeIf { it.isNotBlank() }
+                    ?: image?.optString("original")?.takeIf { it.isNotBlank() }
+                // TVmaze summaries are HTML (<p>, <b>…) — strip the tags.
+                val summary = show.optString("summary").takeIf { it.isNotBlank() }
+                    ?.replace(Regex("<[^>]*>"), "")?.trim()?.takeIf { it.isNotBlank() }
+                val imdb = show.optJSONObject("externals")?.optString("imdb")
+                    ?.takeIf { it.startsWith("tt") }
+                best = EnrichedMeta(
+                    title = name,
+                    year = candYear?.toString(),
+                    overview = summary,
+                    posterUrl = poster,
+                    backdropUrl = null,
+                    imdbId = imdb,
+                    tmdbId = null,
+                    confidence = score.coerceIn(0.0, 1.0),
+                )
+            }
+        }
+        return best
+    }
+
+    // ---------- Jikan (MyAnimeList, anime, no key) ----------
+    // Free MyAnimeList API, no key. 3 req/s and 60 req/min; as a
+    // fallback (only called when Kitsu finds nothing) and with the
+    // per-run match cache, a normal scan stays under it.
+    private fun tryJikan(title: String): EnrichedMeta? {
+        val q = URLEncoder.encode(title, "UTF-8")
+        val root = getJson("https://api.jikan.moe/v4/anime?q=$q&limit=5") ?: return null
+        val data = root.optJSONArray("data") ?: return null
+        var best: EnrichedMeta? = null
+        var bestScore = 0.55
+        var bestTitle = ""
+        for (i in 0 until data.length()) {
+            val item = data.optJSONObject(i) ?: continue
+            val candidates = listOfNotNull(
+                item.optString("title"),
+                item.optString("title_english"),
+            ).filter { it.isNotBlank() }
+            for (c in candidates) {
+                val s = similarity(title, c)
+                if (s > bestScore) {
+                    bestScore = s
+                    bestTitle = c
+                    val images = item.optJSONObject("images")?.optJSONObject("jpg")
+                    val poster = images?.optString("large_image_url")?.takeIf { it.isNotBlank() }
+                        ?: images?.optString("image_url")?.takeIf { it.isNotBlank() }
+                    val y = item.optInt("year", -1).takeIf { it > 0 }?.toString()
+                    best = EnrichedMeta(
+                        title = bestTitle,
+                        year = y,
+                        overview = item.optString("synopsis").takeIf { it.isNotBlank() },
+                        posterUrl = poster,
+                        backdropUrl = null,
+                        imdbId = null,
+                        tmdbId = null,
+                        confidence = s.coerceIn(0.0, 1.0),
+                    )
+                }
+            }
+        }
+        return best
+    }
+
+    // ---------- OMDb (last resort, free key, 1,000 calls/day) ----------
+    // IMDb + Rotten Tomatoes + Metacritic in one call. Only used as a
+    // last resort (after Cinemeta) and only when the user saved a key,
+    // because the free tier is capped at 1,000 calls/day. The per-run
+    // match cache means one call per distinct title.
+    private fun tryOmdb(title: String, year: String?, type: String, apiKey: String): EnrichedMeta? {
+        if (apiKey.isBlank()) return null
+        val q = URLEncoder.encode(title, "UTF-8")
+        val yearParam = if (!year.isNullOrBlank()) "&y=${year.take(4)}" else ""
+        val kind = if (type == "movie") "movie" else "series"
+        val root = getJson("https://www.omdbapi.com/?apikey=$apiKey&t=$q$yearParam&type=$kind")
+            ?: return null
+        if (!root.optString("Response").equals("True", ignoreCase = true)) return null
+        val name = root.optString("Title").takeIf { it.isNotBlank() && it != "N/A" } ?: return null
+        val sim = similarity(title, name)
+        if (sim < 0.55) return null
+        val imdb = root.optString("imdbID").takeIf { it.startsWith("tt") }
+        val poster = root.optString("Poster").takeIf { it.isNotBlank() && it != "N/A" }
+        val plot = root.optString("Plot").takeIf { it.isNotBlank() && it != "N/A" }
+        // OMDb series years can be a range ("2019–2023") — take the start.
+        val y = root.optString("Year").take(4).toIntOrNull()?.toString() ?: year?.take(4)
+        return EnrichedMeta(
+            title = name,
+            year = y,
+            overview = plot,
+            posterUrl = poster,
+            backdropUrl = null,
+            imdbId = imdb,
+            tmdbId = null,
+            confidence = sim.coerceIn(0.0, 1.0),
+        )
+    }
+
     private fun tryKitsu(
         title: String,
         preferSeries: Boolean = false,
@@ -548,6 +693,30 @@ object MetadataMatcher {
         } catch (e: Exception) {
             Log.d(TAG, "GET failed $url: ${e.message}")
             com.moon.moonstream.util.AppLog.w("MATCH", "Request to ${runCatching { URL(url).host }.getOrDefault("?")} failed: ${e.javaClass.simpleName} ${e.message}")
+            null
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    /** Same as getJson but for endpoints that return a top-level JSON array (TVmaze). */
+    private fun getJsonArray(url: String, headers: Map<String, String> = emptyMap()): JSONArray? {
+        var conn: HttpURLConnection? = null
+        return try {
+            conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = TIMEOUT_MS
+                readTimeout = TIMEOUT_MS
+                setRequestProperty("User-Agent", UA)
+                headers.forEach { (k, v) -> setRequestProperty(k, v) }
+            }
+            if (conn.responseCode != HttpURLConnection.HTTP_OK) {
+                com.moon.moonstream.util.AppLog.w("MATCH", "HTTP ${conn.responseCode} from ${URL(url).host}")
+                return null
+            }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            if (body.isBlank()) null else JSONArray(body)
+        } catch (e: Exception) {
+            Log.d(TAG, "GET failed $url: ${e.message}")
             null
         } finally {
             conn?.disconnect()

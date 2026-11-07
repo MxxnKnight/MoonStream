@@ -147,6 +147,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     // --- Metadata state (persisted via ScanPrefs so the scanner uses them) ---
     var tmdbKey by remember { mutableStateOf(ScanPrefs.getTmdbKey(context)) }
     var tvdbKey by remember { mutableStateOf(ScanPrefs.getTvdbKey(context)) }
+    var omdbKey by remember { mutableStateOf(ScanPrefs.getOmdbKey(context)) }
+    var animeSkipClientId by remember { mutableStateOf(ScanPrefs.getAnimeSkipClientId(context)) }
     var fanartKey by remember { mutableStateOf(ScanPrefs.getFanartKey(context)) }
     // The key that is actually saved — the Fanart.tv option is gated on
     // this, not on the (possibly unsaved) text field above.
@@ -750,7 +752,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                "Movies: TMDB → Cinemeta · Series: TVDB → Cinemeta → TMDB · Anime: Kitsu → TVDB → TMDB → Cinemeta. The app tries each source in order until one knows the title.",
+                "Movies: TMDB → Cinemeta → OMDb · Series: TMDB → TVmaze → Cinemeta → OMDb · Anime: Kitsu → Jikan → TMDB → Cinemeta → OMDb. The app tries each source in order until one knows the title.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
                 modifier = Modifier.padding(vertical = 8.dp),
@@ -798,8 +800,46 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     MsOutlinePill(text = "Verify", fontSize = 13, onClick = { fakeVerify() })
                 }
             }
+            SettingBlock(
+                title = "OMDb API key",
+                info = "Free key from omdbapi.com — the last-resort metadata lookup when nothing else knows a title. Free tier is 1,000 calls a day, so the app only asks it after TMDB, TVmaze and Cinemeta have all missed. Also returns IMDb, Rotten Tomatoes and Metacritic ratings.",
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MsTextField(
+                        value = omdbKey,
+                        onValueChange = { omdbKey = it; ScanPrefs.setOmdbKey(context, it) },
+                        hint = "Paste key",
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    MsOutlinePill(
+                        text = "Save",
+                        fontSize = 13,
+                        onClick = { ScanPrefs.setOmdbKey(context, omdbKey); MsToast.show("Saved") },
+                    )
+                }
+            }
+            SettingBlock(
+                title = "Anime Skip client ID",
+                info = "Free client ID from anime-skip.com (create an account, then API Clients) — an extra anime skip-times source in the player. When AniSkip has no opening/ending times for an episode, the player checks Anime Skip next.",
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MsTextField(
+                        value = animeSkipClientId,
+                        onValueChange = { animeSkipClientId = it; ScanPrefs.setAnimeSkipClientId(context, it) },
+                        hint = "Paste client ID",
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    MsOutlinePill(
+                        text = "Save",
+                        fontSize = 13,
+                        onClick = { ScanPrefs.setAnimeSkipClientId(context, animeSkipClientId); MsToast.show("Saved") },
+                    )
+                }
+            }
             Text(
-                "Kitsu and Cinemeta need no key — they work out of the box.",
+                "Kitsu, Cinemeta, TVmaze, Jikan and SkipDB need no key — they work out of the box.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MsColors.TextSecondary,
                 modifier = Modifier.padding(vertical = 6.dp),
