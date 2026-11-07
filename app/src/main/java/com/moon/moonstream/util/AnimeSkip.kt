@@ -140,7 +140,7 @@ object AnimeSkip {
                 return e.optString("id").takeIf { it.isNotBlank() }
             }
         }
-        null
+        return null
     }
 
     private fun findTimestamps(episodeId: String, clientId: String): SkipTimes? {
