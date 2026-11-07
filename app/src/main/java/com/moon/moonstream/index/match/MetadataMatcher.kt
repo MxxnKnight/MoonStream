@@ -93,6 +93,23 @@ object MetadataMatcher {
         }
     }
 
+    /**
+     * Auto-detect: is this title an anime? (moon's 2026-11-07)
+     * Checks Kitsu (the anime database). Returns true only on a strong
+     * title match (confidence >= 0.75, the same bar as indexing) so a
+     * vaguely-similar non-anime title never flips to the Anime tab.
+     * Covers anime series AND anime movies — Kitsu lists both.
+     * Never throws — any failure means "not anime".
+     */
+    fun isAnimeTitle(title: String, hasEpisode: Boolean = false): Boolean {
+        if (title.isBlank()) return false
+        return try {
+            (tryKitsu(title, preferSeries = hasEpisode)?.confidence ?: 0.0) >= 0.75
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     // ---------- TMDB ----------
 
     private fun tryTmdb(

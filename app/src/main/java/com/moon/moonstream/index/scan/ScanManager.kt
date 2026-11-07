@@ -93,13 +93,17 @@ object ScanManager {
         val fanartCache = mutableMapOf<Int, String?>()
         // Metadata lookups are cached per run: one title = one set of API calls.
         val metaCache = mutableMapOf<String, EnrichedMeta?>()
+        // Anime auto-detect (moon's 2026-11-07): one Kitsu check per
+        // normalized title per run, so a title with many files is only
+        // checked once.
+        val animeCache = mutableMapOf<String, Boolean>()
 
         com.moon.moonstream.util.AppLog.i("SCAN", "Starting scan of ${targets.size} channel(s)")
         ScanUiState.beginRun(targets.map { it.channelId to it.title })
         try {
             targets.forEachIndexed { index, target ->
                 try {
-                    scanOneChannel(db, backend, target, mode, tmdbKey, metaCache, absoluteAnime, posterStyle, fanartKey, fanartCache)
+                    scanOneChannel(db, backend, target, mode, tmdbKey, metaCache, animeCache, absoluteAnime, posterStyle, fanartKey, fanartCache)
                 } catch (e: Exception) {
                     Log.e(TAG, "channel ${target.channelId} failed: ${e.message}")
                     com.moon.moonstream.util.AppLog.e("SCAN", "Channel ${target.title} failed: ${e.message}")
@@ -133,6 +137,7 @@ object ScanManager {
         mode: ScanMode,
         tmdbKey: String,
         metaCache: MutableMap<String, EnrichedMeta?>,
+        animeCache: MutableMap<String, Boolean>,
         absoluteAnime: Boolean,
         posterStyle: Int,
         fanartKey: String,
@@ -243,7 +248,7 @@ object ScanManager {
                     unmatched++
                     continue
                 }
-                val matched = indexFile(db, target, msg.id, msg.fileName, msg.fileSize, parsed, tmdbKey, metaCache, posterStyle, fanartKey, fanartCache)
+                val matched = indexFile(db, target, msg.id, msg.fileName, msg.fileSize, parsed, tmdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache)
                 if (matched) {
                     indexed++
                 } else {
@@ -307,12 +312,32 @@ object ScanManager {
         parsed: ParsedMedia,
         tmdbKey: String,
         metaCache: MutableMap<String, EnrichedMeta?>,
+        animeCache: MutableMap<String, Boolean>,
         posterStyle: Int,
         fanartKey: String,
         fanartCache: MutableMap<Int, String?>,
     ): Boolean {
-        val type = if (target.isAnime) "anime" else parsed.type
         val norm = normalizeTitle(parsed.title)
+        var type = if (target.isAnime) "anime" else parsed.type
+        if (!target.isAnime && type != "anime" && norm.isNotBlank()) {
+            // Auto-detect anime (moon's 2026-11-07): a title in a
+            // non-anime channel that Kitsu knows goes to the Anime tab
+            // on its own — series AND anime movies (Kitsu lists both).
+            // Cached per normalized title, so it's one Kitsu call per
+            // new title, not per file. Only applies to NEW files: the
+            // scanner skips already-indexed rows, so anime already in
+            // Series stays there until moved with the Detail-screen
+            // button (or a from-scratch rescan).
+            val detected = animeCache.getOrPut(norm) {
+                MetadataMatcher.isAnimeTitle(parsed.title, parsed.episode != null)
+            }
+            if (detected) {
+                com.moon.moonstream.util.AppLog.i(
+                    "MATCH", "'${parsed.title}' auto-detected as anime → Anime tab",
+                )
+                type = "anime"
+            }
+        }
         val cacheKey = "$norm|$type|${parsed.year ?: ""}|${parsed.imdbId ?: ""}"
         val meta = metaCache.getOrPut(cacheKey) {
             val m = MetadataMatcher.match(
