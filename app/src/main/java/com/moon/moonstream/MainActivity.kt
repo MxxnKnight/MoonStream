@@ -624,18 +624,27 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                 .hazeEffect(hazeState) {
                                     style = HazeStyle(
                                         // Black-tinted backdrop blur (moon's
-                                        // AMOLED pick): darker base + stronger
-                                        // black tint so the pill reads
-                                        // black-frosted, with the blurred
-                                        // content still showing through.
-                                        backgroundColor = Color.Black.copy(alpha = 0.68f),
-                                        tint = HazeTint(Color.Black.copy(alpha = 0.35f)),
-                                        blurRadius = 18.dp,
+                                        // AMOLED pick, blacker 2026-11-07):
+                                        // darker base + stronger black tint
+                                        // so the pill reads black-frosted,
+                                        // with the blurred content still
+                                        // showing through.
+                                        backgroundColor = Color.Black.copy(alpha = 0.75f),
+                                        tint = HazeTint(Color.Black.copy(alpha = 0.55f)),
+                                        // Smaller radius (was 18dp): cheaper
+                                        // to blur, and the darker tint hides
+                                        // the softer frost.
+                                        blurRadius = 12.dp,
                                     )
-                                    // Half-resolution blur input (25% of the
-                                    // pixels to blur) — the main RAM/GPU
-                                    // saving on low-end phones.
-                                    inputScale = HazeInputScale.Fixed(0.5f)
+                                    // LOW-SETTINGS blur (moon's 2026-11-07:
+                                    // lag-free on his low-budget phone):
+                                    // quarter-resolution blur input — only
+                                    // 1/16th of the pixels to blur (was
+                                    // half-resolution, 1/4th). That is the
+                                    // main RAM/GPU saving; the darker tint
+                                    // above keeps it looking black-frosted
+                                    // even at this low resolution.
+                                    inputScale = HazeInputScale.Fixed(0.25f)
                                 }
                                 .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape),
                         )
@@ -656,12 +665,13 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     }
                                     .size(
                                         with(density) { indW.value.toDp() },
-                                        // 58dp (moon's 2026-11-07): the
-                                        // capsule's top/bottom sit a little
-                                        // closer to the bar's ends now
-                                        // (was 54dp). Library tabs thumb
-                                        // stays 36dp — untouched.
-                                        58.dp,
+                                        // 63dp (moon's 2026-11-07, taller
+                                        // again — was 58dp): the bar is
+                                        // ~65dp now (Row padding 10dp), so
+                                        // the capsule sits just 1dp from the
+                                        // bar's top/bottom ends. Library
+                                        // tabs thumb stays 36dp — untouched.
+                                        63.dp,
                                     )
                                     .clip(RoundedCornerShape(50))
                                     .background(Color.White.copy(alpha = 0.22f)),
@@ -670,10 +680,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                // Vertical padding 8dp (was 6dp): the taller
-                                // 54dp capsule needs the extra room so it
-                                // doesn't touch the bar's top/bottom edges.
-                                .padding(horizontal = 6.dp, vertical = 8.dp),
+                                // Vertical padding 10dp (was 8dp): the
+                                // taller 63dp capsule needs the extra room
+                                // so it sits 1dp from the bar's top/bottom
+                                // ends without poking out.
+                                .padding(horizontal = 6.dp, vertical = 10.dp),
                         ) {
                         tabs.forEachIndexed { idx, tab ->
                             val selected = selectedTab == tab.screen
