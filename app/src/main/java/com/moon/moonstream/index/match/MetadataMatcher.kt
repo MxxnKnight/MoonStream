@@ -104,7 +104,9 @@ object MetadataMatcher {
     fun isAnimeTitle(title: String, hasEpisode: Boolean = false): Boolean {
         if (title.isBlank()) return false
         return try {
-            (tryKitsu(title, preferSeries = hasEpisode)?.confidence ?: 0.0) >= 0.75
+            // resolveIds=false: the auto-detect only needs the confidence,
+            // so it skips the extra Kitsu→AniList lookup per title.
+            (tryKitsu(title, preferSeries = hasEpisode, resolveIds = false)?.confidence ?: 0.0) >= 0.75
         } catch (_: Exception) {
             false
         }
@@ -419,7 +421,11 @@ object MetadataMatcher {
         return best?.takeIf { bestScore >= 0.55 }
     }
 
-    private fun tryKitsu(title: String, preferSeries: Boolean = false): EnrichedMeta? {
+    private fun tryKitsu(
+        title: String,
+        preferSeries: Boolean = false,
+        resolveIds: Boolean = true,
+    ): EnrichedMeta? {
         val q = URLEncoder.encode(title, "UTF-8")
         val url = "https://kitsu.io/api/edge/anime?filter[text]=$q&page[limit]=5"
         val root = getJson(url, mapOf("Accept" to "application/vnd.api+json")) ?: return null
@@ -428,6 +434,11 @@ object MetadataMatcher {
         var best: JSONObject? = null
         var bestScore = 0.55
         var bestTitle = ""
+        // The Kitsu id lives on the search-result item (not in attributes),
+        // so track it alongside the best match — the automatic indexer
+        // used to drop it, leaving kitsuId/anilistId blank in the DB and
+        // AniSkip (which needs the AniList id) never called for anime.
+        var bestKitsuId: String? = null
         for (i in 0 until data.length()) {
             val attr = data.optJSONObject(i)?.optJSONObject("attributes") ?: continue
             val candidates = listOfNotNull(
@@ -447,6 +458,8 @@ object MetadataMatcher {
                     bestScore = s
                     best = attr
                     bestTitle = attr.optString("canonicalTitle").ifBlank { c }
+                    bestKitsuId = data.optJSONObject(i)?.optString("id")
+                        ?.takeIf { it.isNotBlank() }
                 }
             }
         }
@@ -457,6 +470,11 @@ object MetadataMatcher {
             ?.takeIf { it.isNotBlank() }
         val cover = best.optJSONObject("coverImage")?.optString("large")
             ?.takeIf { it.isNotBlank() }
+        // Map Kitsu → AniList (same as the manual search) so the DB gets
+        // both ids and the player can call AniSkip. Skipped for the
+        // auto-detect check (resolveIds=false), which only needs the
+        // confidence and shouldn't pay for an extra lookup per title.
+        val anilistId = if (resolveIds) bestKitsuId?.let { lookupAnilistId(it) } else null
         return EnrichedMeta(
             title = bestTitle.ifBlank { title },
             year = Regex("""^(\d{4})""").find(startDate)?.groupValues?.get(1),
@@ -465,6 +483,8 @@ object MetadataMatcher {
             backdropUrl = cover,
             imdbId = null,
             tmdbId = null,
+            kitsuId = bestKitsuId,
+            anilistId = anilistId,
             confidence = bestScore.coerceIn(0.0, 1.0),
         )
     }
