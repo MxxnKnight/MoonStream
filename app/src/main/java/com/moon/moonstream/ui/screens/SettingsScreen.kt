@@ -12,9 +12,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.util.AppLog
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1552,8 +1558,24 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         }
     }
 
-    if (AppUiState.settingsRoute == null) {
-        // Main settings list: one tappable row per section.
+    // Directional slide between the main list and a section (moon's
+    // 2026-11-09): a section slides in from the right, back to the list
+    // slides in from the left. Only the incoming content animates (the
+    // old one is dropped at once), so it stays light on a low-end phone.
+    AnimatedContent(
+        targetState = AppUiState.settingsRoute,
+        transitionSpec = {
+            val dir = if (targetState != null) 1 else -1
+            (slideInHorizontally(
+                initialOffsetX = { fullWidth -> dir * fullWidth },
+                animationSpec = tween(220, easing = FastOutSlowInEasing),
+            ) + fadeIn(tween(220))) togetherWith ExitTransition.None
+        },
+        label = "settingsRoute",
+        modifier = Modifier.fillMaxSize(),
+    ) { route ->
+        if (route == null) {
+            // Main settings list: one tappable row per section.
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1621,7 +1643,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     onClick = { AppUiState.settingsRoute = null },
                 )
                 Text(
-                    AppUiState.settingsRoute!!,
+                    route!!,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MsColors.TextPrimary,
@@ -1632,7 +1654,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             androidx.compose.foundation.layout.Box(
                 modifier = Modifier.weight(1f),
             ) {
-                when (AppUiState.settingsRoute) {
+                when (route) {
                     "Server" -> ServerSection()
                     "Scanning & Matching" -> ScanningSection()
                     "Metadata" -> MetadataSection()
@@ -1646,6 +1668,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 }
             }
         }
+    }
     }
 
     if (showWhatsNew) {
