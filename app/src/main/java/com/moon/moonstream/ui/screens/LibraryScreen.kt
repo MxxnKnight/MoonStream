@@ -3,14 +3,20 @@ package com.moon.moonstream.ui.screens
 import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.components.IosBottomSheet
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -356,19 +362,45 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     ) {
         Column(Modifier.fillMaxSize()) {
             LibraryHeader()
-            if (filtered.isEmpty()) {
-                // Plain-words empty states — never a fake grid.
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.Center,
-                ) {
+            // Directional slide when switching segments (moon's
+            // 2026-11-09, pick 2): the grid slides in from the side
+            // you're moving toward (right tab from the right, left tab
+            // from the left), matching the screen slide. Only the
+            // incoming grid animates (the old one is dropped at once),
+            // so it stays light on a low-end phone.
+            AnimatedContent(
+                targetState = segment,
+                transitionSpec = {
+                    val dir = when {
+                        targetState > initialState -> 1
+                        targetState < initialState -> -1
+                        else -> 0
+                    }
+                    if (dir == 0) {
+                        fadeIn(tween(110)) togetherWith ExitTransition.None
+                    } else {
+                        (slideInHorizontally(
+                            initialOffsetX = { fullWidth -> dir * fullWidth },
+                            animationSpec = tween(220, easing = FastOutSlowInEasing),
+                        ) + fadeIn(tween(220))) togetherWith ExitTransition.None
+                    }
+                },
+                label = "librarySegment",
+                modifier = Modifier.weight(1f),
+            ) { seg ->
+                if (filtered.isEmpty()) {
+                    // Plain-words empty states — never a fake grid.
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
                     Text(
                         text = when {
                             allItems.isEmpty() -> "No titles yet — scan a channel to build your library."
-                            segment == 4 -> "Nothing hidden."
-                            segment == 1 -> "No movies yet."
-                            segment == 2 -> "No series yet."
-                            segment == 3 -> "No anime yet."
+                            seg == 4 -> "Nothing hidden."
+                            seg == 1 -> "No movies yet."
+                            seg == 2 -> "No series yet."
+                            seg == 3 -> "No anime yet."
                             else -> "Nothing matches your search or filters."
                         },
                         style = MaterialTheme.typography.bodyMedium,
@@ -384,7 +416,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 120.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxSize(),
                 ) {
                     items(filtered, key = { it.id }) { item ->
                         val isSelected = selectedIds.contains(item.id)
@@ -425,6 +457,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                         )
                     }
                 }
+            }
             }
         }
 
