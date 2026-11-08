@@ -699,7 +699,27 @@ fun PlayerScreen(
         // sources (and lose the resume choice) mid-load.
         if (streamFileId != 0L && !filesLoaded) return@LaunchedEffect
         val isFirst = !mediaReady
-        val pos = if (isFirst) 0L else player.currentPosition.coerceAtLeast(0L)
+        // Resume fix (moon's bug 2026-11-09): load the saved spot BEFORE
+        // preparing and pass it as the media item's start position.
+        // ExoPlayer then seeks to it natively once the timeline is ready.
+        // The old separate seekTo() after prepare() fired while the source
+        // was still loading (slow first chunk, cue reads) and got lost, so
+        // playback started at 0. A start position can't get lost that way.
+        val saved = if (isFirst && streamFileId != 0L) {
+            withContext(Dispatchers.IO) {
+                try {
+                    db.watchProgressDao().get(mediaId, streamFileId)?.positionMs ?: 0L
+                } catch (e: Exception) { 0L }
+            }
+        } else 0L
+        // Auto-resume (moon's pick 2026-11-06): any saved spot over 10s
+        // jumps straight to it on open — no prompt box. To start over,
+        // drag the seekbar back to the beginning.
+        val pos = if (isFirst) {
+            if (saved > 10_000L) saved else 0L
+        } else {
+            player.currentPosition.coerceAtLeast(0L)
+        }
         val keepPlaying = if (isFirst) false else player.isPlaying
         player.setMediaItem(buildMediaItem(playUri, subPairs), pos)
         // Language picks are applied per media item (a new item resets tracks).
@@ -730,24 +750,10 @@ fun PlayerScreen(
         player.prepare()
         if (isFirst) {
             mediaReady = true
-            if (streamFileId == 0L) {
-                player.play()
-                return@LaunchedEffect
-            }
-            val saved = withContext(Dispatchers.IO) {
-                try {
-                    db.watchProgressDao().get(mediaId, streamFileId)?.positionMs ?: 0L
-                } catch (e: Exception) { 0L }
-            }
-            // Auto-resume (moon's pick 2026-11-06): any saved spot over
-            // 10s jumps straight to it on open — no prompt box. To start
-            // over, drag the seekbar back to the beginning.
             if (saved > 10_000L) {
-                player.seekTo(saved)
-                player.play()
-            } else {
-                player.play()
+                AppLog.i("PLAYER", "Resume: starting at ${saved / 1000}s (saved spot)")
             }
+            player.play()
         } else if (keepPlaying) {
             player.play()
         }
@@ -1686,6 +1692,33 @@ fun PlayerScreen(
                 ),
             ) {
                 Text("Skip Intro", fontWeight = FontWeight.Bold)
+            }
+        }
+
+        // Resume button (moon's request 2026-11-09): bottom-left, above the
+        // seekbar, mirroring Skip Intro on the right. Shows when there's a
+        // saved spot and we're still near the start — so even if auto-resume
+        // didn't jump, one tap takes him to where he left off. Hides once
+        // he's at/past the spot (or taps it).
+        if (savedResumePos > 10_000L &&
+            currentPosition < savedResumePos - 10_000L &&
+            !controlsLocked
+        ) {
+            Button(
+                onClick = {
+                    player.seekTo(savedResumePos)
+                    AppLog.i("PLAYER", "Resume button: ${currentPosition / 1000}s → ${savedResumePos / 1000}s")
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 16.dp, bottom = 100.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MsColors.Accent,
+                    contentColor = MsColors.OnAccent,
+                ),
+            ) {
+                Text("Resume ${formatTime(savedResumePos)}", fontWeight = FontWeight.Bold)
             }
         }
 
