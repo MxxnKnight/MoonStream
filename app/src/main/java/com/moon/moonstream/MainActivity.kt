@@ -82,6 +82,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -246,6 +247,19 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
         else -> current
     }
 
+    // Tab index for a screen, for the directional slide: Detail -> Library,
+    // Create -> Channels, Logs -> Settings; -1 for screens with no tab
+    // (Splash/Login/Player), which keep the plain fade.
+    fun AppScreen.tabIndex(): Int {
+        val tab = when (this) {
+            is AppScreen.Detail -> AppScreen.Library
+            is AppScreen.Create -> AppScreen.Channels
+            AppScreen.Logs -> AppScreen.Settings
+            else -> this
+        }
+        return tabs.indexOfFirst { it.screen == tab }
+    }
+
     // No going back from Splash or Login.
     BackHandler(enabled = backStack.size > 1 && current !is AppScreen.Splash && current !is AppScreen.Login) {
         backStack.removeLast()
@@ -282,11 +296,33 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
             AnimatedContent(
                 targetState = current,
                 transitionSpec = {
-                    // Cheap switch: the new screen fades in quickly and the old
-                    // one is dropped at once, so only ONE heavy screen is alive
-                    // during the animation (the old slide+fade composed and
-                    // drew two full screens at the same time).
-                    fadeIn(tween(110)) togetherWith ExitTransition.None
+                    // Directional slide, iOS style but cheap for a low-end
+                    // phone (moon's 2026-11-09): the new screen slides in
+                    // from the side its tab sits on — a switch to the right
+                    // comes from the right, to the left from the left — so
+                    // the direction always matches the pill. Only the
+                    // INCOMING screen animates; the old one is dropped at
+                    // once (ExitTransition.None), so only ONE heavy screen
+                    // is alive during the switch. A true iOS slide keeps
+                    // both screens drawing at once, which stuttered on
+                    // this phone before; this keeps the direction without
+                    // that cost. Non-tab screens (Splash/Login/Player)
+                    // and same-tab moves keep the plain fast fade.
+                    val fromIdx = initialState.tabIndex()
+                    val toIdx = targetState.tabIndex()
+                    val dir = when {
+                        fromIdx < 0 || toIdx < 0 || fromIdx == toIdx -> 0
+                        toIdx > fromIdx -> 1
+                        else -> -1
+                    }
+                    if (dir == 0) {
+                        fadeIn(tween(110)) togetherWith ExitTransition.None
+                    } else {
+                        (slideInHorizontally(
+                            initialOffsetX = { fullWidth -> dir * fullWidth },
+                            animationSpec = tween(220, easing = FastOutSlowInEasing),
+                        ) + fadeIn(tween(220))) togetherWith ExitTransition.None
+                    }
                 },
                 label = "screenSwitch",
                 modifier = Modifier.fillMaxSize().hazeSource(hazeState),
