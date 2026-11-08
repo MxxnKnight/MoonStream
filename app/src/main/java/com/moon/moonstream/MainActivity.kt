@@ -480,6 +480,17 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 val pillCenterX = remember { Animatable(0f) }
                 val indW = remember { Animatable(0f) }
                 var indReady by remember { mutableStateOf(false) }
+                // One running capsule animation at a time (moon's bug
+                // 2026-11-09: the capsule landed on the wrong tab).
+                // The slide-to-tab, the drag catch-up and the release
+                // snap-back all move pillCenterX, and they run in
+                // different scopes (LaunchedEffect vs pillScope), so a
+                // stale drag animation could outlive the gesture and
+                // drag the capsule back to the old tab after the
+                // selection already changed. Every capsule animation
+                // goes through this holder: a new one cancels the old,
+                // so only the latest move runs.
+                val capsuleAnim = remember { object { var job: Job? = null } }
                 val navSlideSpec = spring<Float>(
                     dampingRatio = Spring.DampingRatioNoBouncy,
                     stiffness = Spring.StiffnessMediumLow,
@@ -494,7 +505,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         indW.snapTo(targetW)
                         indReady = true
                     } else {
-                        launch { pillCenterX.animateTo(targetCenterX, navSlideSpec) }
+                        // Cancel any drag animation still running — a
+                        // tap's catch-up or snap-back can outlive the
+                        // gesture and fight this slide to the new tab.
+                        capsuleAnim.job?.cancel()
+                        capsuleAnim.job = launch { pillCenterX.animateTo(targetCenterX, navSlideSpec) }
                         indW.animateTo(targetW, navSlideSpec)
                     }
                 }
@@ -533,13 +548,6 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     )
                                     var accum = 0f
                                     var dragging = false
-                                    // Catch-up slide (moon's 2026-11-07):
-                                    // the Job animating the capsule to the
-                                    // finger when the drag engages far from
-                                    // it, so the user sees it run there
-                                    // instead of teleporting. Null when not
-                                    // catching up.
-                                    var catchUpJob: Job? = null
                                     // The capsule's centre when the drag
                                     // starts (the selected tab's centre).
                                     val startCenterX = pillCenterX.value
@@ -551,8 +559,12 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                             // Finger lifted: stop any
                                             // catch-up slide, then snap to
                                             // the nearest tab and switch.
-                                            catchUpJob?.cancel()
-                                            catchUpJob = null
+                                            // (Catch-up runs through the
+                                            // shared capsuleAnim holder, so
+                                            // the selection slide can
+                                            // cancel it.)
+                                            capsuleAnim.job?.cancel()
+                                            capsuleAnim.job = null
                                             if (dragging) {
                                                 var nearest = selIdx
                                                 var best = Float.MAX_VALUE
@@ -577,7 +589,8 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                                     // coords; add the padding.)
                                                     val homeCenter = tabBounds.getOrNull(selIdx)?.center?.x
                                                         ?.plus(rowHPaddingPx) ?: startCenterX
-                                                    pillScope.launch {
+                                                    capsuleAnim.job?.cancel()
+                                                    capsuleAnim.job = pillScope.launch {
                                                         pillCenterX.animateTo(homeCenter, navSlideSpec)
                                                     }
                                                 }
@@ -630,20 +643,31 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                                 // before (no visible difference).
                                                 val dist = kotlin.math.abs(fingerX - pillCenterX.value)
                                                 if (dist > dragThresholdPx) {
-                                                    catchUpJob = pillScope.launch {
+                                                    capsuleAnim.job?.cancel()
+                                                    capsuleAnim.job = pillScope.launch {
                                                         pillCenterX.animateTo(fingerX, navSlideSpec)
                                                     }
                                                     continue
                                                 }
                                             }
                                             // While the catch-up slide is still
-                                            // running, don't snap — snapping
-                                            // would cancel the slide and
-                                            // teleport again. Once it lands,
-                                            // exact follow resumes.
-                                            if (catchUpJob?.isActive == true) continue
-                                            catchUpJob = null
-                                            pillScope.launch {
+                                            // running, retarget it to the
+                                            // finger's latest spot instead of
+                                            // ignoring the finger (the old code
+                                            // skipped moves while the slide
+                                            // ran, so the capsule lagged
+                                            // behind a fast drag). Once the
+                                            // finger stops, the slide lands
+                                            // and exact follow resumes.
+                                            if (capsuleAnim.job?.isActive == true) {
+                                                capsuleAnim.job?.cancel()
+                                                capsuleAnim.job = pillScope.launch {
+                                                    pillCenterX.animateTo(fingerX, navSlideSpec)
+                                                }
+                                                continue
+                                            }
+                                            capsuleAnim.job = null
+                                            capsuleAnim.job = pillScope.launch {
                                                 pillCenterX.snapTo(fingerX)
                                             }
                                         }
