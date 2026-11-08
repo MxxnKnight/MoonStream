@@ -906,13 +906,18 @@ private fun ScanAllButton(
     when {
         scanning -> {
             val progress = if (total > 0) doneCount.toFloat() / total else 0f
-            Column(
+            // iOS style (moon's 2026-11-09): the old scanning state was a
+            // tall CircleShape column — a dark cylinder with Stop crammed
+            // inside. Now it's one horizontal pill, same 14dp corners and
+            // gray fill as the idle MsOutlinePill: status + thin progress
+            // bar + red Stop, all in a row.
+            Row(
                 modifier = Modifier
-                    .clip(CircleShape)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(MsColors.SurfaceAlt)
-                    .padding(horizontal = 18.dp, vertical = 10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
                     text = "Scanning $doneCount/$total…",
@@ -923,7 +928,7 @@ private fun ScanAllButton(
                 LinearProgressIndicator(
                     progress = progress,
                     modifier = Modifier
-                        .width(110.dp)
+                        .width(48.dp)
                         .height(4.dp)
                         .clip(RoundedCornerShape(2.dp)),
                     color = MsColors.Accent,
@@ -939,7 +944,7 @@ private fun ScanAllButton(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .clickable(onClick = onStop)
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }
         }
