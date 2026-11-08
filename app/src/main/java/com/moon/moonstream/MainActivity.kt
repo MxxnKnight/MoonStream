@@ -238,6 +238,12 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     }
     val backStack = remember { mutableStateListOf<AppScreen>(AppScreen.Splash) }
     val current = backStack.last()
+    // Slide direction for the next screen switch (+1 = new screen comes
+    // from the right, -1 = from the left, 0 = plain fade). Set by go /
+    // goTab / back, read by the AnimatedContent transitionSpec. This is
+    // how every screen — Splash, Login, Create, Player, Detail — gets a
+    // directional slide, and every back gets the reverse slide.
+    var slideDir by remember { mutableStateOf(0) }
 
     // Detail belongs to the Library tab; Create belongs to Channels; Logs to Settings.
     val selectedTab = when (current) {
@@ -260,16 +266,35 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
         return tabs.indexOfFirst { it.screen == tab }
     }
 
-    // No going back from Splash or Login.
-    BackHandler(enabled = backStack.size > 1 && current !is AppScreen.Splash && current !is AppScreen.Login) {
+    // Back: the screen underneath slides in from the left.
+    fun back() {
+        slideDir = -1
         backStack.removeLast()
     }
 
+    // No going back from Splash or Login.
+    BackHandler(enabled = backStack.size > 1 && current !is AppScreen.Splash && current !is AppScreen.Login) {
+        back()
+    }
+
     fun go(screen: AppScreen) {
+        // Forward push: the new screen slides in from the right.
+        slideDir = 1
         backStack.add(screen)
     }
 
     fun goTab(screen: AppScreen) {
+        // Tab switch: direction follows the pill (a tab to the right
+        // comes from the right, to the left from the left). From a
+        // non-tab screen (Login/Splash) it's a forward move.
+        val fromIdx = current.tabIndex()
+        val toIdx = screen.tabIndex()
+        slideDir = when {
+            fromIdx < 0 -> 1
+            toIdx < 0 || fromIdx == toIdx -> 0
+            toIdx > fromIdx -> 1
+            else -> -1
+        }
         backStack.clear()
         backStack.add(screen)
     }
@@ -298,23 +323,18 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 transitionSpec = {
                     // Directional slide, iOS style but cheap for a low-end
                     // phone (moon's 2026-11-09): the new screen slides in
-                    // from the side its tab sits on — a switch to the right
-                    // comes from the right, to the left from the left — so
-                    // the direction always matches the pill. Only the
-                    // INCOMING screen animates; the old one is dropped at
-                    // once (ExitTransition.None), so only ONE heavy screen
-                    // is alive during the switch. A true iOS slide keeps
-                    // both screens drawing at once, which stuttered on
-                    // this phone before; this keeps the direction without
-                    // that cost. Non-tab screens (Splash/Login/Player)
-                    // and same-tab moves keep the plain fast fade.
-                    val fromIdx = initialState.tabIndex()
-                    val toIdx = targetState.tabIndex()
-                    val dir = when {
-                        fromIdx < 0 || toIdx < 0 || fromIdx == toIdx -> 0
-                        toIdx > fromIdx -> 1
-                        else -> -1
-                    }
+                    // from the side the navigation points to — a push or a
+                    // tab to the right comes from the right, a back or a
+                    // tab to the left comes from the left. slideDir is set
+                    // by go / goTab / back, so Splash, Login, Create,
+                    // Player and Detail all slide, and every back slides
+                    // the other way. Only the INCOMING screen animates;
+                    // the old one is dropped at once (ExitTransition.None),
+                    // so only ONE heavy screen is alive during the switch.
+                    // A true iOS slide keeps both screens drawing at once,
+                    // which stuttered on this phone before; this keeps the
+                    // direction without that cost.
+                    val dir = slideDir
                     if (dir == 0) {
                         fadeIn(tween(110)) togetherWith ExitTransition.None
                     } else {
@@ -358,7 +378,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     is AppScreen.Detail ->
                         DetailScreen(
                             mediaId = screen.mediaId,
-                            onBack = { backStack.removeLast() },
+                            onBack = { back() },
                             onOpenCreate = { prefill -> go(AppScreen.Create(prefill)) },
                             onPlayInApp = { videoUrl, title, mediaTitle, mediaId, streamFileId ->
                                 go(
@@ -393,10 +413,10 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         prefill = screen.prefill ?: CreatePrefill(),
                         onDone = { id ->
                             // Swap Create for the new entry's Detail screen.
-                            backStack.removeLast()
+                            back()
                             go(AppScreen.Detail(id))
                         },
-                        onCancel = { backStack.removeLast() },
+                        onCancel = { back() },
                     )
                     is AppScreen.Player -> PlayerScreen(
                         videoUri = android.net.Uri.parse(screen.videoUrl),
@@ -404,21 +424,23 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         mediaTitle = screen.mediaTitle.ifBlank { screen.title },
                         mediaId = screen.mediaId,
                         streamFileId = screen.streamFileId,
-                        onClose = { backStack.removeLast() },
+                        onClose = { back() },
                         onSwitchPlayer = { url, t, mt, mid, fid ->
                             // Episode switch: replace this player with the new file's.
-                            backStack.removeLast()
+                            back()
                             go(AppScreen.Player(url, t, mid, fid, mt))
                         },
                     )
                     AppScreen.Settings -> SettingsScreen(
                         onOpenLogs = { go(AppScreen.Logs) },
                         onLoggedOut = {
+                            // Logout: Login slides in from the right, like a fresh start.
+                            slideDir = 1
                             backStack.clear()
                             backStack.add(AppScreen.Login)
                         },
                     )
-                    AppScreen.Logs -> LogsScreen(onBack = { backStack.removeLast() })
+                    AppScreen.Logs -> LogsScreen(onBack = { back() })
                 }
             }
 
