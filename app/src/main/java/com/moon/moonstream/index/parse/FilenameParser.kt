@@ -49,7 +49,7 @@ object FilenameParser {
     )
     /** Language / audio words left dangling after the title ("Kalki 2898 AD Hindi"). */
     private val trailingLangRe = Regex(
-        """(?i)(?:\s+(?:hindi|tamil|telugu|malayalam|kannada|bengali|punjabi|english|korean|japanese|dubbed|dual\s+audio|multi\s+audio|dual|multi|audio|org))+$""",
+        """(?i)(?:\s+(?:hindi|tamil|telugu|malayalam|kannada|bengali|punjabi|marathi|gujarati|urdu|odia|oriya|assamese|english|korean|japanese|dubbed|dual\s+audio|multi\s+audio|dual|multi|audio|org))+$""",
     )
     private val mentionRe = Regex("""(?:^|\s)@[\w_]+""")
     private val emojiRe = Regex(
@@ -134,6 +134,13 @@ object FilenameParser {
         "eng" to "Eng", "english" to "Eng",
         "jap" to "Jap", "japanese" to "Jap", "jpn" to "Jap",
         "kor" to "Kor", "korean" to "Kor",
+        "ben" to "Ben", "bengali" to "Ben",
+        "pun" to "Pun", "punjabi" to "Pun",
+        "mar" to "Mar", "marathi" to "Mar",
+        "guj" to "Guj", "gujarati" to "Guj",
+        "urd" to "Urd", "urdu" to "Urd",
+        "ori" to "Ori", "odia" to "Ori", "oriya" to "Ori",
+        "asm" to "Asm", "assamese" to "Asm",
         "multi" to "Multi", "dual" to "Dual",
     )
 

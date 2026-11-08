@@ -43,6 +43,8 @@ data class EnrichedMeta(
 object MetadataMatcher {
     private const val TAG = "MetadataMatcher"
     private const val UA = "MoonStream/1.0"
+    /** A title this similar is a clear match — a wrong filename year must not veto it. */
+    private const val STRONG_TITLE_SIM = 0.85
     private const val TIMEOUT_MS = 8_000
     private const val TMDB_IMG = "https://image.tmdb.org/t/p/w500"
 
@@ -60,57 +62,69 @@ object MetadataMatcher {
         imdbId: String? = null,
         omdbKey: String = "",
     ): EnrichedMeta? {
-        // An IMDb id in the filename/caption is exact — trust it over any search.
+        // An IMDb id in the filename/caption is exact — but only if it is
+        // the RIGHT id. Cross-check the title it resolves to against the
+        // parsed title: a wrong/pasted id must not beat a good title
+        // search. If the two titles share almost nothing, ignore the id
+        // and fall through to the title search below.
         if (!imdbId.isNullOrBlank()) {
             val first = if (type == "movie") "movie" else "series"
             val second = if (first == "movie") "series" else "movie"
-            (lookupByImdb(imdbId, first) ?: lookupByImdb(imdbId, second))?.let {
-                com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → IMDb id $imdbId: ${it.title}")
-                return it.copy(confidence = 1.0)
+            val byId = lookupByImdb(imdbId, first) ?: lookupByImdb(imdbId, second)
+            if (byId != null) {
+                if (similarity(title, byId.title) >= 0.30) {
+                    com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → IMDb id $imdbId: ${byId.title}")
+                    return byId.copy(confidence = 1.0)
+                }
+                com.moon.moonstream.util.AppLog.w(
+                    "MATCH",
+                    "IMDb id $imdbId resolved to '${byId.title}' but parsed title is '$title' — ignoring the id, searching by title",
+                )
             }
         }
         if (title.isBlank()) return null
         return try {
+            // Best provider wins, not the first one: a weak hit from an
+            // early provider must not block a strong hit from a later one.
+            // Return early only on a strong match (>= 0.75, the indexing
+            // bar); otherwise keep the best and try the next provider.
+            // This only costs extra calls for titles that would go to
+            // unmatched anyway — strong matches still return at once.
+            var best: EnrichedMeta? = null
+            fun consider(provider: String, candidate: EnrichedMeta?): EnrichedMeta? {
+                if (candidate == null) return null
+                com.moon.moonstream.util.AppLog.i(
+                    "MATCH",
+                    "'$title' → $provider: ${candidate.title} (${"%.2f".format(candidate.confidence)})",
+                )
+                val cur = best
+                if (cur == null || candidate.confidence > cur.confidence) best = candidate
+                return if (candidate.confidence >= 0.75) candidate else null
+            }
             // Anime first: Kitsu needs no key and knows anime best.
             if (isAnime || type == "anime") {
-                tryKitsu(title, preferSeries = hasEpisode)?.let {
-                    com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → Kitsu: ${it.title}")
-                    return it
-                }
+                consider("Kitsu", tryKitsu(title, preferSeries = hasEpisode))?.let { return it }
                 // Kitsu missed it — Jikan (MyAnimeList, no key) is the anime fallback.
-                tryJikan(title)?.let {
-                    com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → Jikan: ${it.title}")
-                    return it
-                }
+                consider("Jikan", tryJikan(title))?.let { return it }
             }
             if (tmdbKey.isNotBlank()) {
-                tryTmdb(title, year, type, tmdbKey)?.let {
-                    com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → TMDB: ${it.title}")
-                    return it
-                }
+                consider("TMDB", tryTmdb(title, year, type, tmdbKey))?.let { return it }
             }
             // Series fallback: TVmaze is keyless and TV-focused (episode
             // lists, air dates, and an IMDb id per show).
             if (type == "series") {
-                tryTvMaze(title, year)?.let {
-                    com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → TVmaze: ${it.title}")
-                    return it
-                }
+                consider("TVmaze", tryTvMaze(title, year))?.let { return it }
             }
-            tryCinemeta(title, type, year)?.let {
-                com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → Cinemeta: ${it.title}")
-                return it
-            }
+            consider("Cinemeta", tryCinemeta(title, type, year))?.let { return it }
             // Last resort: OMDb, only when the user saved a key — the free
             // tier is capped at 1,000 calls/day.
             if (omdbKey.isNotBlank()) {
-                tryOmdb(title, year, type, omdbKey)?.let {
-                    com.moon.moonstream.util.AppLog.i("MATCH", "'$title' → OMDb: ${it.title}")
-                    return it
-                }
+                consider("OMDb", tryOmdb(title, year, type, omdbKey))?.let { return it }
             }
-            com.moon.moonstream.util.AppLog.w("MATCH", "No match for '$title'")
-            null
+            if (best == null) {
+                com.moon.moonstream.util.AppLog.w("MATCH", "No match for '$title'")
+            }
+            best
         } catch (e: Exception) {
             Log.d(TAG, "match failed for '$title': ${e.message}")
             com.moon.moonstream.util.AppLog.e("MATCH", "'$title' failed: ${e.message}")
@@ -169,7 +183,11 @@ object MetadataMatcher {
                 when {
                     candYear == null || wantYear == null -> score
                     candYear == wantYear -> score + 0.35
-                    kotlin.math.abs(candYear - wantYear) > 1 -> score - 0.35
+                    // A near-exact title must not be killed by a wrong year:
+                    // the filename year is often the upload/re-release year,
+                    // not the release year. The year breaks ties between
+                    // similar titles; it does not veto a clear match.
+                    kotlin.math.abs(candYear - wantYear) > 1 && score < STRONG_TITLE_SIM -> score - 0.35
                     else -> score
                 }
             } else score
@@ -426,12 +444,16 @@ object MetadataMatcher {
                     when (val d = kotlin.math.abs(wantYear - candYear)) {
                         0 -> sim + 0.20
                         1 -> sim + 0.07
-                        else -> sim - 0.10 * (d - 1)
+                        // Same rule as TMDB: a near-exact title is not
+                        // dragged down by a wrong year.
+                        else -> if (sim >= STRONG_TITLE_SIM) sim else sim - 0.10 * (d - 1)
                     }
                 } else {
                     // Series year = premiere year; a file can't predate it.
                     when {
-                        wantYear < candYear - 1 -> sim - 0.20
+                        // Same rule as TMDB: a near-exact title is not
+                        // vetoed by a wrong year.
+                        wantYear < candYear - 1 && sim < STRONG_TITLE_SIM -> sim - 0.20
                         wantYear == candYear -> sim + 0.10
                         else -> sim
                     }
@@ -464,7 +486,8 @@ object MetadataMatcher {
             val candYear = show.optString("premiered").take(4).toIntOrNull()
             val score = if (wantYear == null || candYear == null) sim
             else if (candYear == wantYear) sim + 0.35
-            else if (kotlin.math.abs(candYear - wantYear) > 1) sim - 0.35
+            // Same rule as TMDB: a near-exact title is not vetoed by a wrong year.
+            else if (kotlin.math.abs(candYear - wantYear) > 1 && sim < STRONG_TITLE_SIM) sim - 0.35
             else sim
             if (score > bestScore) {
                 bestScore = score
@@ -735,7 +758,12 @@ object MetadataMatcher {
         val xt = x.split(" ").toSet()
         val yt = y.split(" ").toSet()
         val jaccard = xt.intersect(yt).size.toDouble() / xt.union(yt).size
-        val lev = 1.0 - levenshtein(x, y).toDouble() / maxOf(x.length, y.length)
+        // Sort the words so a reordered title ("Endgame Avengers") scores
+        // the same as the original order — the edit distance must judge
+        // the words themselves, not their order.
+        val xs = x.split(" ").sorted().joinToString(" ")
+        val ys = y.split(" ").sorted().joinToString(" ")
+        val lev = 1.0 - levenshtein(xs, ys).toDouble() / maxOf(xs.length, ys.length)
         return jaccard * 0.5 + lev * 0.5
     }
 
