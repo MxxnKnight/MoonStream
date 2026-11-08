@@ -517,13 +517,13 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 val selIdx = tabs.indexOfFirst { it.screen == selectedTab }.coerceAtLeast(0)
                 val selBounds = tabBounds.getOrNull(selIdx) ?: Rect.Zero
                 // The tabs' bounds are measured relative to the Row's CONTENT
-                // area (after its 6dp horizontal padding), but the capsule
+                // area (after its 4dp horizontal padding), but the capsule
                 // is positioned relative to the bar (the Row's outer edge).
-                // Without this +6dp the capsule sat 6dp left of its tab
+                // Without this +4dp the capsule sat 4dp left of its tab
                 // (moon's 2026-11-07 screenshot: Channels icon at 653px,
                 // capsule centre at 636px). Keep this in sync with the
                 // Row's horizontal padding below.
-                val rowHPaddingPx = with(density) { 6.dp.toPx() }
+                val rowHPaddingPx = with(density) { 4.dp.toPx() }
                 // Drag threshold (moon's 2026-11-07): a tap must never trip
                 // the drag. The old 24px (8dp) was so small that the tiny
                 // finger movement of pressing a tab engaged the drag and the
@@ -532,9 +532,8 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // a deliberate drag still engages quickly and then follows
                 // the finger exactly.
                 val dragThresholdPx = with(density) { 16.dp.toPx() }
-                // (Capsule height is 54dp — moon's 2026-11-07: taller
-                // top-to-bottom, same width. Set in the capsule's .size()
-                // below.)
+                // (Capsule height is 47dp — moon's 2026-11-09, compact
+                // low-end. Set in the capsule's .size() below.)
                 val pillCenterX = remember { Animatable(0f) }
                 val indW = remember { Animatable(0f) }
                 var indReady by remember { mutableStateOf(false) }
@@ -580,7 +579,9 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .padding(start = 24.dp, end = 24.dp, bottom = 22.dp)
+                        // Compact (moon's 2026-11-09, low-end): smaller
+                        // footprint — 16dp sides, 14dp bottom (was 24/22).
+                        .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
                         .pointerInput(selectedTab) {
                             // Drag-the-capsule to switch (moon's 2026-11-07):
                             // press the pill and drag it to another tab — the
@@ -750,10 +751,12 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         // showing through.
                                         backgroundColor = Color.Black.copy(alpha = 0.75f),
                                         tint = HazeTint(Color.Black.copy(alpha = 0.55f)),
-                                        // Smaller radius (was 18dp): cheaper
-                                        // to blur, and the darker tint hides
-                                        // the softer frost.
-                                        blurRadius = 12.dp,
+                                        // Smaller radius (was 12dp, moon's
+                                        // 2026-11-09 low-end): a tighter
+                                        // blur kernel is cheaper on the GPU,
+                                        // and the darker tint hides the
+                                        // softer frost.
+                                        blurRadius = 8.dp,
                                     )
                                     // LOW-SETTINGS blur (moon's 2026-11-07:
                                     // lag-free on his low-budget phone):
@@ -784,17 +787,18 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     }
                                     .size(
                                         with(density) { indW.value.toDp() },
-                                        // 64dp (moon's 2026-11-07, bigger
-                                        // again — was 63dp): the bar is
-                                        // ~65dp now (Row padding 10dp), so
-                                        // the capsule sits just 0.5dp from
-                                        // the bar's top/bottom ends. Same
-                                        // full-pill shape as the bar
+                                        // 47dp (moon's 2026-11-09, compact
+                                        // low-end — was 64dp): the bar is
+                                        // ~48dp now (Row padding 6dp, icon
+                                        // 20dp, text 9sp), so the capsule
+                                        // sits just 0.5dp from the bar's
+                                        // top/bottom ends. Same full-pill
+                                        // shape as the bar
                                         // (RoundedCornerShape 50), so its
                                         // curved ends nest inside the bar's
                                         // and never poke out. Library tabs
                                         // thumb stays 36dp — untouched.
-                                        64.dp,
+                                        47.dp,
                                     )
                                     .clip(RoundedCornerShape(50))
                                     .background(Color.White.copy(alpha = 0.22f)),
@@ -803,11 +807,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                // Vertical padding 10dp (was 8dp): the
-                                // taller 63dp capsule needs the extra room
-                                // so it sits 1dp from the bar's top/bottom
-                                // ends without poking out.
-                                .padding(horizontal = 6.dp, vertical = 10.dp),
+                                // Compact padding (moon's 2026-11-09,
+                                // low-end — was 6dp horizontal, 10dp
+                                // vertical): tighter around the smaller
+                                // icon/text, so the bar is ~48dp tall.
+                                .padding(horizontal = 4.dp, vertical = 6.dp),
                         ) {
                         tabs.forEachIndexed { idx, tab ->
                             val selected = selectedTab == tab.screen
@@ -825,18 +829,22 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         interactionSource = tabInteractionSource,
                                         indication = null,
                                     ) { goTab(tab.screen) }
-                                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                                    // Compact (moon's 2026-11-09, low-end —
+                                    // was 12dp horizontal, 4dp vertical).
+                                    .padding(horizontal = 8.dp, vertical = 2.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Icon(
                                     if (selected) tab.iconFilled else tab.iconOutlined,
                                     contentDescription = tab.label,
                                     tint = if (selected) MsColors.Accent else Color(0xFF98989F),
-                                    modifier = Modifier.size(24.dp),
+                                    // Compact (moon's 2026-11-09, low-end — was 24dp).
+                                    modifier = Modifier.size(20.dp),
                                 )
                                 Text(
                                     text = tab.label,
-                                    fontSize = 10.sp,
+                                    // Compact (moon's 2026-11-09, low-end — was 10sp).
+                                    fontSize = 9.sp,
                                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                     color = if (selected) MsColors.Accent else Color(0xFF98989F),
                                 )
