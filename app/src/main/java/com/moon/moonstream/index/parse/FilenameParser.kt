@@ -417,6 +417,19 @@ object FilenameParser {
         title = title.replace(Regex("""^[:\s._\-~·•]+"""), "")
         title = title.replace(Regex("""[:\s._\-~·•]+$"""), "")
         title = title.replace(Regex("""\s+"""), " ").trim()
+        // The quality cut can expose new trailing junk ("... Tamil TRUE WEB"
+        // cut at 1080p leaves "WEB" hiding "TRUE", which hides "Tamil").
+        // Strip trailing junk words repeatedly until the end is clean, so
+        // each layer is exposed in turn. "WEB" is matched case-sensitively
+        // (all-caps quality tag) so a real title word like "Web" survives.
+        // No trailing-number strip here: after the cut a trailing number
+        // is usually part of the title ("John Wick 4").
+        var prevTitle: String
+        do {
+            prevTitle = title
+            title = Regex("""(?i)\s+(?:combined|true)\s*$""").replace(title, "").trim()
+            title = Regex("""\s+WEB\s*$""").replace(title, "").trim()
+        } while (title != prevTitle)
         // Drop dangling language words, but never reduce the title to nothing.
         trailingLangRe.replace(title, "").trim().takeIf { it.length >= 2 }?.let { title = it }
 
