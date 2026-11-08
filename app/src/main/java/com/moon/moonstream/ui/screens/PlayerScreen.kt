@@ -1582,8 +1582,15 @@ fun PlayerScreen(
         var skipFetched by remember { mutableStateOf(false) }
 
         // Fetch skip data once per episode.
-        LaunchedEffect(mediaId, currentGroup?.episode) {
+        // Race fix (moon's bug 2026-11-09, Alice in Borderland S1E1): the file
+        // list loads from the DB a moment AFTER the player opens (it starts
+        // empty), so the first run saw season/episode null and skipped the
+        // fetch — and skipFetched then blocked the retry once the list
+        // arrived. So wait for the list: return WITHOUT marking fetched, and
+        // the effect re-runs when filesLoaded flips true.
+        LaunchedEffect(mediaId, currentGroup?.episode, filesLoaded) {
             if (skipFetched) return@LaunchedEffect
+            if (!filesLoaded) return@LaunchedEffect
             skipFetched = true
             // Season/episode fallback chain (moon's fix 2026-11-04): currentGroup
             // can be null (e.g. movies have no season/episode), so fall back to
