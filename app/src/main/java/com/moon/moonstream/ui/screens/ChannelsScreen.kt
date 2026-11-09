@@ -476,8 +476,26 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                         fontWeight = FontWeight.Bold,
                         color = MsColors.TextPrimary,
                     )
+                    // While scanning the pill moves to its own full-width
+                    // row below (see "scanning" item): squeezed next to
+                    // the title it ran out of room and "Stop" wrapped
+                    // into a vertical stack (moon's 2026-11-09 screenshot).
+                    if (!scanning) {
+                        ScanAllButton(
+                            scanning = false,
+                            doneCount = doneCount,
+                            total = scanMap.size.coerceAtLeast(channels.size),
+                            onClick = ::scanAll,
+                            onStop = { ScanService.stop(context) },
+                        )
+                    }
+                }
+            }
+
+            if (scanning) {
+                item(key = "scanning") {
                     ScanAllButton(
-                        scanning = scanning,
+                        scanning = true,
                         doneCount = doneCount,
                         total = scanMap.size.coerceAtLeast(channels.size),
                         onClick = ::scanAll,
@@ -1004,9 +1022,13 @@ private fun ScanAllButton(
             // tall CircleShape column — a dark cylinder with Stop crammed
             // inside. Now it's one horizontal pill, same 14dp corners and
             // gray fill as the idle MsOutlinePill: status + thin progress
-            // bar + red Stop, all in a row.
+            // bar + red Stop, all in a row. It lives on its own full-width
+            // row (not squeezed next to the "Channels" title), the bar
+            // flexes to fill the middle, and both texts are single-line
+            // so "Stop" can never wrap into a vertical stack again.
             Row(
                 modifier = Modifier
+                    .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
                     .background(MsColors.SurfaceAlt)
                     .padding(horizontal = 12.dp, vertical = 9.dp),
@@ -1018,11 +1040,12 @@ private fun ScanAllButton(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MsColors.TextPrimary,
+                    maxLines = 1,
                 )
                 LinearProgressIndicator(
                     progress = progress,
                     modifier = Modifier
-                        .width(48.dp)
+                        .weight(1f)
                         .height(4.dp)
                         .clip(RoundedCornerShape(2.dp)),
                     color = MsColors.Accent,
@@ -1035,6 +1058,7 @@ private fun ScanAllButton(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFFFF453A),
+                    maxLines = 1,
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .clickable(onClick = onStop)
