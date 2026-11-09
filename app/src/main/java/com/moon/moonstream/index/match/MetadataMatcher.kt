@@ -121,6 +121,16 @@ object MetadataMatcher {
             if (omdbKey.isNotBlank()) {
                 consider("OMDb", tryOmdb(title, year, type, omdbKey))?.let { return it }
             }
+            // Series prefix fallback (moon's 2026-11-09, guarded): a title
+            // with a season subtitle ("YOLO Crystal Fantasy") scores too
+            // low against the provider's bare name ("YOLO"). Retry with
+            // fewer words, but only a strong, year-checked match wins.
+            if ((best == null || best.confidence < 0.75) && type == "series") {
+                val prefix = tryPrefixFallback(title, year)
+                if (prefix != null && (best == null || prefix.confidence > best.confidence)) {
+                    best = prefix
+                }
+            }
             if (best == null) {
                 com.moon.moonstream.util.AppLog.w("MATCH", "No match for '$title'")
             }
@@ -512,6 +522,56 @@ object MetadataMatcher {
             }
         }
         return best
+    }
+
+    /**
+     * Series prefix fallback (moon's 2026-11-09): when the full title scores
+     * below the bar, retry with trailing words dropped ("YOLO Crystal
+     * Fantasy" -> "YOLO Crystal" -> "YOLO"). Guarded, because a short
+     * prefix can match the wrong show: a prefix is accepted only on a
+     * strong similarity AND a matching year (when the file has one, within
+     * a year), and a single provider's hit needs a very strong similarity
+     * while two providers agreeing on the same title is enough at the
+     * normal bar. The file's language tag is NOT used here — it describes
+     * the audio/dub, not the show, so it can't confirm the title.
+     */
+    private fun tryPrefixFallback(title: String, year: String?): EnrichedMeta? {
+        val words = title.trim().split(Regex("""\s+""")).filter { it.isNotBlank() }
+        if (words.size < 2) return null
+        val wantYear = year?.take(4)?.toIntOrNull()
+        fun yearOk(candYear: String?): Boolean {
+            val cy = candYear?.take(4)?.toIntOrNull() ?: return true
+            if (wantYear == null) return true
+            return kotlin.math.abs(cy - wantYear) <= 1
+        }
+        for (len in words.size - 1 downTo 1) {
+            val prefix = words.take(len).joinToString(" ")
+            if (prefix.isBlank()) continue
+            val cinemeta = tryCinemeta(prefix, "series", year)
+            val tvmaze = tryTvMaze(prefix, year)
+            val agree = cinemeta != null && tvmaze != null &&
+                normalizeTitle(cinemeta.title) == normalizeTitle(tvmaze.title)
+            // Two providers agreeing on the same title: normal bar.
+            if (agree && cinemeta != null) {
+                if (cinemeta.confidence >= 0.75 && yearOk(cinemeta.year)) {
+                    com.moon.moonstream.util.AppLog.i(
+                        "MATCH",
+                        "'$title' prefix '$prefix' -> ${cinemeta.title} (two providers agree)",
+                    )
+                    return cinemeta
+                }
+            }
+            // One provider alone: needs a very strong similarity.
+            val single = cinemeta ?: tvmaze
+            if (single != null && single.confidence >= 0.85 && yearOk(single.year)) {
+                com.moon.moonstream.util.AppLog.i(
+                    "MATCH",
+                    "'$title' prefix '$prefix' -> ${single.title} (single provider, strong)",
+                )
+                return single
+            }
+        }
+        return null
     }
 
     // ---------- Jikan (MyAnimeList, anime, no key) ----------

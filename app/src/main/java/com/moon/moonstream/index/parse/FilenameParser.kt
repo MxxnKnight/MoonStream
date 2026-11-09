@@ -26,6 +26,12 @@ data class ParsedMedia(
     /** Explicit IMDb id found in the name/caption (e.g. "tt0133093"), else null. */
     val imdbId: String? = null,
     /**
+     * Name after "AKA" ("Foxy Lady AKA Spiando Marina" -> alt "Spiando
+     * Marina"). The matcher tries it if the main title doesn't match
+     * (moon's 2026-11-09). Null when there is no AKA.
+     */
+    val altTitle: String? = null,
+    /**
      * True when the name describes a batch, not one episode: a season with no
      * episode ("Show S02"), an episode range ("S01 EP 1-5"), or a wording
      * like "Complete Series" / "All Seasons" (moon's 2026-11-09 rule).
@@ -167,7 +173,7 @@ object FilenameParser {
         "hin" to "Hin", "hindi" to "Hin",
         "tam" to "Tam", "tamil" to "Tam",
         "tel" to "Tel", "telugu" to "Tel",
-        "mal" to "Mal", "malayalam" to "Mal",
+        "mal" to "Mal", "malayalam" to "Mal", "ml" to "Mal",
         "kan" to "Kan", "kannada" to "Kan",
         "eng" to "Eng", "english" to "Eng",
         "jap" to "Jap", "japanese" to "Jap", "jpn" to "Jap",
@@ -181,6 +187,17 @@ object FilenameParser {
         "asm" to "Asm", "assamese" to "Asm",
         "multi" to "Multi", "dual" to "Dual",
     )
+
+    /** A year fused to a language word ("2020Malayalam") — split it so the
+     *  year is found and the language is tagged (moon's 2026-11-09).
+     *  Longest language words first, so "malayalam" wins over "mal". */
+    private val fusedYearLangRe = Regex(
+        """(?i)(?<![0-9])(19\d{2}|20\d{2})(malayalam|assamese|gujarati|japanese|bengali|punjabi|marathi|telugu|kannada|english|korean|oriya|hindi|tamil|multi|dual|odia|mal|tam|tel|kan|eng|jap|jpn|kor|ben|pun|mar|guj|urd|ori|asm|hin|ml)(?![a-zA-Z])""",
+    )
+
+    /** "2020Malayalam" -> "2020 Malayalam". */
+    private fun splitFusedYearLang(text: String): String =
+        fusedYearLangRe.replace(text) { "${it.groupValues[1]} ${it.groupValues[2]}" }
 
     private val promoLineRe = Regex(
         """(?i)^\s*(?:join|subscribe|forwarded\s*from|channel|download|backup|contact|admin|owner|share)\b""",
@@ -230,10 +247,28 @@ object FilenameParser {
     private val videoExtRe = Regex("""(?i)\.(?:mkv|mp4|avi|ts|webm|m4v|mov|flv|wmv)(?:\.\d{2,4})?$""")
     private val epOrYearRe = Regex("""(?i)(?:s\d+|season|ep|episode|\b(?:19|20)\d{2}\b)""")
     private val mediaLikeRe = Regex(
-        """(?i)\b(?:2160p|1080p|720p|480p|4k|uhd|hdr|hevc|x265|x264|h\.?265|h\.?264|bluray|blu-ray|bdrip|web-?dl|webrip|dvdrip|hdrip|remux|flac|aac|dts|atmos|ddp|truehd)\b|(?<![a-zA-Z0-9])(?:s|season\s*)\d{1,2}(?:[\s._-]*(?:e|ep)\d{1,4})?(?![a-zA-Z0-9])|(?<![a-zA-Z0-9])\d{1,2}x\d{1,4}(?![a-zA-Z0-9])|(?:^|[\s._\-(\[])(?:19|20)\d{2}(?:[\s._\-)\]]|$)""",
+        """(?i)\b(?:2160p|1080p|720p|480p|4k|uhd|hdr|hevc|x265|x264|h\.?265|h\.?264|bluray|blu-ray|bdrip|web-?dl|webrip|dvdrip|hdrip|remux|flac|aac|dts|atmos|ddp|truehd)\b|(?<![a-zA-Z0-9])(?:s|season\s*)\d{1,2}(?:[\s._-]*(?:e|ep)\d{1,4})?(?![a-zA-Z0-9])|(?<![a-zA-Z0-9])\d{1,2}x\d{1,4}(?![a-zA-Z0-9])|(?:^|[\s._\-(\[])(?:19|20)\d{2}(?:[\s._\-)\]]|$)|(?<![a-zA-Z0-9])(?:e|ep)[\s._-]*\d{1,4}(?![a-zA-Z0-9])""",
     )
     /** Names our own backend invents when Telegram gave none (file_123, video_9.mp4) or hash-like names. */
-    private val genericNameRe = Regex("""(?i)^(?:(?:file|video)_\d+|[0-9a-f]{16,}|\d{6,})(?:\.\w{2,4})?$""")
+    private val genericNameRe = Regex("""(?i)^(?:(?:file|video)_\d+|[0-9a-f]{16,}|\d{6,}|[A-Za-z0-9_-]{16,}\+[A-Za-z0-9_-]{11})(?:\.\w{2,4})?$""")
+
+    /**
+     * Title part of a caption line (moon's 2026-11-09, YouTube shorts):
+     * cut at the first " | ", and at " - " when the next word is a language
+     * ("SCORCH CHAPTER 2 | ACTION ..." -> "SCORCH CHAPTER 2";
+     * "GRANNY - Malayalam ..." -> "GRANNY").
+     */
+    fun captionTitle(text: String): String {
+        var t = text.substringBefore(" | ").trim()
+        val dash = Regex("""(?i)\s+-\s+""").find(t)
+        if (dash != null) {
+            val after = t.substring(dash.range.last + 1).trim()
+            val first = after.split(Regex("""[\s,]+""")).firstOrNull()
+                ?.lowercase()?.trim('.', ',', ' ') ?: ""
+            if (first in languageMap) t = t.substring(0, dash.range.first).trim()
+        }
+        return t
+    }
 
     /**
      * Picks the best text to parse: the cleaned caption when it looks like a
@@ -272,9 +307,14 @@ object FilenameParser {
         val capHasEp = sxxexxRe.containsMatchIn(capText) || nxnRe.containsMatchIn(capText)
         if (fnHasEp && !capHasEp && !fnIsGeneric) return fn
 
+        // YouTube-style captions ("Title | genre | language"): only the
+        // part before the first " | " is the title (moon's 2026-11-09).
+        // The media/episode checks above already ran on the full line,
+        // so a token sitting after the " | " is not lost from the decision.
+        val cleanCap = captionTitle(capText)
         // parse() strips a trailing ".ext", so make sure there is one.
         val ext = Regex("""(?i)\.(?:mkv|mp4|avi|ts|webm|m4v|mov|rar|zip|7z)(?:\.\d{2,4})?$""").find(fn)?.value
-        return if (videoExtRe.containsMatchIn(capText)) capText else capText + (ext ?: ".mkv")
+        return if (videoExtRe.containsMatchIn(cleanCap)) cleanCap else cleanCap + (ext ?: ".mkv")
     }
 
     /** End of an episode range that directly follows `m` ("-5" in S01EP1-5). */
@@ -310,7 +350,7 @@ object FilenameParser {
 
         // Strip split extensions (.001, .002) and media extensions for title work.
         var noSplit = cleaned.replace(Regex("""(?i)\.(?:(?:mkv|mp4|avi|webm)\.)?0*\d{1,3}$"""), "")
-        val base = noSplit.replace(Regex("""\.[a-zA-Z0-9]{2,4}$"""), "")
+        val base = splitFusedYearLang(noSplit.replace(Regex("""\.[a-zA-Z0-9]{2,4}$"""), ""))
 
         val year = yearRe.find(base)?.groupValues?.get(1)
 
@@ -353,6 +393,19 @@ object FilenameParser {
         // Trailing lone bracket group.
         work = Regex("""\s*[\(\[][A-Za-z0-9_\-\.\s]{1,30}[\)\]]\s*$""").replace(work, "")
 
+        // "KJQ (King Jackie Queen)" — an all-caps abbreviation with the full
+        // title in parens after it: keep only the full title (moon's 2026-11-09).
+        // Only when the paren part has 2+ words, so a short title is untouched.
+        // The parens are the signal — a plain all-caps title like "MAD MAX"
+        // has none, so it is never touched.
+        val abbrParen = Regex("""^([A-Z]{2,})\s*\(([^)]+)\)""").find(work)
+        if (abbrParen != null) {
+            val full = abbrParen.groupValues[2].trim()
+            if (full.split(Regex("""\s+""")).size >= 2) {
+                work = full + work.substring(abbrParen.range.last + 1)
+            }
+        }
+
         var season: Int? = leadingSeason
         var episode: Int? = leadingEpisode
         var episodeEnd: Int? = null
@@ -371,6 +424,16 @@ object FilenameParser {
                 // the end number — ScanManager files it under "Other"
                 // instead of pretending it is episode 1 (moon 2026-11-09).
                 episodeEnd = rangeTail(work, m)
+                // "S01E11E12": a second episode directly after the first,
+                // with no dash — a combined-episode file (moon's 2026-11-09).
+                // episodeEnd makes it a pack, so it lands in "Other".
+                if (episodeEnd == null) {
+                    val tail = work.substring(m.range.last + 1)
+                    val second = Regex("""^(?:e|ep)\s*(\d{1,4})(?![a-z0-9])""", RegexOption.IGNORE_CASE).find(tail)
+                    val end = second?.groupValues?.get(1)?.toIntOrNull()
+                    val start = episode
+                    if (end != null && start != null && end > start) episodeEnd = end
+                }
                 title = before(m)
             } ?: nxnRe.find(work)?.let { m ->
                 season = m.groupValues[1].toIntOrNull()
@@ -399,7 +462,9 @@ object FilenameParser {
             } ?: standaloneEpRe.find(work)?.let { m ->
                 // "Psycho Pass E22" -> title="Psycho Pass", episode=22.
                 // Don't match if it's part of a word (e.g. "TRUE" ends with E).
-                season = 1
+                // No season in the name — leave it null so the file lands in
+                // the entry's "Other" bucket instead of guessing season 1
+                // (moon's 2026-11-09: "which season? it should go for others").
                 episode = m.groupValues[1].toIntOrNull()
                 title = before(m)
             }
@@ -518,6 +583,20 @@ object FilenameParser {
         // Drop dangling language words, but never reduce the title to nothing.
         trailingLangRe.replace(title, "").trim().takeIf { it.length >= 2 }?.let { title = it }
 
+        // "Foxy Lady AKA Spiando Marina" — "AKA" (also known as) introduces
+        // an alternate name. The name before AKA is the main title; the
+        // name after it is kept as a fallback to try if the main title
+        // doesn't match (moon's 2026-11-09).
+        var altTitle: String? = null
+        val aka = Regex("""(?i)\s+AKA\s+""").find(title)
+        if (aka != null) {
+            val alt = title.substring(aka.range.last + 1).trim()
+            if (alt.isNotBlank()) {
+                altTitle = alt
+                title = title.substring(0, aka.range.first).trim()
+            }
+        }
+
         val type = if (season != null || episode != null || isPack) "series" else "movie"
         val partSuffix = if (splitPart != null) " • Part $splitPart" else ""
         val badge = (if (languages.isEmpty()) quality else "$quality • ${languages.joinToString("/")}") + partSuffix
@@ -534,6 +613,7 @@ object FilenameParser {
             languages = languages,
             splitPart = splitPart,
             imdbId = imdbId,
+            altTitle = altTitle,
             isPack = isPack,
         )
     }

@@ -478,14 +478,26 @@ object ScanManager {
                 type = "anime"
             }
         }
-        val cacheKey = "$norm|$type|${parsed.year ?: ""}|${parsed.imdbId ?: ""}"
+        val cacheKey = "$norm|$type|${parsed.year ?: ""}|${parsed.imdbId ?: ""}|${parsed.altTitle ?: ""}"
         val meta = metaCache.getOrPut(cacheKey) {
-            val m = MetadataMatcher.match(
+            var m = MetadataMatcher.match(
                 parsed.title, parsed.year, type, target.isAnime, tmdbKey,
                 hasEpisode = parsed.episode != null,
                 imdbId = parsed.imdbId,
                 omdbKey = omdbKey,
             )
+            // "AKA" alternate name (moon's 2026-11-09): if the main title
+            // didn't match, try the name after AKA before giving up.
+            // The IMDb id (if any) belongs to the main title, not the alt.
+            if ((m == null || m.confidence < 0.75) && !parsed.altTitle.isNullOrBlank()) {
+                val alt = MetadataMatcher.match(
+                    parsed.altTitle, parsed.year, type, target.isAnime, tmdbKey,
+                    hasEpisode = parsed.episode != null,
+                    imdbId = null,
+                    omdbKey = omdbKey,
+                )
+                if (alt != null && (m == null || alt.confidence > m.confidence)) m = alt
+            }
             if (m?.imdbId != null) MetadataMatcher.enrichFromCinemeta(m, type) else m
         }
 

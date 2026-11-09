@@ -1281,8 +1281,10 @@ private fun UnmatchedFileRow(
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 // Manual channel: the caption is the title; fall back to
-                // the filename when there is no caption.
-                if (useCaption && file.caption.isNotBlank()) file.caption.trim() else file.fileName,
+                // the filename when there is no caption. The caption is
+                // cut at the first " | " so a YouTube-style caption shows
+                // its clean title, not the genre/language tail.
+                if (useCaption && file.caption.isNotBlank()) FilenameParser.captionTitle(file.caption) else file.fileName,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MsColors.TextPrimary,
                 maxLines = 1,
