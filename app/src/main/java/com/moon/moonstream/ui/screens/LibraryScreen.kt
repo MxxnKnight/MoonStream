@@ -9,6 +9,7 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -194,6 +195,21 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     // Low-end pass (moon's 2026-11-09): this sum walked every entry on every
     // recomposition (it sits in a header that also moves while scrolling).
     val totalStreams = remember(allItems) { allItems.sumOf { it.fileCount } }
+    // Count-up animation (moon's 2026-11-09: he missed the files-count
+    // animation). The titles + streams numbers animate from the old value
+    // to the new one instead of snapping — so when the library loads they
+    // count up from 0, and after a scan they roll up to the new total.
+    // A plain int animation: no layout, no layer, nothing heavy.
+    val animatedTitles by animateIntAsState(
+        targetValue = allItems.size,
+        animationSpec = tween(600, easing = FastOutSlowInEasing),
+        label = "titlesCount",
+    )
+    val animatedStreams by animateIntAsState(
+        targetValue = totalStreams,
+        animationSpec = tween(600, easing = FastOutSlowInEasing),
+        label = "streamsCount",
+    )
 
     fun exitSelectMode() {
         selectMode = false
@@ -275,7 +291,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 modifier = Modifier.padding(start = 20.dp, top = 18.dp, end = 20.dp),
             )
             Text(
-                "${allItems.size} titles · $totalStreams streams indexed",
+                "$animatedTitles titles · $animatedStreams streams indexed",
                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = Redaction35),
                 color = MsColors.TextSecondary,
                 modifier = Modifier.padding(start = 20.dp, top = 2.dp, end = 20.dp, bottom = 12.dp),

@@ -339,37 +339,37 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
             AnimatedContent(
                 targetState = current,
                 transitionSpec = {
-                    // Directional slide, iOS style but cheap for a low-end
-                    // phone (moon's 2026-11-09): the new screen slides in
-                    // from the side the navigation points to — a push or a
-                    // tab to the right comes from the right, a back or a
-                    // tab to the left comes from the left. slideDir is set
-                    // by go / goTab / back, so Splash, Login, Create,
-                    // Player and Detail all slide, and every back slides
-                    // the other way. Only the INCOMING screen animates;
-                    // the old one is dropped at once (ExitTransition.None),
-                    // so only ONE heavy screen is alive during the switch.
-                    // A true iOS slide keeps both screens drawing at once,
-                    // which stuttered on this phone before; this keeps the
-                    // direction without that cost.
+                    // Directional slide, WhatsApp style (moon's 2026-11-09,
+                    // his WhatsApp video): BOTH screens move. The new one
+                    // slides in from the side the navigation points to, and
+                    // the old one slides partway the other way and dims —
+                    // that parallax + dim is the "effect" that makes it
+                    // read as depth instead of a flat swap. 250ms so the
+                    // effect is actually visible (the old 165ms pure slide
+                    // was too fast to see). Only a slide + alpha fade —
+                    // no blur, no offscreen-heavy work — so it stays light
+                    // on the G96, and the pill already drops its blur
+                    // during a switch (screenSwitching).
                     val dir = slideDir
                     if (dir == 0) {
                         // No direction to respect (tab replaced by itself):
                         // a short fade only.
                         fadeIn(tween(90)) togetherWith ExitTransition.None
                     } else {
-                        // 165ms at a fast-out curve (2026-11-09, moon: the
-                        // 220ms slide felt slow). The alpha fade that used to
-                        // run with it is gone on purpose: a full-screen
-                        // fadeIn forces an offscreen layer + per-pixel alpha
-                        // blend on top of the movement, which is exactly
-                        // what makes a cheap GPU stutter. A pure slide is a
-                        // single offset — much cheaper, and it looks crisper
-                        // and faster at the shorter duration.
+                        val spec = tween<IntOffset>(250, easing = FastOutSlowInEasing)
+                        val fadeSpec = tween<Float>(250, easing = FastOutSlowInEasing)
                         slideInHorizontally(
                             initialOffsetX = { fullWidth -> dir * fullWidth },
-                            animationSpec = tween(165, easing = FastOutSlowInEasing),
-                        ) togetherWith ExitTransition.None
+                            animationSpec = spec,
+                        ) + fadeIn(fadeSpec) togetherWith
+                            slideOutHorizontally(
+                                // Outgoing only travels a quarter of the
+                                // width (WhatsApp parallax) — it stays
+                                // peeking at the edge, dimmed, instead of
+                                // flying fully off.
+                                targetOffsetX = { fullWidth -> -dir * fullWidth / 4 },
+                                animationSpec = spec,
+                            ) + fadeOut(fadeSpec)
                     }
                 },
                 label = "screenSwitch",
