@@ -192,6 +192,11 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
     val listVersion by ScanUiState.channelListVersion.collectAsState()
     val unmatched by db.unmatchedDao().observeAll()
         .collectAsState(initial = emptyList())
+    // Manual channels (moon's 2026-11-09): their unmatched files show the
+    // caption (the real title) instead of the raw filename.
+    val manualChannelIds = androidx.compose.runtime.remember(channels) {
+        channels.filter { it.manualOnly }.map { it.id }.toSet()
+    }
     var unmatchedQuery by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
     // Bulk selection (moon's pick #5, 2026-11-01): select multiple unmatched
     // files and link them all to one title.
@@ -200,9 +205,14 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
     var linkFileBulk by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<List<UnmatchedFileEntity>>(emptyList())
     }
-    val filteredUnmatched = androidx.compose.runtime.remember(unmatched, unmatchedQuery) {
+    val filteredUnmatched = androidx.compose.runtime.remember(unmatched, unmatchedQuery, manualChannelIds) {
         if (unmatchedQuery.isBlank()) unmatched
-        else unmatched.filter { it.fileName.contains(unmatchedQuery, ignoreCase = true) }
+        else unmatched.filter {
+            // Search what the row shows: the caption for manual channels,
+            // the filename everywhere else.
+            val name = if (manualChannelIds.contains(it.channelId) && it.caption.isNotBlank()) it.caption else it.fileName
+            name.contains(unmatchedQuery, ignoreCase = true)
+        }
     }
 
     val scanMap by ScanUiState.channels.collectAsState()
@@ -608,6 +618,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 val directUrl = "http://${AppUiState.currentIp}:${AppUiState.streamPort}/stream/direct/${f.channelId}/${f.messageId}"
                 UnmatchedFileRow(
                     file = f,
+                    useCaption = manualChannelIds.contains(f.channelId),
                     selectMode = unmatchedSelectMode,
                     isSelected = unmatchedSelectedIds.contains(f.id),
                     onSelect = {
@@ -1244,6 +1255,8 @@ private fun DoneCheck(modifier: Modifier = Modifier) {
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun UnmatchedFileRow(
     file: UnmatchedFileEntity,
+    /** Manual channel: show the caption instead of the raw filename. */
+    useCaption: Boolean = false,
     selectMode: Boolean,
     isSelected: Boolean,
     onSelect: () -> Unit,
@@ -1267,7 +1280,9 @@ private fun UnmatchedFileRow(
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                file.fileName,
+                // Manual channel: the caption is the title; fall back to
+                // the filename when there is no caption.
+                if (useCaption && file.caption.isNotBlank()) file.caption.trim() else file.fileName,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MsColors.TextPrimary,
                 maxLines = 1,

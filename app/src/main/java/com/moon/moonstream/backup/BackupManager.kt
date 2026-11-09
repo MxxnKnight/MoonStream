@@ -219,6 +219,7 @@ object BackupManager {
                     .put("messageId", u.messageId)
                     .put("fileName", u.fileName)
                     .put("fileSize", u.fileSize)
+                    .put("caption", u.caption)
             }))
     }
 
@@ -407,6 +408,7 @@ object BackupManager {
                         messageId = o.getLong("messageId"),
                         fileName = o.optString("fileName", ""),
                         fileSize = o.optLong("fileSize", 0),
+                        caption = o.optString("caption", ""),
                     ),
                 )
             }

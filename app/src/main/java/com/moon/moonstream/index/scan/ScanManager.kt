@@ -393,6 +393,7 @@ object ScanManager {
                     fileName = msg.fileName,
                     fileSize = msg.fileSize,
                     editDate = msg.editDate,
+                    caption = msg.caption,
                 ),
             )
             return Outcome.UNMATCHED
@@ -406,11 +407,12 @@ object ScanManager {
                     fileName = msg.fileName,
                     fileSize = msg.fileSize,
                     editDate = msg.editDate,
+                    caption = msg.caption,
                 ),
             )
             return Outcome.UNMATCHED
         }
-        val matched = indexFile(db, target, msg.id, msg.fileName, msg.fileSize, parsed, tmdbKey, omdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache)
+        val matched = indexFile(db, target, msg.id, msg.fileName, msg.fileSize, msg.caption, parsed, tmdbKey, omdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache)
         if (matched) {
             db.streamDao().setEditDate(channelId, msg.id, msg.editDate)
             return Outcome.INDEXED
@@ -429,6 +431,7 @@ object ScanManager {
         messageId: Long,
         fileName: String,
         fileSize: Long,
+        caption: String,
         parsed: ParsedMedia,
         tmdbKey: String,
         omdbKey: String,
@@ -450,6 +453,7 @@ object ScanManager {
                     messageId = messageId,
                     fileName = fileName,
                     fileSize = fileSize,
+                    caption = caption,
                 ),
             )
             return false
@@ -500,6 +504,7 @@ object ScanManager {
                     messageId = messageId,
                     fileName = fileName,
                     fileSize = fileSize,
+                    caption = caption,
                 ),
             )
             return false

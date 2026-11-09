@@ -137,6 +137,14 @@ data class UnmatchedFileEntity(
     val fileSize: Long,
     /** See [StreamFileEntity.editDate]. */
     val editDate: Long = 0,
+    /**
+     * The Telegram caption at index time (moon's 2026-11-09). Manual
+     * channels show this instead of the raw filename, since their
+     * filenames are often random letters while the caption has the
+     * real title. Blank when there was no caption, or the file was
+     * moved here by a tool that had no caption to save.
+     */
+    val caption: String = "",
 )
 
 /** Per-channel user settings: anime flag + soft-remove + sync timestamp. */

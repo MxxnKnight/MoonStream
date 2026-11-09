@@ -21,7 +21,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ChannelConfigEntity::class,
         WatchProgressEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = false,
 )
 abstract class MsDatabase : RoomDatabase() {
@@ -142,6 +142,17 @@ abstract class MsDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v14: caption on unmatched files, so manual channels can show
+         * the caption (the real title) instead of the raw filename
+         * (moon's 2026-11-09).
+         */
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE unmatched_files ADD COLUMN caption TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): MsDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -149,7 +160,7 @@ abstract class MsDatabase : RoomDatabase() {
                     MsDatabase::class.java,
                     "moonstream.db",
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                     // Pre-release app: unknown schema jumps still wipe and
                     // rescan. Never ship a destructive migration past v1.0
                     // without a real one.
