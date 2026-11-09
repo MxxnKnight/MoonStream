@@ -75,6 +75,10 @@ android {
             signingConfig signingConfigs.debug
             debuggable false
             minifyEnabled false
+            // perf turns minify off, so it must also turn resource
+            // shrinking off — shrinkResources needs minify on, and
+            // initWith release copied the release value (true) in.
+            shrinkResources false
             matchingFallbacks = ['release']
         }
     }
