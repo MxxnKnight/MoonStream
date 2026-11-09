@@ -483,10 +483,13 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
             }
         }
         // Tap outside the unmatched search box to unfocus it (moon's 2026-11-06).
+        // Bottom padding grows while the bulk bar is showing so the last
+        // rows scroll clear above it instead of hiding underneath.
+        val bulkBarVisible = unmatchedSelectMode && unmatchedSelectedIds.isNotEmpty()
         LazyColumn(
             modifier = Modifier.fillMaxSize().unfocusOnTapOutside(),
             state = listState,
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 124.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = if (bulkBarVisible) 164.dp else 124.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item(key = "header") {
@@ -635,25 +638,11 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                         )
                     }
                 }
-                // Bulk actions when selecting (moon's pick #5).
-                if (unmatchedSelectMode && unmatchedSelectedIds.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        LimePillButton(
-                            text = "Link ${unmatchedSelectedIds.size} to Title",
-                            onClick = {
-                                linkFileBulk = filteredUnmatched.filter {
-                                    unmatchedSelectedIds.contains(it.id)
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
+                // Bulk actions live in a fixed bottom bar (moon's
+                // 2026-11-09): the "Link N to Title" button used to sit
+                // in this scrolling header, so selecting files at the
+                // bottom of a long Unmatched list meant scrolling all
+                // the way back to the top to reach it.
             }
 
             items(filteredUnmatched, key = { it.id }) { f ->
@@ -712,6 +701,26 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 112.dp),
         )
+
+        // Fixed bulk bar (moon's 2026-11-09): while selecting unmatched
+        // files the "Link N to Title" button stays pinned above the
+        // navigation pill, so selecting files at the bottom of a long
+        // list no longer means scrolling back to the top to reach it.
+        // It only shows while something is selected.
+        if (bulkBarVisible) {
+            LimePillButton(
+                text = "Link ${unmatchedSelectedIds.size} to Title",
+                onClick = {
+                    linkFileBulk = filteredUnmatched.filter {
+                        unmatchedSelectedIds.contains(it.id)
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 96.dp),
+            )
+        }
     }
 
     confirmRemove?.let { ch ->
