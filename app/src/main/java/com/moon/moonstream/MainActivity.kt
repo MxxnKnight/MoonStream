@@ -599,9 +599,15 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // goes through this holder: a new one cancels the old,
                 // so only the latest move runs.
                 val capsuleAnim = remember { object { var job: Job? = null } }
+                // Glide spec (moon's 2026-11-09, mpvRx video): the old
+                // spring (stiffness MediumLow, no bounce) was so fast the
+                // slide was over before you could see it. A softer spring
+                // glides visibly and smoothly, like mpvRx — slow enough
+                // to watch, fast enough not to feel laggy. Same spec is
+                // used for the Library tabs thumb.
                 val navSlideSpec = spring<Float>(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow,
+                    dampingRatio = 0.9f,
+                    stiffness = 260f,
                 )
                 // Snap into place on first measure, slide on every change.
                 LaunchedEffect(selIdx, selBounds) {
@@ -660,6 +666,38 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         requireUnconsumed = false,
                                         pass = PointerEventPass.Initial,
                                     )
+                                    // Press-glide (moon's 2026-11-09, mpvRx
+                                    // video): the capsule glides to the
+                                    // finger the moment it is placed, instead
+                                    // of waiting for the lift. Find the tab
+                                    // under the finger and glide the capsule
+                                    // there now — visual only, the tab itself
+                                    // still switches on release via the
+                                    // clickable, so a press that turns into
+                                    // a drag is not committed early. Runs
+                                    // through capsuleAnim so a drag or a
+                                    // tap's slide cancels it cleanly.
+                                    val downX = down.position.x
+                                    var pressTab = -1
+                                    var pressBest = Float.MAX_VALUE
+                                    tabBounds.forEachIndexed { i, bounds ->
+                                        if (bounds == Rect.Zero) return@forEachIndexed
+                                        val d = kotlin.math.abs(
+                                            (bounds.center.x + rowHPaddingPx) - downX
+                                        )
+                                        if (d < pressBest) {
+                                            pressBest = d
+                                            pressTab = i
+                                        }
+                                    }
+                                    if (pressTab >= 0 && pressTab != selIdx) {
+                                        val pressCenter =
+                                            tabBounds[pressTab].center.x + rowHPaddingPx
+                                        capsuleAnim.job?.cancel()
+                                        capsuleAnim.job = pillScope.launch {
+                                            pillCenterX.animateTo(pressCenter, navSlideSpec)
+                                        }
+                                    }
                                     var accum = 0f
                                     var dragging = false
                                     // The capsule's centre when the drag

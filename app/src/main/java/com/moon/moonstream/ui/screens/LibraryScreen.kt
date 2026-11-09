@@ -873,9 +873,13 @@ private fun MsSegmentedControl(
         // a tap animates exactly like the original control. Pixels (not
         // Dp) because the drag deltas arrive in pixels — and Dp's
         // VectorConverter won't resolve in this module's Compose version.
+        // Glide spec (moon's 2026-11-09, mpvRx video): the same smooth,
+        // visible glide as the bottom pill — the old bouncy Medium
+        // spring was too fast to see. A softer spring glides the thumb
+        // so you can watch it travel, like mpvRx.
         val slideSpec = spring<Float>(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
+            dampingRatio = 0.9f,
+            stiffness = 260f,
         )
         val thumbX = remember { Animatable(0f) }
         // Thumb X while the finger holds it (2026-11-09, moon: "same teleport
