@@ -922,14 +922,10 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 // Compact padding (moon's 2026-11-09,
-                                // low-end — was 6dp horizontal, 10dp
-                                // vertical): tighter around the smaller
-                                // icon/text, so the bar is ~48dp tall.
-                                // Vertical squeezed again (moon:
-                                // "icon/text too much padding from the
-                                // bottom"): 3dp is all the capsule needs
-                                // since it now fills the bar's height.
-                                .padding(horizontal = 4.dp, vertical = 3.dp),
+                                // Bar height (moon 2026-11-09: "45 or 50"):
+                                // 6dp top + 6dp bottom around the tab
+                                // column, so the bar is ~48dp tall.
+                                .padding(horizontal = 4.dp, vertical = 6.dp),
                         ) {
                         tabs.forEachIndexed { idx, tab ->
                             val selected = selectedTab == tab.screen
@@ -947,13 +943,10 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         interactionSource = tabInteractionSource,
                                         indication = null,
                                     ) { goTab(tab.screen) }
-                                    // Compact (moon's 2026-11-09, low-end —
-                                    // was 12dp horizontal, 4dp vertical; the
-                                    // vertical padding is gone entirely:
-                                    // the icon + label stack is what the
-                                    // capsule's wave should wrap, not dead
-                                    // space above and below it).
-                                    .padding(horizontal = 6.dp),
+                                    // 2dp breathing room above/below the
+                                    // icon + label stack (part of the
+                                    // ~48dp bar, moon 2026-11-09).
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
                                 verticalArrangement = Arrangement.Center,
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
@@ -961,8 +954,9 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     if (selected) tab.iconFilled else tab.iconOutlined,
                                     contentDescription = tab.label,
                                     tint = if (selected) MsColors.Accent else Color(0xFF98989F),
-                                    // Compact (moon's 2026-11-09, low-end — was 24dp).
-                                    modifier = Modifier.size(20.dp),
+                                    // 22dp (moon 2026-11-09: bar back to ~48dp;
+                                    // was 20dp in the too-small pill, 24dp before).
+                                    modifier = Modifier.size(22.dp),
                                 )
                                 Text(
                                     text = tab.label,
