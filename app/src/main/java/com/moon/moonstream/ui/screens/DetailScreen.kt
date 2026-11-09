@@ -30,6 +30,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.outlined.AddLink
+import androidx.compose.material.icons.outlined.AutoFixHigh
+import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
@@ -597,9 +600,12 @@ fun DetailScreen(
                 )
             }
 
-            // Secondary row: Fix Metadata + Add Custom Stream + move
-            // between tabs (moon's 2026-11-07: anime in a non-anime
-            // channel lands in Series — this moves one title to Anime).
+            // Secondary actions (moon's 2026-11-07 + 2026-11-09 icons):
+            // Fix Metadata / Add Custom Stream share one row, the move-between-
+            // tabs pill gets its own full-width row. Three pill labels plus
+            // w icons cannot fit across a 360–410dp phone, and "Add Custom
+            // Stream" was already being clipped there, so this gives every
+            // label room instead of shrinking the text further.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -609,20 +615,25 @@ fun DetailScreen(
                     onClick = { fixMode = FixMode.FIX_TITLE },
                     modifier = Modifier.weight(1f),
                     fontSize = 13,
+                    icon = Icons.Outlined.AutoFixHigh,
                 )
                 MsOutlinePill(
                     text = "Add Custom Stream",
                     onClick = { showAddStream = true },
                     modifier = Modifier.weight(1f),
                     fontSize = 13,
-                )
-                MsOutlinePill(
-                    text = if (isAnime) "Move to Series" else "Move to Anime",
-                    onClick = { moveToType(if (isAnime) "series" else "anime") },
-                    modifier = Modifier.weight(1f),
-                    fontSize = 13,
+                    icon = Icons.Outlined.AddLink,
                 )
             }
+            // Move between tabs (moon's 2026-11-07: anime in a non-anime
+            // channel lands in Series — this moves one title to Anime).
+            MsOutlinePill(
+                text = if (isAnime) "Move to Series" else "Move to Anime",
+                onClick = { moveToType(if (isAnime) "series" else "anime") },
+                modifier = Modifier.fillMaxWidth(),
+                fontSize = 13,
+                icon = Icons.Outlined.SwapHoriz,
+            )
 
             // Thin gray divider above the season list (moon's 2026-11-06):
             // 1dp, no extra spacing — it rides the column's normal gaps.

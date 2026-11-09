@@ -53,8 +53,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FormatListNumbered
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
@@ -377,6 +380,7 @@ fun FileRow(
                     text = "wrong title?",
                     onClick = onFixFile,
                     fontSize = 12,
+                    icon = Icons.Outlined.Edit,
                 )
                 // Manual episode assignment (moon's pick 2026-11-02).
                 if (onSetEpisode != null) {
@@ -384,6 +388,7 @@ fun FileRow(
                         text = "set SxxExx",
                         onClick = onSetEpisode,
                         fontSize = 12,
+                        icon = Icons.Outlined.FormatListNumbered,
                     )
                 }
             }
@@ -459,6 +464,7 @@ fun StreamRow(
                     text = "wrong title?",
                     onClick = onFixFile,
                     fontSize = 13,
+                    icon = Icons.Outlined.Edit,
                 )
                 // Manual episode assignment (moon's pick 2026-11-02).
                 if (onSetEpisode != null) {
@@ -466,6 +472,7 @@ fun StreamRow(
                         text = "set SxxExx",
                         onClick = onSetEpisode,
                         fontSize = 13,
+                        icon = Icons.Outlined.FormatListNumbered,
                     )
                 }
             }
@@ -534,7 +541,14 @@ fun SubtitleRow(
             modifier = Modifier.weight(1f),
         )
         if (actionLabel != null) {
-            LimeTextButton(text = actionLabel, fontSize = 13, onClick = onAction)
+            // "Attach" on an unlinked subtitle: a paperclip says it faster
+            // than the word does (moon's 2026-11-09 icon pass).
+            LimeTextButton(
+                text = actionLabel,
+                fontSize = 13,
+                onClick = onAction,
+                icon = Icons.Filled.AttachFile,
+            )
         }
         if (onDelete != null) {
             BareIconButton(

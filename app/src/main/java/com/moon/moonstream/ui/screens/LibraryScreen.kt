@@ -863,6 +863,12 @@ private fun MsSegmentedControl(
             stiffness = Spring.StiffnessMedium,
         )
         val thumbX = remember { Animatable(0f) }
+        // Thumb X while the finger holds it (2026-11-09, moon: "same teleport
+        // bug on the library tabs"). Null = the Animatable drives it. A plain
+        // state so the drag costs one write per event instead of a coroutine +
+        // Animatable call, and so the thumb can glide on first engage instead
+        // of jumping under the finger.
+        var dragThumbX by remember { mutableStateOf<Float?>(null) }
         var thumbReady by remember { mutableStateOf(false) }
         LaunchedEffect(selected, tabWidthPx) {
             val target = tabWidthPx * selected
@@ -883,7 +889,7 @@ private fun MsSegmentedControl(
         // iOS-style: selected thumb is lighter gray (moon's pick 2026-11-04).
         Box(
             modifier = Modifier
-                .offset { IntOffset(thumbX.value.roundToInt(), 0) }
+                .offset { IntOffset((dragThumbX ?: thumbX.value).roundToInt(), 0) }
                 .size(width = tabWidth, height = 36.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xFF636366)),
@@ -905,22 +911,54 @@ private fun MsSegmentedControl(
                             )
                             var dragging = false
                             var accum = 0f
+                            var fingerX = 0f
                             while (true) {
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
                                 val change = event.changes.firstOrNull { it.id == down.id }
-                                    ?: continue
+                                if (change == null) {
+                                    // Gesture cancelled: park the thumb back on
+                                    // the selected segment.
+                                    val held = dragThumbX
+                                    if (dragging && held != null) {
+                                        scope.launch {
+                                            thumbX.snapTo(held)
+                                            dragThumbX = null
+                                            thumbX.animateTo(tabWidthPx * selected, slideSpec)
+                                        }
+                                    } else {
+                                        dragThumbX = null
+                                    }
+                                    break
+                                }
                                 if (!change.pressed) {
-                                    // Finger lifted: snap to the nearest tab.
+                                    // Finger lifted: settle on the nearest
+                                    // segment, decided by the FINGER (the
+                                    // thumb glides behind it, so on a fast
+                                    // flick the thumb's own X can still be on
+                                    // the segment we came from).
+                                    val releaseX = dragThumbX ?: thumbX.value
                                     if (dragging) {
-                                        val nearest = ((thumbX.value / tabWidthPx).roundToInt())
+                                        val nearest = ((fingerX / tabWidthPx).roundToInt())
                                             .coerceIn(0, segments.size - 1)
-                                        if (nearest != selected) {
-                                            onSelect(nearest)
-                                        } else {
-                                            scope.launch {
-                                                thumbX.animateTo(tabWidthPx * selected, slideSpec)
+                                        // Hand the Animatable the drag position
+                                        // BEFORE dropping the override, so the
+                                        // thumb never flashes back to the old
+                                        // segment for a frame (that backwards
+                                        // hop was the visible half of the
+                                        // teleport).
+                                        scope.launch {
+                                            thumbX.snapTo(releaseX)
+                                            dragThumbX = null
+                                            if (nearest != selected) {
+                                                onSelect(nearest)
+                                            } else {
+                                                thumbX.animateTo(
+                                                    tabWidthPx * selected, slideSpec
+                                                )
                                             }
                                         }
+                                    } else {
+                                        dragThumbX = null
                                     }
                                     break
                                 }
@@ -929,25 +967,27 @@ private fun MsSegmentedControl(
                                 // Wait for a clear horizontal move before
                                 // claiming the gesture, so taps still work.
                                 if (!dragging && kotlin.math.abs(accum) < dragThresholdPx) continue
+                                val firstEngage = !dragging
                                 dragging = true
                                 change.consume()
-                                // Thumb follows the finger EXACTLY (moon's
-                                // 2026-11-07, mpvRx video): its centre sits
-                                // under the finger, not offset from it.
+                                // Thumb follows the finger (2026-11-09): its
+                                // centre sits under the finger, but it GLIDES
+                                // there on the first engaged event (0.45 of
+                                // the way) instead of snapping under the
+                                // finger, which is what looked like a
+                                // teleport. After that it tracks 1:1 (0.85),
+                                // so sparse touch events don't stutter it.
                                 // thumbX is the thumb's LEFT edge, so the
-                                // centre is thumbX + tabWidthPx/2 — put
-                                // that centre on the finger's X. The old
-                                // code moved it by the finger's delta, so
-                                // the thumb kept its distance from the
-                                // finger. The jump under the finger happens
-                                // the moment the drag engages (past 24px);
-                                // a plain tap never engages, so it still
-                                // slides with the spring.
-                                scope.launch {
-                                    val maxX = tabWidthPx * (segments.size - 1)
-                                    thumbX.snapTo(
-                                        (change.position.x - tabWidthPx / 2).coerceIn(0f, maxX)
-                                    )
+                                // centre is thumbX + tabWidthPx/2.
+                                val maxX = tabWidthPx * (segments.size - 1)
+                                fingerX = change.position.x
+                                val cur = dragThumbX ?: thumbX.value
+                                val targetX =
+                                    (fingerX - tabWidthPx / 2).coerceIn(0f, maxX)
+                                val follow = if (firstEngage) 0.45f else 0.85f
+                                val next = cur + (targetX - cur) * follow
+                                if (kotlin.math.abs(next - cur) > 0.05f) {
+                                    dragThumbX = next
                                 }
                             }
                         }

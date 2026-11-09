@@ -129,6 +129,8 @@ fun LimePillButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     fontSize: Int = 17,
+    /** Optional leading glyph (moon's 2026-11-09 icon pass). */
+    icon: ImageVector? = null,
 ) {
     Button(
         onClick = onClick,
@@ -143,14 +145,7 @@ fun LimePillButton(
         shape = RoundedCornerShape(14.dp),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = fontSize.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        PillLabel(text = text, fontSize = fontSize, icon = icon, bold = true)
     }
 }
 
@@ -162,6 +157,8 @@ fun MsOutlinePill(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     fontSize: Int = 17,
+    /** Optional leading glyph (moon's 2026-11-09 icon pass). */
+    icon: ImageVector? = null,
 ) {
     Button(
         onClick = onClick,
@@ -176,15 +173,55 @@ fun MsOutlinePill(
         shape = RoundedCornerShape(14.dp),
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
     ) {
+        PillLabel(text = text, fontSize = fontSize, icon = icon, bold = false)
+    }
+}
+
+/**
+ * Label inside a pill: optional 16dp glyph + the text, kept on one line.
+ * Shared by both pill styles so the icon/text spacing can never drift.
+ */
+@Composable
+private fun PillLabel(
+    text: String,
+    fontSize: Int,
+    icon: ImageVector?,
+    bold: Boolean,
+) {
+    if (icon == null) {
         Text(
             text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Normal,
+            style = if (bold) MaterialTheme.typography.bodyLarge
+            else MaterialTheme.typography.bodyMedium,
+            fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
             fontSize = fontSize.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
         )
+    } else {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                // Smaller than the text's cap height so the pill keeps its
+                // compact height and the label keeps its room.
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(5.dp))
+            Text(
+                text = text,
+                style = if (bold) MaterialTheme.typography.bodyLarge
+                else MaterialTheme.typography.bodyMedium,
+                fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
+                fontSize = fontSize.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -195,18 +232,33 @@ fun LimeTextButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     fontSize: Int = 14,
+    /** Optional leading glyph (moon's 2026-11-09 icon pass). */
+    icon: ImageVector? = null,
 ) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyMedium,
-        fontWeight = FontWeight.Medium,
-        fontSize = fontSize.sp,
-        color = MsColors.Accent,
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 8.dp),
-    )
+    ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MsColors.Accent,
+                modifier = Modifier.size((fontSize + 3).dp),
+            )
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            fontSize = fontSize.sp,
+            color = MsColors.Accent,
+        )
+    }
 }
 
 /** Flat mockup card: #161B24, 20dp corners, no shadow. */
