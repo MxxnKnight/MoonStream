@@ -1,6 +1,9 @@
 package com.moon.moonstream.ui.screens
 
+import android.content.Intent
 import android.widget.Toast
+import androidx.core.content.FileProvider
+import com.moon.moonstream.index.tools.TrainingDataExport
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.components.IosBottomSheet
 import com.moon.moonstream.ui.components.MsTextField
@@ -119,8 +122,10 @@ import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MsColors
 import java.util.Locale
 import kotlin.math.abs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Thousands separator for the scan panel stats. */
 private fun formatScanCount(n: Int): String =
@@ -208,6 +213,8 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
 
     var menuFor by remember { mutableStateOf<Long?>(null) }
     var confirmRemove by remember { mutableStateOf<UiChannel?>(null) }
+    // TEMPORARY (moon's 2026-11-09, one build only): training-data export guard.
+    var exportingTraining by remember { mutableStateOf(false) }
     var linkFile by remember { mutableStateOf<UnmatchedFileEntity?>(null) }
     var showAddSheet by remember { mutableStateOf(false) }
 
@@ -367,6 +374,50 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
         }
     }
 
+    /**
+     * TEMPORARY — ONE BUILD ONLY (moon's 2026-11-09). Training-data export:
+     * this channel's raw filenames + captions + what the app filed them as,
+     * written to a .jsonl file and shared. REMOVE this function, its menu
+     * entry and TrainingDataExport in the next commit after the build.
+     */
+    fun exportTraining(ch: UiChannel) {
+        if (exportingTraining) return
+        exportingTraining = true
+        MsToast.show("Exporting ${ch.title}… this reads the channel once")
+        scope.launch(Dispatchers.IO) {
+            try {
+                val backend = BackendProvider.backend
+                if (backend.authState.value != BackendAuthState.READY) {
+                    withContext(Dispatchers.Main) {
+                        MsToast.show("Telegram isn't ready — try again")
+                    }
+                    return@launch
+                }
+                val file = TrainingDataExport.exportChannel(
+                    db, backend, ch.id, ch.title, context.cacheDir,
+                )
+                val uri = FileProvider.getUriForFile(
+                    context, "${context.packageName}.fileprovider", file,
+                )
+                withContext(Dispatchers.Main) {
+                    val share = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/jsonl"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(share, "Share training data"))
+                    MsToast.show("Training data ready — pick where to send it")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    MsToast.show("Export failed: ${e.message}")
+                }
+            } finally {
+                exportingTraining = false
+            }
+        }
+    }
+
     fun removeChannel(ch: UiChannel) {
         scope.launch {
             db.streamDao().deleteByChannel(ch.id)
@@ -450,6 +501,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                     onRescanScratch = { rescanScratch(ch) },
                     onToggleAnime = { toggleAnime(ch) },
                     onToggleManual = { toggleManual(ch) },
+                    onExportTraining = { exportTraining(ch) },
                     onCopyId = {
                         clipboard.setText(AnnotatedString(ch.id.toString()))
                         MsToast.show("Channel ID copied")
@@ -1008,6 +1060,8 @@ private fun ChannelRow(
     onRescanScratch: () -> Unit,
     onToggleAnime: () -> Unit,
     onToggleManual: () -> Unit,
+    // TEMPORARY (moon's 2026-11-09, one build only): training-data export.
+    onExportTraining: () -> Unit,
     onCopyId: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -1100,6 +1154,12 @@ private fun ChannelRow(
                                 "Copy channel ID",
                                 icon = Icons.Filled.ContentCopy,
                                 onClick = { onMenuClose(); onCopyId() },
+                            ),
+                            // TEMPORARY (moon's 2026-11-09, one build only):
+                            // training-data export for this channel.
+                            IosSheetButton(
+                                "Export training data",
+                                onClick = { onMenuClose(); onExportTraining() },
                             ),
                             IosSheetButton(
                                 "Remove channel",

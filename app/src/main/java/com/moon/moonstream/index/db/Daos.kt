@@ -231,6 +231,12 @@ interface StreamDao {
     @Query("SELECT * FROM stream_files")
     suspend fun getAll(): List<StreamFileEntity>
 
+    // TEMPORARY (moon's 2026-11-09, one build only): training-data export
+    // reads one channel's indexed files. A @Query method is not a schema
+    // change — no migration.
+    @Query("SELECT * FROM stream_files WHERE channelId = :channelId")
+    suspend fun getAllByChannel(channelId: Long): List<StreamFileEntity>
+
     @Query("SELECT COUNT(*) FROM stream_files")
     suspend fun countAll(): Int
 
@@ -402,6 +408,11 @@ interface UnmatchedDao {
 
     @Query("SELECT * FROM unmatched_files")
     suspend fun getAll(): List<UnmatchedFileEntity>
+
+    // TEMPORARY (moon's 2026-11-09, one build only): training-data export.
+    // A @Query method is not a schema change — no migration.
+    @Query("SELECT * FROM unmatched_files WHERE channelId = :channelId")
+    suspend fun getAllByChannel(channelId: Long): List<UnmatchedFileEntity>
 
     @Query("SELECT EXISTS(SELECT 1 FROM unmatched_files WHERE channelId = :channelId AND messageId = :messageId)")
     suspend fun exists(channelId: Long, messageId: Long): Boolean
