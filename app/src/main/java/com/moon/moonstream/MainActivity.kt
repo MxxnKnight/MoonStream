@@ -630,9 +630,10 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        // Compact (moon's 2026-11-09, low-end): smaller
-                        // footprint — 16dp sides, 14dp bottom (was 24/22).
-                        .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+                        // Floating pill (moon's 2026-11-09): narrower and
+                        // taller, hovering above the bottom edge — 28dp
+                        // sides, 20dp bottom (was 16/14, bar ~49dp).
+                        .padding(start = 28.dp, end = 28.dp, bottom = 20.dp)
                         // Report the bar's real height so the capsule can sit
                         // 3dp inside it at any font size (2026-11-09).
                         .onGloballyPositioned { barHeightPx = it.size.height }
@@ -922,11 +923,10 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                // Compact padding (moon's 2026-11-09,
-                                // Bar height (moon 2026-11-09: "45 or 50"):
-                                // 6dp top + 6dp bottom around the tab
-                                // column, so the bar is ~48dp tall.
-                                .padding(horizontal = 4.dp, vertical = 6.dp),
+                                // Bar height (moon 2026-11-09: "55 or 58"):
+                                // 10dp top + 10dp bottom around the tab
+                                // column, so the bar is ~57dp tall.
+                                .padding(horizontal = 4.dp, vertical = 10.dp),
                         ) {
                         tabs.forEachIndexed { idx, tab ->
                             val selected = selectedTab == tab.screen

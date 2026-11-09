@@ -19,12 +19,19 @@ import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.util.AppLog
 import java.io.File
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 object TrainingDataExport {
 
     private const val PAGE_SIZE = 100
-    private const val PAGE_DELAY_MS = 350L
+    // One-time manual export, not a background scan: a short pause is
+    // enough (the scanner's 350ms is for polite background work).
+    private const val PAGE_DELAY_MS = 100L
+    // A single page fetch must never hang the whole export: TDLib reads
+    // from its local cache, so 20s is generous. On timeout the export
+    // finishes with the captions found so far instead of sitting forever.
+    private const val PAGE_TIMEOUT_MS = 20_000L
 
     /**
      * Writes one JSON object per line for every indexed file in [channelId]
@@ -32,6 +39,9 @@ object TrainingDataExport {
      * caption ("" when Telegram has none / the message is gone), matched,
      * title ("" when unmatched), season, episode, episodeEnd, quality,
      * fileSize. The caller shares the returned file.
+     *
+     * [onProgress] is called with (captions found, captions needed) after
+     * each page, so the caller can show the export is actually moving.
      */
     suspend fun exportChannel(
         db: MsDatabase,
@@ -39,6 +49,7 @@ object TrainingDataExport {
         channelId: Long,
         channelTitle: String,
         cacheDir: File,
+        onProgress: (found: Int, needed: Int) -> Unit = { _, _ -> },
     ): File {
         val streams = db.streamDao().getAllByChannel(channelId)
         val unmatched = db.unmatchedDao().getAllByChannel(channelId)
@@ -58,11 +69,21 @@ object TrainingDataExport {
             // history, looking stuck (moon's big channel, ~8000 files).
             val oldestNeeded = needed.minOrNull() ?: Long.MAX_VALUE
             var fromId = Long.MAX_VALUE
+            var pages = 0
             while (captions.size < needed.size) {
-                val page = try {
-                    backend.fetchMessages(channelId, fromId, PAGE_SIZE)
-                } catch (e: Exception) {
-                    AppLog.e("TRAIN", "fetchMessages ch=$channelId failed: ${e.message}")
+                val page = withTimeoutOrNull(PAGE_TIMEOUT_MS) {
+                    try {
+                        backend.fetchMessages(channelId, fromId, PAGE_SIZE)
+                    } catch (e: Exception) {
+                        AppLog.e("TRAIN", "fetchMessages ch=$channelId failed: ${e.message}")
+                        null
+                    }
+                }
+                if (page == null) {
+                    // Timed out or failed: finish with what we have
+                    // instead of hanging forever (moon's 2026-11-09:
+                    // "only toast appears, then nothing").
+                    AppLog.e("TRAIN", "export ch=$channelId: page fetch timed out after ${pages} pages, finishing with ${captions.size}/${needed.size} captions")
                     break
                 }
                 if (page.isEmpty()) break
@@ -70,6 +91,8 @@ object TrainingDataExport {
                     if (msg.id in needed) captions[msg.id] = msg.caption
                 }
                 fromId = page.last().id
+                pages++
+                onProgress(captions.size, needed.size)
                 if (captions.size >= needed.size) break
                 if (fromId < oldestNeeded) break
                 delay(PAGE_DELAY_MS)

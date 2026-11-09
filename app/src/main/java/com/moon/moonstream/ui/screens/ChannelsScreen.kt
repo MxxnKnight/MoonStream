@@ -122,10 +122,21 @@ import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MsColors
 import java.util.Locale
 import kotlin.math.abs
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * Long-lived scope for the training-data export (moon's 2026-11-09:
+ * "only toast appears, then nothing"). The export used to launch in the
+ * screen's rememberCoroutineScope, so leaving the Channels screen killed
+ * it silently with no error and no share sheet. This scope lives as long
+ * as the process, so the export always finishes. REMOVE with the export.
+ */
+private val trainingExportScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 /** Thousands separator for the scan panel stats. */
 private fun formatScanCount(n: Int): String =
@@ -394,7 +405,14 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
         if (exportingTraining) return
         exportingTraining = true
         MsToast.show("Exporting ${ch.title}… this reads the channel once")
-        scope.launch(Dispatchers.IO) {
+        // Long-lived scope (not the screen's rememberCoroutineScope):
+        // leaving Channels must not silently kill the export (moon's
+        // 2026-11-09: "only toast appears, then nothing").
+        trainingExportScope.launch {
+            // Progress toast, throttled: every 500 captions found, so
+            // moon can see a big channel actually moving instead of
+            // sitting silent for minutes.
+            var lastShown = 0
             try {
                 val backend = BackendProvider.backend
                 if (backend.authState.value != BackendAuthState.READY) {
@@ -405,7 +423,14 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 }
                 val file = TrainingDataExport.exportChannel(
                     db, backend, ch.id, ch.title, context.cacheDir,
-                )
+                ) { found, needed ->
+                    if (found - lastShown >= 500 || found >= needed) {
+                        lastShown = found
+                        scope.launch {
+                            MsToast.show("Exporting ${ch.title}… $found/$needed captions")
+                        }
+                    }
+                }
                 val uri = FileProvider.getUriForFile(
                     context, "${context.packageName}.fileprovider", file,
                 )
