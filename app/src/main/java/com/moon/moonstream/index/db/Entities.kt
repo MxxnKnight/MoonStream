@@ -138,6 +138,14 @@ data class ChannelConfigEntity(
     val title: String,
     val enabled: Boolean = true,
     val isAnime: Boolean = false,
+    /**
+     * Manual channel (moon's 2026-11-09): never look this channel's files up
+     * online. They go straight to Unmatched, so educational clips, lectures
+     * and random uploads can't be filed under a similarly named film or show.
+     * Marking and re-scanning from scratch turns existing wrong entries into
+     * unmatched files.
+     */
+    val manualOnly: Boolean = false,
     /** Set by "Remove channel" — hides it from the list even though Telegram still lists it. */
     val removed: Boolean = false,
     /** Epoch millis of the last completed scan of this channel. 0 = never. */

@@ -37,6 +37,13 @@ data class ScanTarget(
     val channelId: Long,
     val title: String,
     val isAnime: Boolean,
+    /**
+     * Manual channel (moon's 2026-11-09): index its files without asking any
+     * metadata provider about them. Every file lands in Unmatched, so an
+     * educational clip called "Photosynthesis" can't become a film of that
+     * name. Subtitles are stored unlinked for manual attach.
+     */
+    val manualOnly: Boolean = false,
 )
 
 object ScanManager {
@@ -298,8 +305,9 @@ object ScanManager {
             db.scanCursorDao().set(ScanCursorEntity(channelId, newestSeen))
         }
         // Subtitles can arrive before their video files (newest-first paging),
-        // so take a second pass over anything still unlinked.
-        relinkSubtitles(db, channelId, target.isAnime, absoluteAnime)
+        // so take a second pass over anything still unlinked. Manual channels
+        // stay unlinked on purpose (moon's 2026-11-09), so skip them.
+        if (!target.manualOnly) relinkSubtitles(db, channelId, target.isAnime, absoluteAnime)
         // Backfill (moon's 2026-11-05 Reacher case): stream rows with NULL
         // season/episode stay NULL forever because re-scans skip existing
         // rows — and Skip Intro needs S/E to query IntroDB. Re-parse those
@@ -338,6 +346,21 @@ object ScanManager {
         fanartCache: MutableMap<Int, String?>,
     ): Boolean {
         val norm = normalizeTitle(parsed.title)
+        // Manual channel (moon's 2026-11-09): no online lookup at all — not
+        // even the Kitsu anime probe. The file is listed as unmatched so it
+        // stays visible (playable, linkable by hand) without being filed
+        // under whatever film or show its name resembles.
+        if (target.manualOnly) {
+            db.unmatchedDao().insert(
+                UnmatchedFileEntity(
+                    channelId = target.channelId,
+                    messageId = messageId,
+                    fileName = fileName,
+                    fileSize = fileSize,
+                ),
+            )
+            return false
+        }
         var type = if (target.isAnime) "anime" else parsed.type
         if (!target.isAnime && type != "anime" && norm.isNotBlank()) {
             // Auto-detect anime (moon's 2026-11-07): a title in a
@@ -501,7 +524,10 @@ object ScanManager {
     ) {
         val parsed = FilenameParser.parse(fileName, target.isAnime, "", absoluteAnime)
         val norm = normalizeTitle(parsed.title)
-        val mediaId = if (norm.isBlank()) {
+        // Manual channels keep their subtitles unlinked (moon's 2026-11-09):
+        // nothing there was matched, so auto-attaching a subtitle by title
+        // similarity would glue it to an unrelated entry. Attach by hand.
+        val mediaId = if (norm.isBlank() || target.manualOnly) {
             null
         } else {
             resolveSubtitleMedia(db, target.channelId, norm, parsed.season, parsed.episode)

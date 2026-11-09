@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -99,6 +100,7 @@ import com.moon.moonstream.index.scan.ScanService
 import com.moon.moonstream.index.scan.ScanTarget
 import com.moon.moonstream.index.scan.ScanUiState
 import com.moon.moonstream.ui.components.AnimeBadge
+import com.moon.moonstream.ui.components.MsTagBadge
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.FixMode
 import com.moon.moonstream.ui.components.IosActionSheet
@@ -145,6 +147,8 @@ private data class UiChannel(
     val breakdown: ChannelBreakdown,
     val lastSyncedAt: Long,
     val isAnime: Boolean,
+    /** Manual channel: never auto-matched, its files go to Unmatched. */
+    val manualOnly: Boolean = false,
 )
 
 private val DestructiveRed = Color(0xFFFF6B6B)
@@ -240,6 +244,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                         breakdown = breakdown,
                         lastSyncedAt = cur.lastSyncedAt,
                         isAnime = cur.isAnime,
+                        manualOnly = cur.manualOnly,
                     ),
                 )
             }
@@ -281,7 +286,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
     fun quickScan(ch: UiChannel) {
         ScanService.start(
             context,
-            listOf(ScanTarget(ch.id, ch.title, ch.isAnime)),
+            listOf(ScanTarget(ch.id, ch.title, ch.isAnime, ch.manualOnly)),
             ScanMode.INCREMENTAL,
         )
     }
@@ -289,14 +294,16 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
     fun rescanScratch(ch: UiChannel) {
         ScanService.start(
             context,
-            listOf(ScanTarget(ch.id, ch.title, ch.isAnime)),
+            listOf(ScanTarget(ch.id, ch.title, ch.isAnime, ch.manualOnly)),
             ScanMode.FROM_SCRATCH,
         )
         MsToast.show("Full rescan started")
     }
 
     fun scanAll() {
-        val targets = channels.map { ScanTarget(it.id, it.title, it.isAnime) }
+        val targets = channels.map {
+            ScanTarget(it.id, it.title, it.isAnime, it.manualOnly)
+        }
         if (targets.isEmpty()) {
             MsToast.show("No channels to scan")
             return
@@ -305,20 +312,21 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
     }
 
     /** Explicit opt-in add: create the config, then kick off its first scan. */
-    fun addChannel(id: Long, title: String, isAnime: Boolean) {
+    fun addChannel(id: Long, title: String, isAnime: Boolean, manualOnly: Boolean = false) {
         scope.launch {
             db.channelConfigDao().upsert(
                 ChannelConfigEntity(
                     channelId = id,
                     title = title,
                     isAnime = isAnime,
+                    manualOnly = manualOnly,
                     removed = false,
                 ),
             )
             reloadChannels(silent = true)
             ScanService.start(
                 context,
-                listOf(ScanTarget(id, title, isAnime)),
+                listOf(ScanTarget(id, title, isAnime, manualOnly)),
                 ScanMode.INCREMENTAL,
             )
             MsToast.show("Added $title — scan started")
@@ -334,6 +342,28 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                 if (it.id == ch.id) it.copy(isAnime = !it.isAnime) else it
             }
             MsToast.show(if (!ch.isAnime) "Marked as anime channel" else "Unmarked as anime channel")
+        }
+    }
+
+    /**
+     * Manual channel (moon's 2026-11-09): nothing in it is matched online, so
+     * clips and lectures can't be filed under a film of the same name.
+     */
+    fun toggleManual(ch: UiChannel) {
+        scope.launch {
+            db.channelConfigDao().get(ch.id)?.let { cfg ->
+                db.channelConfigDao().upsert(cfg.copy(manualOnly = !cfg.manualOnly))
+            }
+            channels = channels.map {
+                if (it.id == ch.id) it.copy(manualOnly = !it.manualOnly) else it
+            }
+            MsToast.show(
+                if (!ch.manualOnly) {
+                    "Manual channel — files go to Unmatched (rescan from scratch to move the old ones)"
+                } else {
+                    "Manual channel off — next scan matches normally"
+                },
+            )
         }
     }
 
@@ -419,6 +449,7 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
                     onScan = { quickScan(ch) },
                     onRescanScratch = { rescanScratch(ch) },
                     onToggleAnime = { toggleAnime(ch) },
+                    onToggleManual = { toggleManual(ch) },
                     onCopyId = {
                         clipboard.setText(AnnotatedString(ch.id.toString()))
                         MsToast.show("Channel ID copied")
@@ -742,9 +773,9 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
     if (showAddSheet) {
         AddChannelSheet(
             onDismiss = { showAddSheet = false },
-            onAdd = { id, title, anime ->
+            onAdd = { id, title, anime, manual ->
                 showAddSheet = false
-                addChannel(id, title, anime)
+                addChannel(id, title, anime, manual)
             },
         )
     }
@@ -976,6 +1007,7 @@ private fun ChannelRow(
     onScan: () -> Unit,
     onRescanScratch: () -> Unit,
     onToggleAnime: () -> Unit,
+    onToggleManual: () -> Unit,
     onCopyId: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -999,6 +1031,10 @@ private fun ChannelRow(
                         if (channel.isAnime) {
                             Spacer(Modifier.width(8.dp))
                             AnimeBadge()
+                        }
+                        if (channel.manualOnly) {
+                            Spacer(Modifier.width(8.dp))
+                            MsTagBadge("MANUAL")
                         }
                     }
                     Text(
@@ -1050,6 +1086,15 @@ private fun ChannelRow(
                                 label = if (channel.isAnime) "Unmark as anime channel" else "Mark as anime channel",
                                 icon = animeCheckIcon,
                                 onClick = { onMenuClose(); onToggleAnime() },
+                            ),
+                            IosSheetButton(
+                                label = if (channel.manualOnly) {
+                                    "Unmark as manual channel"
+                                } else {
+                                    "Mark as manual channel"
+                                },
+                                icon = Icons.Outlined.TouchApp,
+                                onClick = { onMenuClose(); onToggleManual() },
                             ),
                             IosSheetButton(
                                 "Copy channel ID",
@@ -1241,12 +1286,13 @@ private fun mimeForFile(fileName: String): String {
 @Composable
 private fun AddChannelSheet(
     onDismiss: () -> Unit,
-    onAdd: (id: Long, title: String, isAnime: Boolean) -> Unit,
+    onAdd: (id: Long, title: String, isAnime: Boolean, manualOnly: Boolean) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
 
     var channelId by remember { mutableStateOf("") }
     var isAnime by remember { mutableStateOf(false) }
+    var manualOnly by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
 
     IosBottomSheet(
@@ -1276,6 +1322,27 @@ private fun AddChannelSheet(
                 )
                 MsToggle(checked = isAnime, onCheckedChange = { isAnime = it })
             }
+            // Manual channel (moon's 2026-11-09): for channels full of
+            // lectures, clips or anything that is not film/TV.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Manual channel",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MsColors.TextPrimary,
+                    )
+                    Text(
+                        "No online matching — every file lands in Unmatched.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextSecondary,
+                    )
+                }
+                MsToggle(checked = manualOnly, onCheckedChange = { manualOnly = it })
+            }
             LimePillButton(
                 text = if (adding) "Adding…" else "Add channel",
                 onClick = {
@@ -1287,7 +1354,7 @@ private fun AddChannelSheet(
                     adding = true
                     scope.launch {
                         // Use the ID as the title; the scanner fills the real name.
-                        onAdd(id, "Channel $id", isAnime)
+                        onAdd(id, "Channel $id", isAnime, manualOnly)
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),

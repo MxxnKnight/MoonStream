@@ -462,6 +462,33 @@ fun AnimeBadge(modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * Small uppercase tag for a channel's non-default mode (moon's 2026-11-09:
+ * MANUAL channels, next to the existing ANIME badge).
+ */
+@Composable
+fun MsTagBadge(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = Color(0xFFFFB020),
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(color.copy(alpha = 0.18f))
+            .border(0.5.dp, color.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = color,
+        )
+    }
+}
+
 /** Mockup toggle: lime track when on, dark track when off. */
 @Composable
 fun MsToggle(

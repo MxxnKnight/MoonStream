@@ -41,6 +41,7 @@ class ScanService : Service() {
         private const val EXTRA_IDS = "ids"
         private const val EXTRA_TITLES = "titles"
         private const val EXTRA_ANIME = "anime"
+        private const val EXTRA_MANUAL = "manual"
         private const val EXTRA_MODE = "mode"
 
         /** Starts a scan run. Safe to call from any screen. */
@@ -51,6 +52,7 @@ class ScanService : Service() {
                 putExtra(EXTRA_IDS, targets.map { it.channelId }.toLongArray())
                 putExtra(EXTRA_TITLES, targets.map { it.title }.toTypedArray())
                 putExtra(EXTRA_ANIME, targets.map { it.isAnime }.toBooleanArray())
+                putExtra(EXTRA_MANUAL, targets.map { it.manualOnly }.toBooleanArray())
                 putExtra(EXTRA_MODE, mode.name)
             }
             ContextCompat.startForegroundService(context, intent)
@@ -89,13 +91,19 @@ class ScanService : Service() {
         val ids = intent.getLongArrayExtra(EXTRA_IDS) ?: longArrayOf()
         val titles = intent.getStringArrayExtra(EXTRA_TITLES) ?: emptyArray()
         val anime = intent.getBooleanArrayExtra(EXTRA_ANIME) ?: BooleanArray(0)
+        val manual = intent.getBooleanArrayExtra(EXTRA_MANUAL) ?: BooleanArray(0)
         val mode = try {
             ScanMode.valueOf(intent.getStringExtra(EXTRA_MODE) ?: "INCREMENTAL")
         } catch (e: Exception) {
             ScanMode.INCREMENTAL
         }
         val targets = ids.mapIndexed { i, id ->
-            ScanTarget(id, titles.getOrElse(i) { "Channel" }, anime.getOrElse(i) { false })
+            ScanTarget(
+                id,
+                titles.getOrElse(i) { "Channel" },
+                anime.getOrElse(i) { false },
+                manual.getOrElse(i) { false },
+            )
         }
         if (targets.isEmpty()) {
             running = false

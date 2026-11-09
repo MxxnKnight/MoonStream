@@ -144,6 +144,7 @@ object BackupManager {
                     .put("title", c.title)
                     .put("enabled", c.enabled)
                     .put("isAnime", c.isAnime)
+                    .put("manualOnly", c.manualOnly)
                     .put("removed", c.removed)
                     .put("lastSyncedAt", c.lastSyncedAt)
             }))
@@ -244,6 +245,7 @@ object BackupManager {
                         title = o.optString("title", ""),
                         enabled = o.optBoolean("enabled", true),
                         isAnime = o.optBoolean("isAnime", false),
+                        manualOnly = o.optBoolean("manualOnly", false),
                         removed = o.optBoolean("removed", false),
                         lastSyncedAt = o.optLong("lastSyncedAt", 0),
                     ),
