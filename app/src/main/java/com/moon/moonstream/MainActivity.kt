@@ -73,6 +73,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.ui.components.NeutralRippleTheme
+import com.moon.moonstream.ui.theme.Inter
 import com.moon.moonstream.ui.screens.ChannelsScreen
 import com.moon.moonstream.ui.screens.CreateScreen
 import com.moon.moonstream.ui.screens.DetailScreen
@@ -960,16 +961,22 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                 )
                                 Text(
                                     text = tab.label,
-                                    // Compact (moon's 2026-11-09, low-end — was 10sp).
-                                    fontSize = 9.sp,
-                                    // Tight label (moon 2026-11-09: "text icon
-                                    // has too much space"): the default
+                                    // Inter (moon 2026-11-09: the labels were
+                                    // rendering in his handwriting system
+                                    // font — this Text passes its own bare
+                                    // style, which replaces the theme
+                                    // default, so the font must be set here).
+                                    fontFamily = Inter,
+                                    // 10sp (moon 2026-11-09: "make labels
+                                    // bigger"; was 9sp).
+                                    fontSize = 10.sp,
+                                    // Tight label: the default
                                     // includeFontPadding adds ~2dp of empty
-                                    // ascent/descent around a 9sp label, which
+                                    // ascent/descent around the label, which
                                     // was the visible gap between the icon and
-                                    // the text and under the text. A 10sp line
+                                    // the text and under the text. An 11sp line
                                     // height keeps the two glued.
-                                    lineHeight = 10.sp,
+                                    lineHeight = 11.sp,
                                     style = androidx.compose.ui.text.TextStyle(
                                         platformStyle = androidx.compose.ui.text.PlatformTextStyle(
                                             includeFontPadding = false,
