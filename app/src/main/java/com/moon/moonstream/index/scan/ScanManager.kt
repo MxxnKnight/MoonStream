@@ -306,8 +306,11 @@ object ScanManager {
         }
         // Subtitles can arrive before their video files (newest-first paging),
         // so take a second pass over anything still unlinked. Manual channels
-        // stay unlinked on purpose (moon's 2026-11-09), so skip them.
-        if (!target.manualOnly) relinkSubtitles(db, channelId, target.isAnime, absoluteAnime)
+        // take the strict version (exact title only) — subtitle-only channels
+        // still have to reach their show (moon's 2026-11-09).
+        relinkSubtitles(
+            db, channelId, target.isAnime, absoluteAnime, strict = target.manualOnly,
+        )
         // Backfill (moon's 2026-11-05 Reacher case): stream rows with NULL
         // season/episode stay NULL forever because re-scans skip existing
         // rows — and Skip Intro needs S/E to query IntroDB. Re-parse those
@@ -524,13 +527,19 @@ object ScanManager {
     ) {
         val parsed = FilenameParser.parse(fileName, target.isAnime, "", absoluteAnime)
         val norm = normalizeTitle(parsed.title)
-        // Manual channels keep their subtitles unlinked (moon's 2026-11-09):
-        // nothing there was matched, so auto-attaching a subtitle by title
-        // similarity would glue it to an unrelated entry. Attach by hand.
-        val mediaId = if (norm.isBlank() || target.manualOnly) {
+        // Subtitles are the exception in a manual channel (moon's 2026-11-09):
+        // subtitle-only channels carry no video, so a well-named SRT should
+        // still reach its show from wherever that show was indexed. They are
+        // matched in STRICT mode — exact title (and the exact episode when the
+        // name says SxxExx), never the title-similarity guess — so a lecture's
+        // "Energy.srt" can't be glued to a show called "Energy".
+        val mediaId = if (norm.isBlank()) {
             null
         } else {
-            resolveSubtitleMedia(db, target.channelId, norm, parsed.season, parsed.episode)
+            resolveSubtitleMedia(
+                db, target.channelId, norm, parsed.season, parsed.episode,
+                strict = target.manualOnly, year = parsed.year,
+            )
         }
         db.subtitleDao().insert(
             SubtitleFileEntity(
@@ -546,13 +555,23 @@ object ScanManager {
         )
     }
 
-    /** Best-effort subtitle → media mapping. Returns the media id or null. */
+    /**
+     * Best-effort subtitle → media mapping. Returns the media id or null.
+     *
+     * [strict] is used for manual channels: exact title only (plus the exact
+     * episode when the name carries SxxExx), and when the subtitle's name has
+     * a year, an entry with a different known year is rejected. That is the
+     * "only correctly named subtitles get attached" rule moon asked for on
+     * 2026-11-09; the loose similarity guess stays for normal channels.
+     */
     suspend fun resolveSubtitleMedia(
         db: MsDatabase,
         channelId: Long,
         normTitle: String,
         season: Int?,
         episode: Int?,
+        strict: Boolean = false,
+        year: String? = null,
     ): Long? {
         // 1. Same title AND the episode already exists in the library.
         if (season != null && episode != null) {
@@ -562,7 +581,13 @@ object ScanManager {
         // 2. Exact title match (movies, or series whose episode isn't indexed yet).
         // Cross-channel (moon's 2026-11-06 grouping): the entry may have
         // been created from a different channel than this subtitle.
-        db.mediaDao().findByNormAnyChannel(normTitle)?.let { return it.id }
+        db.mediaDao().findByNormAnyChannel(normTitle)?.let { entry ->
+            val yearClash = strict && year != null && entry.year != null && entry.year != year
+            if (!yearClash) return entry.id
+        }
+        // Strict mode stops here: no fuzzy guess, the file waits for a manual
+        // attach. A near-miss title must never decide where a subtitle goes.
+        if (strict) return null
         // 3. Similarity fallback across the whole library.
         val all = db.mediaDao().listVisible()
         val best = all.maxByOrNull { MetadataMatcher.similarity(normTitle, it.normalizedTitle) }
@@ -572,19 +597,26 @@ object ScanManager {
         return null
     }
 
-    /** Retries mapping for every still-unlinked subtitle in the channel. */
+    /**
+     * Retries mapping for every still-unlinked subtitle in the channel.
+     * [strict] = manual channel: exact title/episode only, no fuzzy guess.
+     */
     private suspend fun relinkSubtitles(
         db: MsDatabase,
         channelId: Long,
         isAnime: Boolean,
         absoluteAnime: Boolean,
+        strict: Boolean = false,
     ) {
         val pending = db.subtitleDao().unlinkedByChannel(channelId)
         for (s in pending) {
             val parsed = FilenameParser.parse(s.fileName, isAnime, "", absoluteAnime)
             val norm = normalizeTitle(parsed.title)
             if (norm.isBlank()) continue
-            val mediaId = resolveSubtitleMedia(db, channelId, norm, parsed.season, parsed.episode)
+            val mediaId = resolveSubtitleMedia(
+                db, channelId, norm, parsed.season, parsed.episode,
+                strict = strict, year = parsed.year,
+            )
             if (mediaId != null) {
                 db.subtitleDao().attach(s.id, mediaId, parsed.season, parsed.episode)
             }
