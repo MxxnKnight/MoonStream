@@ -66,6 +66,39 @@ interface MediaDao {
         type: String,
     ): MediaItemEntity?
 
+    /** Exact TMDB match (moon's 2026-11-09 duplicate fix): a file whose
+     *  metadata resolved to the same TMDB entry belongs to that entry no
+     *  matter how its filename spelled the title. */
+    @Query("SELECT * FROM media_items WHERE tmdbId = :tmdbId LIMIT 1")
+    suspend fun findByTmdb(tmdbId: Int): MediaItemEntity?
+
+    /**
+     * Year-less duplicate guard (moon's 2026-11-09: one movie landed as
+     * FOUR entries). Same canonical title + tab is the same show/movie even
+     * when one file carried no year and another carried a wrong one. Keeps
+     * remakes apart only when BOTH years are known and different, which the
+     * strict query above already handles.
+     */
+    @Query(
+        """SELECT * FROM media_items
+           WHERE normalizedTitle = :norm AND type = :type
+           ORDER BY fileCount DESC, id ASC LIMIT 1""",
+    )
+    suspend fun findMatchLoose(norm: String, type: String): MediaItemEntity?
+
+    /**
+     * Spacing-blind duplicate guard: "iam game" and "i am game" are the same
+     * title. normalizedTitle already has every non-alphanumeric turned into a
+     * space, so stripping spaces makes the two equal. Rows created before the
+     * canonical-key change are matched here too (moon's 2026-11-09).
+     */
+    @Query(
+        """SELECT * FROM media_items
+           WHERE type = :type AND REPLACE(normalizedTitle, ' ', '') = :squashed
+           ORDER BY fileCount DESC, id ASC LIMIT 1""",
+    )
+    suspend fun findMatchSquashed(squashed: String, type: String): MediaItemEntity?
+
     @Query("SELECT * FROM media_items WHERE channelId = :channelId AND normalizedTitle = :norm LIMIT 1")
     suspend fun findByTitle(channelId: Long, norm: String): MediaItemEntity?
 
@@ -197,6 +230,24 @@ interface StreamDao {
 
     @Query("UPDATE stream_files SET season = :season, episode = :episode WHERE id = :fileId")
     suspend fun updateSeasonEpisode(fileId: Long, season: Int?, episode: Int?)
+
+    /** Entries holding a season pack / episode range (moon's 2026-11-09). */
+    @Query(
+        """SELECT DISTINCT mediaId FROM stream_files
+           WHERE episodeEnd IS NOT NULL OR (season IS NOT NULL AND episode IS NULL)""",
+    )
+    suspend fun mediaIdsWithPacks(): List<Long>
+
+    /**
+     * Moves already-indexed season packs out of their fake episode slot and
+     * into the "Other" bucket (both numbers NULL). Returns rows changed;
+     * idempotent, so a second run touches nothing.
+     */
+    @Query(
+        """UPDATE stream_files SET season = NULL, episode = NULL, episodeEnd = NULL
+           WHERE episodeEnd IS NOT NULL OR (season IS NOT NULL AND episode IS NULL)""",
+    )
+    suspend fun parkPacks(): Int
 
     /** Stream files of series/anime entries still missing season/episode
      *  (moon's 2026-11-05 Reacher case: a row can sit in the DB with NULL S/E

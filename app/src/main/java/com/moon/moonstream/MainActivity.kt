@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -581,7 +582,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 // icon + label row grows with the text but 47dp does not.
                 var barHeightPx by remember { mutableStateOf(0) }
                 // Gap between the capsule and the bar's top/bottom ends.
-                val capsuleInsetPx = with(density) { 3.dp.toPx() }
+                // Zero since 2026-11-09 (moon: "capsule has no padding"):
+                // the capsule now IS the bar's full height, so its rounded
+                // ends sit exactly inside the bar's instead of floating
+                // 3dp short of them.
+                val capsuleInsetPx = 0f
                 // One running capsule animation at a time (moon's bug
                 // 2026-11-09: the capsule landed on the wrong tab).
                 // The slide-to-tab, the drag catch-up and the release
@@ -920,7 +925,11 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                 // low-end — was 6dp horizontal, 10dp
                                 // vertical): tighter around the smaller
                                 // icon/text, so the bar is ~48dp tall.
-                                .padding(horizontal = 4.dp, vertical = 6.dp),
+                                // Vertical squeezed again (moon:
+                                // "icon/text too much padding from the
+                                // bottom"): 3dp is all the capsule needs
+                                // since it now fills the bar's height.
+                                .padding(horizontal = 4.dp, vertical = 3.dp),
                         ) {
                         tabs.forEachIndexed { idx, tab ->
                             val selected = selectedTab == tab.screen
@@ -939,8 +948,13 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         indication = null,
                                     ) { goTab(tab.screen) }
                                     // Compact (moon's 2026-11-09, low-end —
-                                    // was 12dp horizontal, 4dp vertical).
-                                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                                    // was 12dp horizontal, 4dp vertical; the
+                                    // vertical padding is gone entirely:
+                                    // the icon + label stack is what the
+                                    // capsule's wave should wrap, not dead
+                                    // space above and below it).
+                                    .padding(horizontal = 6.dp),
+                                verticalArrangement = Arrangement.Center,
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Icon(
@@ -954,6 +968,19 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     text = tab.label,
                                     // Compact (moon's 2026-11-09, low-end — was 10sp).
                                     fontSize = 9.sp,
+                                    // Tight label (moon 2026-11-09: "text icon
+                                    // has too much space"): the default
+                                    // includeFontPadding adds ~2dp of empty
+                                    // ascent/descent around a 9sp label, which
+                                    // was the visible gap between the icon and
+                                    // the text and under the text. A 10sp line
+                                    // height keeps the two glued.
+                                    lineHeight = 10.sp,
+                                    style = androidx.compose.ui.text.TextStyle(
+                                        platformStyle = androidx.compose.ui.text.PlatformTextStyle(
+                                            includeFontPadding = false,
+                                        ),
+                                    ),
                                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                     color = if (selected) MsColors.Accent else Color(0xFF98989F),
                                 )

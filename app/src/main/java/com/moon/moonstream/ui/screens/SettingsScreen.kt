@@ -165,6 +165,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     // --- Streaming & Storage state ---
     var cacheMb by remember { mutableStateOf(AppUiState.cacheMaxMb.toString()) }
     var bufferMb by remember { mutableStateOf(AppUiState.bufferMb.toString()) }
+    var playerBufferS by remember { mutableStateOf(AppUiState.playerBufferS.toString()) }
     var maxSizeMb by remember { mutableStateOf("") }
     var minSearchMb by remember { mutableStateOf("") }
     var maxSearchMb by remember { mutableStateOf("") }
@@ -966,7 +967,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             }
             SettingRow(
                 title = "Buffer MB",
-                info = "How much video the app downloads ahead while you watch. Bigger means smoother playback on slow connections, but uses more data upfront.",
+                info = "How much video the app downloads ahead from Telegram while you watch, in 8 MB chunks (so 20 means two chunks, 16 MB). Bigger means smoother playback on slow connections, but uses more data upfront. Saved, and picked up mid-video.",
             ) {
                 MsTextField(
                     value = bufferMb,
@@ -974,6 +975,22 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         bufferMb = it
                         it.toIntOrNull()?.let { mb ->
                             if (mb >= 0) AppUiState.setBufferMb(mb, context)
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.width(100.dp),
+                )
+            }
+            SettingRow(
+                title = "Player buffer (seconds)",
+                info = "How many seconds of video the player itself holds ready in memory. This is the safety margin for a slow or jumpy Telegram connection: at 50 a network hiccup under a minute doesn't stop the picture. Higher = smoother but more memory and a longer wait before the first frame; 10–300, applies to the next video you open.",
+            ) {
+                MsTextField(
+                    value = playerBufferS,
+                    onValueChange = {
+                        playerBufferS = it
+                        it.toIntOrNull()?.let { s ->
+                            if (s in 10..300) AppUiState.setPlayerBufferS(s, context)
                         }
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),

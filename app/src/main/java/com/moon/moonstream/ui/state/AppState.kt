@@ -106,6 +106,16 @@ object AppUiState {
     var cacheMaxMb by mutableStateOf(2048)
     /** MB of video the player downloads ahead (Settings "Buffer MB"). Default 20. */
     var bufferMb by mutableStateOf(20)
+    /**
+     * Seconds of video the in-app player keeps buffered in memory
+     * (Settings "Player buffer (seconds)"). Default 50 — what Media3 does
+     * when nothing is configured. Unlike [bufferMb], which is how much the
+     * app fetches ahead from Telegram, this is the player's own buffer: it
+     * is what decides how long a network hiccup can last before playback
+     * stalls. Read once per player instance (AppScreen.Player builds a new
+     * one each time), so a change applies to the next video you open.
+     */
+    var playerBufferS by mutableStateOf(50)
     /** MB under filesDir/tdlib_files — bytes Telegram downloaded while playing video. Read-only. */
     var streamCacheMb by mutableStateOf(0)
 
@@ -138,6 +148,7 @@ object AppUiState {
         loggedIn = prefs.getBoolean("logged_in", false)
         cacheMaxMb = prefs.getInt("cache_max_mb", 2048).coerceAtLeast(0)
         bufferMb = prefs.getInt("buffer_mb", 20).coerceAtLeast(0)
+        playerBufferS = prefs.getInt("player_buffer_s", 50).coerceIn(10, 300)
         currentIp = com.moon.moonstream.server.MoonStreamServer.getLocalIpAddress()
         if (logLines.isEmpty()) {
             seedFakeLogs()
@@ -202,6 +213,13 @@ object AppUiState {
         bufferMb = mb.coerceAtLeast(0)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putInt("buffer_mb", bufferMb).apply()
+    }
+
+    /** Player buffer in seconds; clamped so a typo can't break playback. */
+    fun setPlayerBufferS(seconds: Int, context: Context) {
+        playerBufferS = seconds.coerceIn(10, 300)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putInt("player_buffer_s", playerBufferS).apply()
     }
 
     /** Refresh the used-cache meter from the real cache dir size. */

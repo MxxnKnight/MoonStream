@@ -25,6 +25,14 @@ data class ParsedMedia(
     val splitPart: Int? = null,
     /** Explicit IMDb id found in the name/caption (e.g. "tt0133093"), else null. */
     val imdbId: String? = null,
+    /**
+     * True when the name describes a batch, not one episode: a season with no
+     * episode ("Show S02"), an episode range ("S01 EP 1-5"), or a wording
+     * like "Complete Series" / "All Seasons" (moon's 2026-11-09 rule).
+     * Such files belong in the entry's "Other" bucket, never in an episode
+     * slot.
+     */
+    val isPack: Boolean = false,
 )
 
 /** Lower-cased, punctuation-free title for grouping + matching. */
@@ -72,7 +80,16 @@ object FilenameParser {
 
     /** S01E01 / S01EP01 / S1 E1 / S01 E01 / Season 1 Episode 2 */
     private val sxxexxRe = Regex(
-        """(?i)(?<![a-z0-9])(?:s|season\s*)(\d{1,2})[\s._-]*(?:e|ep|episode\s*)(\d{1,4})(?![a-z0-9])""",
+        // Separators around the episode marker are flexible ("S04 EP 01",
+        // "S01.EP.1", "S1E1", "Season 1 Episode 2") — moon's 2026-11-09
+        // pack check exposed that "S04 EP 01" was not matching at all and
+        // the number was then read as an absolute episode in season 1.
+        """(?i)(?<![a-z0-9])(?:s|season\s*)(\d{1,2})[\s._-]*(?:e|ep|episode)[\s._-]*(\d{1,4})(?![a-z0-9])""",
+    )
+
+    /** "Complete Series", "All Seasons", "Season 2 Complete" — a batch. */
+    private val packPhraseRe = Regex(
+        """(?i)\bcomplete\s+(?:series|seasons?|s\d{1,2})\b|\b(?:all|full)\s+seasons?\b|\bseries\s+complete\b|\bseason\s*\d{1,2}\s+complete\b""",
     )
 
     /** 1x01 */
@@ -84,12 +101,33 @@ object FilenameParser {
 
     /** Standalone "E22" (episode without season, e.g. "Psycho Pass E22").
      *  Must not match words ending in E like "TRUE". */
-    private val standaloneEpRe = Regex("""(?i)(?<![a-z0-9])(?:e|ep)\s*(\d{1,4})(?![a-z0-9])""")
+    private val standaloneEpRe = Regex(
+        // Flexible separator, like sxxexxRe: "Ep 01", "E.01", "EP-01"
+        // (moon's 2026-11-09: "Show.Name.Ep.01" was landing as a MOVIE).
+        """(?i)(?<![a-z0-9])(?:e|ep)[\s._-]*(\d{1,4})(?![a-z0-9])""",
+    )
 
     /** Multi-episode range: "E7-8", "Ep 1-10", "E01-E05", "S01E01-E02",
      *  "EP (01-06)" (moon's #Love file 2026-11-02 — parens around the range).
      *  Group 1 = start, group 2 = end. */
     private val multiEpRe = Regex("""(?i)(?<![a-z0-9])(?:e|ep)\s*\(?\s*(\d{1,4})\s*[-–—]\s*(?:e|ep)?\s*(\d{1,4})\s*\)?(?![a-z0-9])""")
+
+    /**
+     * Range tail right after an SxxExx match: "S01 EP 1-5", "S01E01-E05",
+     * "S01E01 to 05" (moon's 2026-11-09 pack rule). Group 1 = the end
+     * number. Requires the dash/“to”, so a plain "S01E01E02" is untouched.
+     */
+    private val rangeTailRe = Regex(
+        """^\s*(?:-|–|—|\bto\b)\s*(?:e|ep)?\s*(\d{1,4})(?![a-z0-9])""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /**
+     * Lone season marker: "Show S02", "Show Season 2", "Show S02 Complete".
+     * S01E02 is already handled above, so this only ever fires on a file
+     * that names a season and nothing else — a pack (moon's 2026-11-09).
+     */
+    private val seasonShortRe = Regex("""(?i)(?<![a-z0-9])s(\d{1,2})(?![a-z0-9])""")
 
     /** [12 - Episode Title] bracketed anime episode. */
     private val bracketEpRe = Regex("""^\[\s*(\d{1,4})\s*[-–—]\s*([^\]]+)\]""")
@@ -239,6 +277,15 @@ object FilenameParser {
         return if (videoExtRe.containsMatchIn(capText)) capText else capText + (ext ?: ".mkv")
     }
 
+    /** End of an episode range that directly follows `m` ("-5" in S01EP1-5). */
+    private fun rangeTail(text: String, m: MatchResult): Int? {
+        if (m.range.last + 1 >= text.length) return null
+        val tail = text.substring(m.range.last + 1)
+        val end = rangeTailRe.find(tail)?.groupValues?.get(1)?.toIntOrNull() ?: return null
+        val start = m.groupValues[2].toIntOrNull() ?: return null
+        return if (end > start) end else null
+    }
+
     /**
      * @param absoluteAnime honours the Settings "Anime numbering" switch:
      *  true = Absolute (One Piece counts 1..1012), false = Seasonal (S/E).
@@ -320,6 +367,10 @@ object FilenameParser {
             sxxexxRe.find(work)?.let { m ->
                 season = m.groupValues[1].toIntOrNull()
                 episode = m.groupValues[2].toIntOrNull()
+                // "S01 EP 1-5" / "S01E01-E05": the file is a batch, so keep
+                // the end number — ScanManager files it under "Other"
+                // instead of pretending it is episode 1 (moon 2026-11-09).
+                episodeEnd = rangeTail(work, m)
                 title = before(m)
             } ?: nxnRe.find(work)?.let { m ->
                 season = m.groupValues[1].toIntOrNull()
@@ -366,6 +417,25 @@ object FilenameParser {
         // If title still has S01E01-style markers that weren't caught, strip them.
         title = Regex("""(?i)\s+s\d{1,2}\s*(?:e|ep)?\s*\d{0,4}\s*$""").replace(title, "").trim()
 
+        // "Show Season 2" / "Show S02" / "Show S02 Complete" with no episode
+        // anywhere: a whole-season pack. Without this the entry was filed as a
+        // MOVIE called "Show" (moon's 2026-11-09 pack report), which is worse
+        // than the Other bucket. Season only — the episode stays null, which
+        // is exactly the pack signal ScanManager reads.
+        if (season == null && episode == null) {
+            val loneSeason = seasonOnlyRe.find(work)
+                ?: seasonShortRe.find(work)?.takeIf { m ->
+                    // "S" followed by a number is only a season when the
+                    // number is not a year/quality tag left over in the name.
+                    val n = m.groupValues[1].toIntOrNull()
+                    n != null && n in 0..50
+                }
+            if (loneSeason != null) {
+                season = loneSeason.groupValues[1].toIntOrNull()
+                title = before(loneSeason)
+            }
+        }
+
         if (season == null && episode == null) {
             val sOnly = seasonOnlyRe.find(work)
             val eOnly = episodeOnlyRe.find(work)
@@ -410,6 +480,16 @@ object FilenameParser {
             }
         }
 
+        // Pack wording (moon's 2026-11-09): "Complete Series", "All Seasons",
+        // "Season 2 Complete" describe a batch even when no usable number
+        // survived. The phrase is cut from the title so the remaining words
+        // can still be matched to the show — that is what lets such a file
+        // land in the show's Other bucket instead of becoming a movie that
+        // happens to be called "Show Name Complete Series".
+        val packWord = packPhraseRe.containsMatchIn(work)
+        if (packWord) title = packPhraseRe.replace(title, " ")
+        val isPack = packWord || episodeEnd != null || (season != null && episode == null)
+
         // Strip year, quality words and leftover delimiters from the title.
         year?.let { y -> title = title.replace(y, "") }
         title = qualityCutRe.replace(title, "")
@@ -429,11 +509,16 @@ object FilenameParser {
             prevTitle = title
             title = Regex("""(?i)\s+(?:combined|true)\s*$""").replace(title, "").trim()
             title = Regex("""\s+WEB\s*$""").replace(title, "").trim()
+            // A doubled extension leaves a bare "mkv" in the title
+            // ("Show Name Complete Series mkv.mkv") and kills the metadata
+            // match — drop it (moon's 2026-11-09 pack check).
+            title = Regex("""(?i)\s+(?:mkv|mp4|avi|webm|m4v|mov)\s*$""")
+                .replace(title, "").trim()
         } while (title != prevTitle)
         // Drop dangling language words, but never reduce the title to nothing.
         trailingLangRe.replace(title, "").trim().takeIf { it.length >= 2 }?.let { title = it }
 
-        val type = if (season != null || episode != null) "series" else "movie"
+        val type = if (season != null || episode != null || isPack) "series" else "movie"
         val partSuffix = if (splitPart != null) " • Part $splitPart" else ""
         val badge = (if (languages.isEmpty()) quality else "$quality • ${languages.joinToString("/")}") + partSuffix
 
@@ -449,6 +534,7 @@ object FilenameParser {
             languages = languages,
             splitPart = splitPart,
             imdbId = imdbId,
+            isPack = isPack,
         )
     }
 }

@@ -78,6 +78,7 @@ import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.decoder.ffmpeg.FfmpegLibrary
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -262,9 +263,29 @@ fun PlayerScreen(
     // tdfile:// streams come straight from Telegram through our own
     // DataSource (no addon server needed); http/file URIs still work through
     // Media3's defaults. See ui/player/TdDataSource.kt.
+    //
+    // Player buffer (Settings → "Player buffer (seconds)", 2026-11-09).
+    // Media3's defaults when nothing is configured: 50 s kept ahead, 2.5 s
+    // needed to start, 5 s needed to resume after a stall, 64 MB allocator.
+    // This setting moves the 50 s figure only — the start/resume thresholds
+    // stay small so the first frame still appears quickly. Read once here:
+    // each AppScreen.Player builds a fresh player, so a change applies to
+    // the next video opened.
+    val playerBufferS = remember {
+        com.moon.moonstream.ui.state.AppUiState.playerBufferS.coerceIn(10, 300)
+    }
     val player = remember {
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                playerBufferS * 1000,
+                playerBufferS * 1000,
+                1_500,
+                3_000,
+            )
+            .build()
         ExoPlayer.Builder(context, buildRenderersFactory(context))
             .setMediaSourceFactory(DefaultMediaSourceFactory(MsDataSourceFactory(context)))
+            .setLoadControl(loadControl)
             .build().apply {
                 // Never autoplay before the load effect below decides (resume check).
                 playWhenReady = false

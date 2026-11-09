@@ -126,6 +126,23 @@ object ScanManager {
             } catch (e: Exception) {
                 Log.e(TAG, "merge duplicates failed: ${e.message}")
             }
+            // Existing rows that were filed as an episode before packs were
+            // recognised ("Complete S02" sitting in Season 2 with no episode
+            // number) move to the Other bucket once. Idempotent: afterwards
+            // no row matches the query.
+            try {
+                val packMedia = db.streamDao().mediaIdsWithPacks()
+                val parked = db.streamDao().parkPacks()
+                if (parked > 0) {
+                    val now = System.currentTimeMillis()
+                    for (mediaId in packMedia) db.mediaDao().refreshAggregates(mediaId, now)
+                    com.moon.moonstream.util.AppLog.i(
+                        "SCAN", "Moved $parked season pack(s) to the Other bucket",
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "park packs failed: ${e.message}")
+            }
             ScanUiState.finishRun()
             com.moon.moonstream.util.AppLog.i("SCAN", "Scan complete")
         }
@@ -373,7 +390,29 @@ object ScanManager {
         }
 
         val now = System.currentTimeMillis()
-        val media = db.mediaDao().findMatchAnyChannel(norm, meta?.year ?: parsed.year, type)
+        val year = meta?.year ?: parsed.year
+        // Canonical grouping key (moon's 2026-11-09 duplicate fix): when the
+        // metadata match knows the real title, group on THAT, not on how the
+        // uploader spelled the filename. "I Am Game", "IAM.Game.2024" and
+        // "[Group] I Am Game 1080p" then all resolve to "i am game" instead
+        // of three different normalized keys.
+        val canonicalNorm = meta?.title?.let { normalizeTitle(it) }?.takeIf { it.isNotBlank() }
+            ?: norm
+        // Identity, strongest first: IMDb id, TMDB id, exact title+year+tab,
+        // then title+tab ignoring the year. The last one is what stops a
+        // re-upload with no year (or a wrong year) from becoming a second
+        // entry for a movie already in the library.
+        val imdb = meta?.imdbId
+        val tmdb = meta?.tmdbId
+        val media = (if (!imdb.isNullOrBlank()) db.mediaDao().findByImdb(imdb) else null)
+            ?: (if (tmdb != null) db.mediaDao().findByTmdb(tmdb) else null)
+            ?: db.mediaDao().findMatchAnyChannel(canonicalNorm, year, type)
+            ?: db.mediaDao().findMatchLoose(canonicalNorm, type)
+            // Rows indexed before this change kept the parsed spelling
+            // ("iam game"), so compare with spaces removed as well, and
+            // finally with the parsed key in case the metadata title differs.
+            ?: db.mediaDao().findMatchSquashed(canonicalNorm.replace(" ", ""), type)
+            ?: db.mediaDao().findMatchSquashed(norm.replace(" ", ""), type)
         val mediaId = if (media == null) {
             // Poster style (moon's 2026-11-06): Fanart.tv is resolved here
             // at match time (needs the TMDB id + key, throttled + cached);
@@ -387,8 +426,8 @@ object ScanManager {
                 MediaItemEntity(
                     channelId = target.channelId,
                     title = meta?.title ?: parsed.title,
-                    normalizedTitle = norm,
-                    year = meta?.year ?: parsed.year,
+                    normalizedTitle = canonicalNorm,
+                    year = year,
                     type = type,
                     imdbId = meta?.imdbId,
                     tmdbId = meta?.tmdbId,
@@ -410,6 +449,24 @@ object ScanManager {
             media.id
         }
 
+        // Packs are not episodes (moon's 2026-11-09): "Complete S01",
+        // "Season 1", "S01 EP 1-5" describe a batch, so they must not be
+        // filed as episode 1 of that season. Dropping BOTH numbers puts the
+        // file in the entry's "Other" bucket, where it is still playable and
+        // the filename still says what it is. A season number without an
+        // episode, or an episode range, is the signal; single episodes keep
+        // their slot. This only runs for files whose metadata matched with
+        // confidence ≥ 0.75 (the gate above) — low-confidence files never
+        // reach an entry at all.
+        val isPack = parsed.isPack || parsed.episodeEnd != null ||
+            (parsed.season != null && parsed.episode == null)
+        if (isPack) {
+            com.moon.moonstream.util.AppLog.i(
+                "SCAN",
+                "pack '$fileName' (S${parsed.season ?: "?"}E${parsed.episode ?: "?"}" +
+                    "-${parsed.episodeEnd ?: "?"}) → Other bucket",
+            )
+        }
         db.streamDao().insert(
             StreamFileEntity(
                 mediaId = mediaId,
@@ -417,9 +474,9 @@ object ScanManager {
                 messageId = messageId,
                 fileName = fileName,
                 fileSize = fileSize,
-                season = parsed.season,
-                episode = parsed.episode,
-                episodeEnd = parsed.episodeEnd,
+                season = if (isPack) null else parsed.season,
+                episode = if (isPack) null else parsed.episode,
+                episodeEnd = if (isPack) null else parsed.episodeEnd,
                 quality = parsed.qualityBadge,
             ),
         )
@@ -511,20 +568,65 @@ object ScanManager {
     /**
      * Merges entries the old channel-scoped dedup split: same
      * (normalizedTitle, year, type) across channels, or twice in one
-     * channel. Keeps the richest entry (IMDb, then poster, then oldest),
-     * re-points the dupes' files + subtitles onto it and deletes the dupes.
-     * Returns how many duplicate entries were merged. Idempotent.
+     * channel — plus the looser IMDb-id / spacing / year-less cases above.
+     * Keeps the richest entry (IMDb, then poster, then most files, then
+     * oldest), re-points the dupes' files + subtitles onto it and deletes
+     * the dupes. Returns how many duplicate entries were merged. Idempotent.
      */
     suspend fun mergeDuplicateTitles(db: MsDatabase): Int {
-        val groups = db.mediaDao().getAll()
-            .groupBy { Triple(it.normalizedTitle, it.year, it.type) }
+        val all = db.mediaDao().getAll()
+        if (all.size < 2) return 0
+        // Groups of entries that are really the same title.
+        //
+        // The old key was (normalizedTitle, year, type) exactly — so one
+        // slightly different filename ("IAM.Game.2024" vs "I Am Game") or a
+        // file with no year at all created another entry, and a movie could
+        // pile up as four (moon's 2026-11-09: "I Am Game"). Now:
+        //  1. same IMDb id → same entry, whatever the title/tab/year says;
+        //  2. same title with spaces/punctuation ignored + same tab → same
+        //     entry, and a missing year folds into the year its siblings
+        //     agree on. Genuine remakes (two DIFFERENT known years) stay
+        //     separate, because only the year-less rows are pulled in.
+        val groups = mutableListOf<List<MediaItemEntity>>()
+        val taken = mutableSetOf<Long>()
+        fun addGroup(candidates: List<MediaItemEntity>) {
+            val fresh = candidates.filter { it.id !in taken }
+            if (fresh.size > 1) {
+                groups += fresh
+                fresh.forEach { taken += it.id }
+            }
+        }
+        all.filter { !it.imdbId.isNullOrBlank() }
+            .groupBy { it.imdbId!!.lowercase() }
             .filter { it.value.size > 1 }
+            .forEach { (_, g) -> addGroup(g) }
+
+        val squashed = { s: String -> s.lowercase().filter { it.isLetterOrDigit() } }
+        all.filterNot { it.id in taken }
+            .groupBy { squashed(it.normalizedTitle) + "|" + it.type }
+            .filter { it.value.size > 1 }
+            .forEach { (_, g) ->
+                val byYear = g.groupBy { it.year }
+                val yearless = byYear[null].orEmpty()
+                val years = byYear.filterKeys { it != null }
+                when (years.size) {
+                    0 -> addGroup(g)
+                    1 -> addGroup(g)
+                    else -> {
+                        years.values.filter { it.size > 1 }.forEach { addGroup(it) }
+                        val biggest = years.maxByOrNull { it.value.size }!!.value
+                        addGroup(biggest + yearless)
+                    }
+                }
+            }
+
         var merged = 0
         val now = System.currentTimeMillis()
-        for ((_, items) in groups) {
+        for (items in groups) {
             val kept = items.sortedWith(
                 compareByDescending<MediaItemEntity> { !it.imdbId.isNullOrBlank() }
                     .thenByDescending { !it.posterUrl.isNullOrBlank() }
+                    .thenByDescending { it.fileCount }
                     .thenBy { it.id },
             ).first()
             for (dupe in items.filter { it.id != kept.id }) {
@@ -569,6 +671,13 @@ object ScanManager {
         for (f in missing) {
             val parsed = FilenameParser.parse(f.fileName, isAnime, "", absoluteAnime)
             if (parsed.season == null && parsed.episode == null) continue
+            // Season packs / episode ranges stay in the Other bucket — do
+            // not give them an episode slot (moon's 2026-11-09).
+            if (parsed.isPack || parsed.episodeEnd != null ||
+                (parsed.season != null && parsed.episode == null)
+            ) {
+                continue
+            }
             db.streamDao().updateSeasonEpisode(f.id, parsed.season, parsed.episode)
             touched.add(f.mediaId)
             filled++
