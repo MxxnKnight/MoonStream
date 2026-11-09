@@ -1924,28 +1924,17 @@ private fun AccountCard(onLoggedOut: () -> Unit) {
         }
     }
     // Second confirmation (moon's request 2026-11-04): double-confirm logout.
+    // iOS style (moon's 2026-11-09 — the first dialog was iOS, this one was
+    // still the old AlertDialog until he logged out and saw it).
     if (showLogoutFinal) {
-        AlertDialog(
-            onDismissRequest = { showLogoutFinal = false },
-            title = {
-                Text(
-                    "Really log out?",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MsColors.TextPrimary,
-                )
-            },
-            text = {
-                Text(
-                    "This will stop the server and delete your local library. This can't be undone.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MsColors.TextSecondary,
-                )
-            },
-            confirmButton = {
-                LimePillButton(
-                    text = "Log out",
-                    fontSize = 14,
+        IosDialog(
+            onDismiss = { showLogoutFinal = false },
+            title = "Really log out?",
+            buttons = listOf(
+                IosSheetButton(label = "Cancel", onClick = { showLogoutFinal = false }),
+                IosSheetButton(
+                    label = "Log out",
+                    isDestructive = true,
                     onClick = {
                         scope.launch {
                             try {
@@ -1970,15 +1959,15 @@ private fun AccountCard(onLoggedOut: () -> Unit) {
                             onLoggedOut()
                         }
                     },
-                )
-            },
-            dismissButton = {
-                MsOutlinePill(text = "Cancel", fontSize = 14, onClick = { showLogoutFinal = false })
-            },
-            containerColor = MsColors.Surface,
-            titleContentColor = MsColors.TextPrimary,
-            textContentColor = MsColors.TextSecondary,
-        )
+                ),
+            ),
+        ) {
+            Text(
+                "This will stop the server and delete your local library. This can't be undone.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MsColors.TextSecondary,
+            )
+        }
     }
 }
 
