@@ -129,6 +129,18 @@ interface MoonStreamBackend {
      * false — the TDLib backend overrides this with TdApi.DeleteFile.
      */
     suspend fun deleteCachedFile(channelId: Long, messageId: Long): Boolean = false
+
+    /**
+     * Does this message still exist in the channel? Used by the Dead-links
+     * tool.
+     *
+     * `true` = it is there, `false` = Telegram says it is gone (deleted, or
+     * the whole channel is gone), `null` = the check could not be made
+     * (network, flood wait, unknown error). The null case matters: the old
+     * tool inferred "deleted" from an empty history page, which is also what
+     * a failed request returns, so a hiccup made every file look dead.
+     */
+    suspend fun messageExists(channelId: Long, messageId: Long): Boolean? = null
 }
 
 /** A backup document found in Saved Messages. */

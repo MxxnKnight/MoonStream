@@ -1240,7 +1240,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         ) {
             SettingRow(
                 title = "Dead links",
-                info = "Finds entries whose Telegram message was deleted while the app was off. Runs in the background — you can leave this screen.",
+                info = "Finds files whose Telegram message was deleted, and moves them to Unmatched so the broken entry disappears from the library. Files it cannot check (network) are left alone. Runs in the background — you can leave this screen.",
             ) {
                 BackgroundToolButton(
                     toolId = LibraryToolsRunner.TOOL_DEAD_LINKS,
@@ -1252,7 +1252,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             }
             SettingRow(
                 title = "Duplicates",
-                info = "Spots files with similar name and size on one title or episode, so you can clean up doubles. Runs in the background — you can leave this screen.",
+                info = "Reports the same file appearing twice, and episodes holding two files for the same quality. It only lists them in the Logs screen — nothing is deleted. Runs in the background — you can leave this screen.",
             ) {
                 BackgroundToolButton(
                     toolId = LibraryToolsRunner.TOOL_DUPLICATES,

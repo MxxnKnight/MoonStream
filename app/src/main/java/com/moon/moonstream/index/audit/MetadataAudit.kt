@@ -46,6 +46,8 @@ object MetadataAudit {
         val details = mutableListOf<String>()
         var moved = 0
         var checked = 0
+        // Entries that lost a file during this run, refreshed at the end.
+        val touched = mutableSetOf<Long>()
         // Cache match results by title to avoid hammering the APIs
         // (moon's concern 2026-11-01: rate limits on free APIs).
         // 10 GoT episodes = 1 request, not 10.
@@ -116,16 +118,25 @@ object MetadataAudit {
                     )
                     db.streamDao().deleteById(f.id)
                     moved++
+                    touched.add(media.id)
                     val line = "'${f.fileName.take(40)}' ← '${media.title.take(30)}' ($badReason)"
                     details.add(line)
                     AppLog.w("AUDIT", "Moved to unmatched: $line")
                 }
             }
+        }
 
-            // If the media item has no files left, delete it.
-            if (db.streamDao().listByMedia(media.id).isEmpty()) {
-                db.mediaDao().deleteById(media.id)
-                AppLog.i("AUDIT", "Deleted empty entry '${media.title}'")
+        // Bookkeeping after moving files around (moon's 2026-11-09): an entry
+        // that lost some files kept its old episode/file/size counts, so the
+        // library showed numbers that no longer matched. Empty entries go
+        // away — but only if no subtitle points at them either, or the
+        // subtitle was left dangling.
+        val now = System.currentTimeMillis()
+        for (mediaId in touched) {
+            db.mediaDao().refreshAggregates(mediaId, now)
+            db.mediaDao().deleteIfEmpty(mediaId)
+            if (db.mediaDao().getById(mediaId) == null) {
+                AppLog.i("AUDIT", "Deleted entry $mediaId (nothing left in it)")
             }
         }
 

@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.index.audit.MetadataAudit
 import com.moon.moonstream.index.db.MsDatabase
+import com.moon.moonstream.index.db.UnmatchedFileEntity
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.util.AppLog
 import kotlinx.coroutines.CoroutineScope
@@ -89,30 +90,67 @@ object LibraryToolsRunner {
                 val backend = BackendProvider.backend
                 val files = db.streamDao().getAll()
                 var dead = 0
+                var unchecked = 0
+                var floodWait = false
+                // Entries that lost a file — their counts are refreshed below.
+                val touched = mutableSetOf<Long>()
                 for ((idx, f) in files.withIndex()) {
-                    progressText = "Checking ${idx + 1}/${files.size}"
-                    try {
-                        // FIX 2026-11-05: fetchMessages is EXCLUSIVE of fromMessageId,
-                        // so to fetch message N you must pass N+1 (was passing N,
-                        // which fetched N-1 and always missed → all 500 marked dead).
-                        val msg = backend.fetchMessages(f.channelId, f.messageId + 1, 1)
-                            .firstOrNull { it.id == f.messageId }
-                        if (msg == null) {
+                    progressText = "Checking ${idx + 1}/${files.size} (dead: $dead)"
+                    when (backend.messageExists(f.channelId, f.messageId)) {
+                        // The message is gone: the row can never play, so move
+                        // it to Unmatched (where the user can see and delete
+                        // it) instead of leaving a broken entry in the library.
+                        false -> {
                             dead++
+                            db.unmatchedDao().insert(
+                                UnmatchedFileEntity(
+                                    channelId = f.channelId,
+                                    messageId = f.messageId,
+                                    fileName = f.fileName,
+                                    fileSize = f.fileSize,
+                                ),
+                            )
+                            db.streamDao().deleteById(f.id)
+                            touched.add(f.mediaId)
                             AppLog.w(
                                 "LIB",
-                                "Dead link: ${f.fileName} (${f.channelId}/${f.messageId})",
+                                "Dead link → unmatched: ${f.fileName} (${f.channelId}/${f.messageId})",
                             )
                         }
-                    } catch (e: Exception) {
-                        // Network error — skip, don't count as dead.
+                        // Unknown (network / flood wait): never guess. Stop
+                        // after a flood wait so a big library doesn't turn
+                        // into a flood of failed requests.
+                        null -> {
+                            unchecked++
+                            if (unchecked >= 5) {
+                                floodWait = true
+                                break
+                            }
+                        }
+                        true -> { /* alive */ }
                     }
-                    delay(100)
+                    delay(250)
                 }
-                val msg = if (dead == 0) "No dead links found"
-                else "$dead dead link(s) found — see logs"
+                // Fix the counts of entries a dead file was taken out of, and
+                // drop entries that are now empty (but keep any that still
+                // have subtitles pointing at them).
+                val now = System.currentTimeMillis()
+                for (mediaId in touched) {
+                    db.mediaDao().refreshAggregates(mediaId, now)
+                    db.mediaDao().deleteIfEmpty(mediaId)
+                }
+                val msg = when {
+                    floodWait -> "Stopped early: Telegram is rate-limiting. $dead dead so far, $unchecked unchecked."
+                    dead == 0 && unchecked == 0 -> "No dead links found"
+                    dead == 0 -> "No dead links found ($unchecked couldn't be checked)"
+                    else -> "$dead dead link(s) moved to Unmatched" +
+                        if (unchecked > 0) ", $unchecked couldn't be checked" else ""
+                }
                 MsToast.show(msg)
-                AppLog.i("LIB", "Dead-link check done: $dead dead of ${files.size}")
+                AppLog.i(
+                    "LIB",
+                    "Dead-link check done: $dead dead, $unchecked unchecked of ${files.size}",
+                )
             } catch (e: Exception) {
                 MsToast.show("Dead-link check failed: ${e.message}")
                 AppLog.e("LIB", "Dead-link check failed: ${e.message}")
@@ -131,18 +169,47 @@ object LibraryToolsRunner {
             try {
                 val db = MsDatabase.get(appContext)
                 val files = db.streamDao().getAll()
-                // Group by normalized name + size; >1 in a group = duplicate.
-                val groups = files.groupBy {
+
+                // Two different things are worth reporting (moon's 2026-11-09):
+                //  1. the SAME file in two messages — name + exact byte size;
+                //  2. two files fighting for the SAME slot on one entry —
+                //     same media + season + episode + quality, which is what
+                //     "Duplicate protection" normally prevents.
+                val sameFile = files.groupBy {
                     it.fileName.lowercase().replace(Regex("[^a-z0-9]"), "") to it.fileSize
                 }.filter { it.value.size > 1 }
-                val count = groups.values.sumOf { it.size - 1 }
-                for ((_, dupes) in groups) {
-                    AppLog.w("LIB", "Duplicate: ${dupes.first().fileName} ×${dupes.size}")
+
+                val sameSlot = files
+                    .filter { it.season != null || it.episode != null }
+                    .groupBy { Triple(it.mediaId, "${it.season ?: "-"}:${it.episode ?: "-"}", it.quality.lowercase()) }
+                    .filter { it.value.size > 1 }
+
+                for ((_, dupes) in sameFile) {
+                    AppLog.w(
+                        "LIB",
+                        "Duplicate file: '${dupes.first().fileName}' ×${dupes.size} " +
+                            "(${dupes.size} messages, same name and size)",
+                    )
                 }
-                val msg = if (count == 0) "No duplicates found"
-                else "$count duplicate file(s) found — see logs"
+                for ((_, dupes) in sameSlot) {
+                    val d = dupes.first()
+                    AppLog.w(
+                        "LIB",
+                        "Duplicate slot: S${d.season ?: "?"}E${d.episode ?: "?"} " +
+                            "${d.quality} ×${dupes.size} — ${dupes.joinToString { it.fileName.take(30) }}",
+                    )
+                }
+
+                val count = sameFile.values.sumOf { it.size - 1 }
+                val slots = sameSlot.values.sumOf { it.size - 1 }
+                val msg = when {
+                    count == 0 && slots == 0 -> "No duplicates found"
+                    slots == 0 -> "$count duplicate file(s) found — see logs"
+                    count == 0 -> "$slots episode slot(s) with more than one file — see logs"
+                    else -> "$count duplicate file(s) and $slots double-filled episode slot(s) — see logs"
+                }
                 MsToast.show(msg)
-                AppLog.i("LIB", "Duplicate scan done: $count dupes")
+                AppLog.i("LIB", "Duplicate scan done: $count file dupes, $slots slot dupes")
             } catch (e: Exception) {
                 MsToast.show("Duplicate scan failed: ${e.message}")
                 AppLog.e("LIB", "Duplicate scan failed: ${e.message}")

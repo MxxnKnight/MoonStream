@@ -130,10 +130,15 @@ interface MediaDao {
     @Query("DELETE FROM media_items WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    /** Drops an entry only if nothing points at it any more. */
+    /**
+     * Drops an entry only if nothing points at it any more — streams AND
+     * subtitles. (The audits used to call deleteById(), which happily left
+     * subtitle rows pointing at an entry that no longer existed.)
+     */
     @Query(
         "DELETE FROM media_items WHERE id = :id " +
-            "AND NOT EXISTS(SELECT 1 FROM stream_files WHERE mediaId = :id)",
+            "AND NOT EXISTS(SELECT 1 FROM stream_files WHERE mediaId = :id) " +
+            "AND NOT EXISTS(SELECT 1 FROM subtitle_files WHERE mediaId = :id)",
     )
     suspend fun deleteIfEmpty(id: Long)
 

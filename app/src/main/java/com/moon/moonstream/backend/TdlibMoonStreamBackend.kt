@@ -275,16 +275,60 @@ class TdlibMoonStreamBackend(
         _authState.value = BackendAuthState.LOGGED_OUT
     }
 
+    /**
+     * Saved Messages is the private chat with yourself, so its id is our own
+     * user id. (The old version also called createPrivateChat for this — one
+     * useless request per backup operation.)
+     */
     private suspend fun getSavedMessagesChatId(): Long? {
         val me = getMe()
-        if (me.id == 0L) return null
-        val chatResult = telegramManager.send(TdApi.CreatePrivateChat(me.id, false))
-        return if (chatResult.isSuccess) chatResult.getOrThrow().id else me.id
+        return if (me.id == 0L) null else me.id
+    }
+
+    /**
+     * Uploads the backup document and WAITS until Telegram really has it
+     * (moon's 2026-11-09).
+     *
+     * The old version deleted the temp file immediately after sendMessage()
+     * returned — but sendMessage() returns the moment the message is queued;
+     * TDLib is still reading the local file at that point. Deleting it killed
+     * the upload, Telegram dropped the message, and the app still logged
+     * "uploaded new backup msg N" while Saved Messages stayed empty.
+     *
+     * The file now lives in filesDir (not cacheDir, which the system can clear
+     * mid-upload) and is only removed once the remote copy is complete.
+     */
+    /**
+     * Dead-link probe: one GetMessage, and the error text is read instead of
+     * swallowed. TDLib answers "Message not found" / "MESSAGE_ID_INVALID"
+     * for a deleted message and something else for a failed request — the
+     * two must not be confused, or a network hiccup marks the whole library
+     * dead.
+     */
+    override suspend fun messageExists(channelId: Long, messageId: Long): Boolean? {
+        return try {
+            val res = telegramManager.send(TdApi.GetMessage(channelId, messageId))
+            if (res.isSuccess) return true
+            val text = res.exceptionOrNull()?.message?.lowercase().orEmpty()
+            when {
+                text.contains("not found") ||
+                    text.contains("message_id_invalid") ||
+                    text.contains("chat not found") ||
+                    text.contains("channel_invalid") -> false
+                else -> null
+            }
+        } catch (e: Exception) {
+            Log.e("TdlibBackend", "messageExists failed", e)
+            null
+        }
     }
 
     override suspend fun uploadBackup(bytes: ByteArray, fileName: String): Long? {
         val chatId = getSavedMessagesChatId() ?: return null
-        val tempFile = java.io.File(context.cacheDir, "upload_" + fileName)
+        val dir = java.io.File(context.filesDir, "backup_upload").apply { mkdirs() }
+        // Clear leftovers from an interrupted earlier run.
+        dir.listFiles()?.forEach { if (it.name != fileName) it.delete() }
+        val tempFile = java.io.File(dir, fileName)
         return try {
             tempFile.writeBytes(bytes)
             val doc = TdApi.InputMessageDocument(
@@ -295,13 +339,63 @@ class TdlibMoonStreamBackend(
             )
             val sendMsg = TdApi.SendMessage(chatId, null, null, null, null, doc)
             val res = telegramManager.send(sendMsg)
-            if (res.isSuccess) res.getOrThrow().id else null
+            if (res.isFailure) {
+                Log.e("TdlibBackend", "uploadBackup: sendMessage failed: ${res.exceptionOrNull()?.message}")
+                tempFile.delete()
+                return null
+            }
+            val msgId = res.getOrThrow().id
+            val uploaded = awaitUploadComplete(chatId, msgId)
+            if (uploaded) {
+                tempFile.delete()
+                msgId
+            } else {
+                // Keep the local file: the message may still land, and keeping
+                // it is what lets a later attempt reuse the same bytes.
+                Log.e("TdlibBackend", "uploadBackup: msg $msgId never finished uploading")
+                com.moon.moonstream.util.AppLog.e(
+                    "BACKUP",
+                    "Telegram never finished receiving backup msg $msgId — is the connection ok?",
+                )
+                null
+            }
         } catch (e: Exception) {
             Log.e("TdlibBackend", "uploadBackup failed", e)
             null
-        } finally {
-            tempFile.delete()
         }
+    }
+
+    /**
+     * Polls the just-sent message until its document reports a completed
+     * remote copy. Returns false if the message disappears (the upload was
+     * cancelled) or the timeout passes.
+     */
+    private suspend fun awaitUploadComplete(
+        chatId: Long,
+        messageId: Long,
+        timeoutMs: Long = 120_000L,
+    ): Boolean {
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < timeoutMs) {
+            val res = try {
+                telegramManager.send(TdApi.GetMessage(chatId, messageId))
+            } catch (e: Exception) {
+                null
+            }
+            if (res != null) {
+                if (res.isFailure) {
+                    Log.w("TdlibBackend", "awaitUploadComplete: message $messageId vanished")
+                    return false
+                }
+                val content = res.getOrThrow().content
+                if (content is TdApi.MessageDocument) {
+                    val remote = content.document.document?.remote
+                    if (remote != null && remote.isUploadingCompleted) return true
+                }
+            }
+            kotlinx.coroutines.delay(400)
+        }
+        return false
     }
 
     override suspend fun getBackupMessage(messageId: Long): BackupRef? {
@@ -315,6 +409,10 @@ class TdlibMoonStreamBackend(
             if (msg.content !is TdApi.MessageDocument) return null
             val doc = (msg.content as TdApi.MessageDocument).document
             val fileId = doc.document?.id ?: return null
+            // A message that exists but whose file Telegram hasn't fully
+            // received is not a usable backup — the old check said "verified"
+            // for it, which is how a broken upload looked successful.
+            if (doc.document?.remote?.isUploadingCompleted != true) return null
             BackupRef(messageId = msg.id, fileId = fileId, date = msg.date.toLong())
         } catch (e: Exception) {
             Log.e("TdlibBackend", "getBackupMessage failed", e)
@@ -322,33 +420,17 @@ class TdlibMoonStreamBackend(
         }
     }
 
-    override suspend fun findLatestBackup(): BackupRef? {
-        val chatId = getSavedMessagesChatId() ?: return null
-        return try {
-            val query = TdApi.SearchChatMessages(
-                chatId,
-                null,
-                "#MoonStreamBackup",
-                null,
-                0L,
-                0,
-                10,
-                null
-            )
-            val res = telegramManager.send(query)
-            if (res.isFailure) return null
-            val found = res.getOrThrow()
-            val msg = found.messages?.firstOrNull { it.content is TdApi.MessageDocument } ?: return null
-            val doc = (msg.content as TdApi.MessageDocument).document
-            val fileId = doc.document?.id ?: return null
-            BackupRef(messageId = msg.id, fileId = fileId, date = msg.date.toLong())
-        } catch (e: Exception) {
-            Log.e("TdlibBackend", "findLatestBackup failed", e)
-            null
-        }
-    }
-
-    override suspend fun findAllBackups(): List<BackupRef> {
+    /**
+     * Backup documents found by searching Saved Messages.
+     *
+     * Text search is the cheap way, but Telegram's search index lags behind
+     * new messages — a backup uploaded seconds ago (or, before the upload fix,
+     * one that never fully arrived) simply isn't there yet, which made
+     * "restore" report "No backup found" while the file was sitting in Saved
+     * Messages. [recentBackupDocs] reads the chat history directly as the
+     * reliable fallback.
+     */
+    private suspend fun searchBackupDocs(limit: Int): List<BackupRef> {
         val chatId = getSavedMessagesChatId() ?: return emptyList()
         return try {
             val query = TdApi.SearchChatMessages(
@@ -358,7 +440,7 @@ class TdlibMoonStreamBackend(
                 null,
                 0L,
                 0,
-                100,
+                limit,
                 null
             )
             val res = telegramManager.send(query)
@@ -372,9 +454,49 @@ class TdlibMoonStreamBackend(
                     BackupRef(messageId = msg.id, fileId = fileId, date = msg.date.toLong())
                 }
         } catch (e: Exception) {
-            Log.e("TdlibBackend", "findAllBackups failed", e)
+            Log.e("TdlibBackend", "searchBackupDocs failed", e)
             emptyList()
         }
+    }
+
+    /**
+     * Backup documents in the newest messages of Saved Messages, found
+     * without any search: neither the chat nor the message index is involved.
+     */
+    private suspend fun recentBackupDocs(limit: Int = 60): List<BackupRef> {
+        val chatId = getSavedMessagesChatId() ?: return emptyList()
+        return try {
+            // from_message_id = 0 means "start from the newest message".
+            val res = telegramManager.send(TdApi.GetChatHistory(chatId, 0L, 0, limit, false))
+            if (res.isFailure) {
+                Log.e("TdlibBackend", "recentBackupDocs failed", res.exceptionOrNull())
+                return emptyList()
+            }
+            (res.getOrThrow().messages ?: emptyArray()).mapNotNull { msg ->
+                val content = msg.content as? TdApi.MessageDocument ?: return@mapNotNull null
+                val doc = content.document
+                val looksLikeBackup = doc.fileName.startsWith("MoonStream_backup") ||
+                    content.caption?.text.orEmpty().contains("#MoonStreamBackup")
+                if (!looksLikeBackup) return@mapNotNull null
+                val fileId = doc.document?.id ?: return@mapNotNull null
+                BackupRef(messageId = msg.id, fileId = fileId, date = msg.date.toLong())
+            }
+        } catch (e: Exception) {
+            Log.e("TdlibBackend", "recentBackupDocs failed", e)
+            emptyList()
+        }
+    }
+
+    override suspend fun findLatestBackup(): BackupRef? {
+        val fromSearch = searchBackupDocs(10)
+        val fromHistory = recentBackupDocs()
+        return (fromSearch + fromHistory).maxByOrNull { it.date }
+    }
+
+    override suspend fun findAllBackups(): List<BackupRef> {
+        return (searchBackupDocs(100) + recentBackupDocs())
+            .distinctBy { it.messageId }
+            .sortedByDescending { it.date }
     }
 
     override suspend fun deleteBackup(ref: BackupRef): Boolean {
@@ -392,11 +514,22 @@ class TdlibMoonStreamBackend(
 
     override suspend fun downloadBackup(ref: BackupRef): ByteArray? {
         return try {
-            val downloadQuery = TdApi.DownloadFile(ref.fileId, 1, 0L, 0L, true)
-            val res = telegramManager.send(downloadQuery)
-            if (res.isFailure) return null
-            val file = res.getOrThrow()
-            val localPath = file.local?.path
+            // DownloadFile returns before the bytes are on disk, so wait for
+            // "downloading completed" before reading — otherwise a restore
+            // could read a half-written file (same async trap as the upload).
+            telegramManager.send(TdApi.DownloadFile(ref.fileId, 1, 0L, 0L, true))
+            var path: String? = null
+            val start = System.currentTimeMillis()
+            while (System.currentTimeMillis() - start < 120_000L) {
+                val res = telegramManager.send(TdApi.GetFile(ref.fileId))
+                val file = if (res.isSuccess) res.getOrThrow() else null
+                if (file?.local?.isDownloadingCompleted == true) {
+                    path = file.local?.path
+                    break
+                }
+                kotlinx.coroutines.delay(300)
+            }
+            val localPath = path
             if (!localPath.isNullOrBlank()) {
                 val downloadedFile = java.io.File(localPath)
                 if (downloadedFile.exists()) downloadedFile.readBytes() else null
