@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.moon.moonstream.R
 import com.moon.moonstream.tdlib.AuthState
 import com.moon.moonstream.tdlib.TelegramManager
+import com.moon.moonstream.ui.components.IosSpinner
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.theme.MsColors
@@ -326,10 +326,11 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             )
         }
 
-        // Loading indicator
+        // Loading indicator — iOS spinner (moon's 2026-11-09: the Material
+        // arc didn't match the app's iOS look).
         if (isLoading) {
             Spacer(Modifier.height(20.dp))
-            CircularProgressIndicator(color = MsColors.Accent)
+            IosSpinner(color = MsColors.Accent)
         }
 
         // Error message
