@@ -377,12 +377,17 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                         else -> 0
                     }
                     if (dir == 0) {
-                        fadeIn(tween(110)) togetherWith ExitTransition.None
+                        fadeIn(tween(90)) togetherWith ExitTransition.None
                     } else {
-                        (slideInHorizontally(
+                        // 165ms slide, no fade (2026-11-09 speed pass,
+                        // matches the screen switch): a whole-grid alpha
+                        // fade forces an offscreen layer and per-pixel
+                        // blending over the moving slide, which is the part
+                        // that stutters on a low-end GPU. Pure offset only.
+                        slideInHorizontally(
                             initialOffsetX = { fullWidth -> dir * fullWidth },
-                            animationSpec = tween(220, easing = FastOutSlowInEasing),
-                        ) + fadeIn(tween(220))) togetherWith ExitTransition.None
+                            animationSpec = tween(165, easing = FastOutSlowInEasing),
+                        ) togetherWith ExitTransition.None
                     }
                 },
                 label = "librarySegment",

@@ -1566,10 +1566,14 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         targetState = AppUiState.settingsRoute,
         transitionSpec = {
             val dir = if (targetState != null) 1 else -1
-            (slideInHorizontally(
+            // 165ms slide, no fade (2026-11-09 speed pass, matches the
+            // screen switch): the incoming page used to slide AND fade, and
+            // the full-screen alpha fade is the expensive half on a low-end
+            // GPU. Pure movement only.
+            slideInHorizontally(
                 initialOffsetX = { fullWidth -> dir * fullWidth },
-                animationSpec = tween(220, easing = FastOutSlowInEasing),
-            ) + fadeIn(tween(220))) togetherWith ExitTransition.None
+                animationSpec = tween(165, easing = FastOutSlowInEasing),
+            ) togetherWith ExitTransition.None
         },
         label = "settingsRoute",
         modifier = Modifier.fillMaxSize(),

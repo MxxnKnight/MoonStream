@@ -41,6 +41,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.mutableStateOf
@@ -244,6 +245,14 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     // how every screen — Splash, Login, Create, Player, Detail — gets a
     // directional slide, and every back gets the reverse slide.
     var slideDir by remember { mutableStateOf(0) }
+    // True for the duration of a screen switch (2026-11-09, moon — "screen
+    // switching animations seem slow, optimise for low-end phones"). While it
+    // is true the pill drops its backdrop blur and shows a plain dark tint:
+    // Haze re-captures and re-blurs the whole screen every frame, which is the
+    // most expensive thing on this phone's GPU and competes with the slide.
+    // It is invisible because the tint is already near-black, and it comes
+    // back the moment the switch lands.
+    var screenSwitching by remember { mutableStateOf(false) }
 
     // Detail belongs to the Library tab; Create belongs to Channels; Logs to Settings.
     val selectedTab = when (current) {
@@ -299,6 +308,13 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
         backStack.add(screen)
     }
 
+    // Keep the pill blur off while a screen slide runs (see screenSwitching).
+    LaunchedEffect(current) {
+        screenSwitching = true
+        delay(185)
+        screenSwitching = false
+    }
+
     // Floating pill nav (v0.4.0, NoxMedia-style): detached from the edges,
     // not the old edge-to-edge bar. Hidden on Splash, Login and Player
     // (a video player is immersive — no nav pill over it).
@@ -336,12 +352,22 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     // direction without that cost.
                     val dir = slideDir
                     if (dir == 0) {
-                        fadeIn(tween(110)) togetherWith ExitTransition.None
+                        // No direction to respect (tab replaced by itself):
+                        // a short fade only.
+                        fadeIn(tween(90)) togetherWith ExitTransition.None
                     } else {
-                        (slideInHorizontally(
+                        // 165ms at a fast-out curve (2026-11-09, moon: the
+                        // 220ms slide felt slow). The alpha fade that used to
+                        // run with it is gone on purpose: a full-screen
+                        // fadeIn forces an offscreen layer + per-pixel alpha
+                        // blend on top of the movement, which is exactly
+                        // what makes a cheap GPU stutter. A pure slide is a
+                        // single offset — much cheaper, and it looks crisper
+                        // and faster at the shorter duration.
+                        slideInHorizontally(
                             initialOffsetX = { fullWidth -> dir * fullWidth },
-                            animationSpec = tween(220, easing = FastOutSlowInEasing),
-                        ) + fadeIn(tween(220))) togetherWith ExitTransition.None
+                            animationSpec = tween(165, easing = FastOutSlowInEasing),
+                        ) togetherWith ExitTransition.None
                     }
                 },
                 label = "screenSwitch",
@@ -537,6 +563,25 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 val pillCenterX = remember { Animatable(0f) }
                 val indW = remember { Animatable(0f) }
                 var indReady by remember { mutableStateOf(false) }
+                // True only while the finger is actually dragging the capsule
+                // (2026-11-09). Used to tint the capsule while grabbed and to
+                // keep its height glued to the measured bar height below.
+                var capsuleDragging by remember { mutableStateOf(false) }
+                // Capsule X while the finger holds it. Null = follow the
+                // Animatable (tab slides). A plain float state so a drag
+                // writes one value per event without starting a coroutine;
+                // on release the Animatable is moved here first, then this
+                // is cleared (see the release branch).
+                var dragPillX by remember { mutableStateOf<Float?>(null) }
+                // Measured height of the pill bar. The capsule is sized from
+                // this instead of a hardcoded dp (2026-11-09 — "position and
+                // space all good"): with a hardcoded 47dp the capsule was
+                // 1dp off the bar's ends at the default font size and poked
+                // out of the bar when the system font size grew, because the
+                // icon + label row grows with the text but 47dp does not.
+                var barHeightPx by remember { mutableStateOf(0) }
+                // Gap between the capsule and the bar's top/bottom ends.
+                val capsuleInsetPx = with(density) { 3.dp.toPx() }
                 // One running capsule animation at a time (moon's bug
                 // 2026-11-09: the capsule landed on the wrong tab).
                 // The slide-to-tab, the drag catch-up and the release
@@ -582,6 +627,9 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         // Compact (moon's 2026-11-09, low-end): smaller
                         // footprint — 16dp sides, 14dp bottom (was 24/22).
                         .padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+                        // Report the bar's real height so the capsule can sit
+                        // 3dp inside it at any font size (2026-11-09).
+                        .onGloballyPositioned { barHeightPx = it.size.height }
                         .pointerInput(selectedTab) {
                             // Drag-the-capsule to switch (moon's 2026-11-07):
                             // press the pill and drag it to another tab — the
@@ -610,20 +658,53 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     // The capsule's centre when the drag
                                     // starts (the selected tab's centre).
                                     val startCenterX = pillCenterX.value
+                                    // Where the finger actually is/was. The
+                                    // release decision uses the FINGER, not
+                                    // the capsule: the capsule follows with a
+                                    // one-event gliding step, so on a fast
+                                    // flick it can still be a few px behind
+                                    // and would otherwise pick the tab it came
+                                    // from.
+                                    var fingerX = startCenterX
                                     while (true) {
                                         val event = awaitPointerEvent(PointerEventPass.Initial)
                                         val change = event.changes.firstOrNull { it.id == down.id }
-                                            ?: continue
+                                        if (change == null) {
+                                            // Gesture cancelled (another
+                                            // handler took the pointer). Park
+                                            // the capsule on the selected tab
+                                            // again — without this the drag
+                                            // override would stay set and the
+                                            // capsule would hang wherever the
+                                            // finger left it.
+                                            capsuleDragging = false
+                                            val held = dragPillX
+                                            if (held != null && dragging) {
+                                                val homeCenter =
+                                                    tabBounds.getOrNull(selIdx)?.center?.x
+                                                        ?.plus(rowHPaddingPx) ?: startCenterX
+                                                pillScope.launch {
+                                                    pillCenterX.snapTo(held)
+                                                    dragPillX = null
+                                                    capsuleAnim.job?.cancel()
+                                                    capsuleAnim.job = pillScope.launch {
+                                                        pillCenterX.animateTo(homeCenter, navSlideSpec)
+                                                    }
+                                                }
+                                            } else {
+                                                dragPillX = null
+                                            }
+                                            break
+                                        }
                                         if (!change.pressed) {
-                                            // Finger lifted: stop any
-                                            // catch-up slide, then snap to
-                                            // the nearest tab and switch.
-                                            // (Catch-up runs through the
-                                            // shared capsuleAnim holder, so
-                                            // the selection slide can
-                                            // cancel it.)
+                                            // Finger lifted: hand the capsule
+                                            // to the selection animation from
+                                            // exactly where the drag left it,
+                                            // then snap to the nearest tab.
                                             capsuleAnim.job?.cancel()
                                             capsuleAnim.job = null
+                                            capsuleDragging = false
+                                            val releaseX = dragPillX ?: pillCenterX.value
                                             if (dragging) {
                                                 var nearest = selIdx
                                                 var best = Float.MAX_VALUE
@@ -632,27 +713,44 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                                     // Bounds are in Row-content coords;
                                                     // pillCenterX is in bar coords (+padding).
                                                     val d = kotlin.math.abs(
-                                                        (bounds.center.x + rowHPaddingPx) - pillCenterX.value
+                                                        (bounds.center.x + rowHPaddingPx) - fingerX
                                                     )
                                                     if (d < best) {
                                                         best = d
                                                         nearest = i
                                                     }
                                                 }
-                                                if (nearest != selIdx) {
-                                                    goTab(tabs[nearest].screen)
-                                                } else {
-                                                    // Same tab: spring the
-                                                    // capsule back home.
-                                                    // (Bounds are in Row-content
-                                                    // coords; add the padding.)
-                                                    val homeCenter = tabBounds.getOrNull(selIdx)?.center?.x
-                                                        ?.plus(rowHPaddingPx) ?: startCenterX
-                                                    capsuleAnim.job?.cancel()
-                                                    capsuleAnim.job = pillScope.launch {
-                                                        pillCenterX.animateTo(homeCenter, navSlideSpec)
+                                                // Bounds are in Row-content
+                                                // coords; add the padding.
+                                                val homeCenter = tabBounds.getOrNull(selIdx)?.center?.x
+                                                    ?.plus(rowHPaddingPx) ?: startCenterX
+                                                // Move the real Animatable to the
+                                                // drag position BEFORE dropping
+                                                // the override, otherwise the
+                                                // capsule would flash back to
+                                                // the tab it came from for one
+                                                // frame and then slide from
+                                                // there (the old "jump" moon
+                                                // saw at the end of a drag).
+                                                pillScope.launch {
+                                                    pillCenterX.snapTo(releaseX)
+                                                    dragPillX = null
+                                                    if (nearest != selIdx) {
+                                                        goTab(tabs[nearest].screen)
+                                                    } else {
+                                                        // Same tab: spring back
+                                                        // home from the finger.
+                                                        capsuleAnim.job?.cancel()
+                                                        capsuleAnim.job = pillScope.launch {
+                                                            pillCenterX.animateTo(homeCenter, navSlideSpec)
+                                                        }
                                                     }
                                                 }
+                                            } else if (dragPillX != null) {
+                                                // Grabbed but never crossed the
+                                                // drag threshold (a tap that
+                                                // wobbled): drop the override.
+                                                dragPillX = null
                                             }
                                             break
                                         }
@@ -690,44 +788,41 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         ) {
                                             val minCenter = firstCenter + rowHPaddingPx
                                             val maxCenter = lastCenter + rowHPaddingPx
-                                            val fingerX = change.position.x.coerceIn(minCenter, maxCenter)
-                                            if (!wasDragging) {
-                                                // First engage: if the capsule
-                                                // is far from the finger, SLIDE
-                                                // it there instead of snapping
-                                                // (moon's 2026-11-07: he wants
-                                                // to see it run from its tab
-                                                // to his finger, not teleport).
-                                                // A short distance snaps as
-                                                // before (no visible difference).
-                                                val dist = kotlin.math.abs(fingerX - pillCenterX.value)
-                                                if (dist > dragThresholdPx) {
-                                                    capsuleAnim.job?.cancel()
-                                                    capsuleAnim.job = pillScope.launch {
-                                                        pillCenterX.animateTo(fingerX, navSlideSpec)
-                                                    }
-                                                    continue
-                                                }
-                                            }
-                                            // While the catch-up slide is still
-                                            // running, retarget it to the
-                                            // finger's latest spot instead of
-                                            // ignoring the finger (the old code
-                                            // skipped moves while the slide
-                                            // ran, so the capsule lagged
-                                            // behind a fast drag). Once the
-                                            // finger stops, the slide lands
-                                            // and exact follow resumes.
-                                            if (capsuleAnim.job?.isActive == true) {
-                                                capsuleAnim.job?.cancel()
-                                                capsuleAnim.job = pillScope.launch {
-                                                    pillCenterX.animateTo(fingerX, navSlideSpec)
-                                                }
-                                                continue
-                                            }
+                                            fingerX = change.position.x.coerceIn(minCenter, maxCenter)
+                                            // Drag feel (rewritten 2026-11-09:
+                                            // moon — "capsule dragging is not
+                                            // perfect"). The old code launched a
+                                            // spring animation on the first
+                                            // engage and then cancelled +
+                                            // relaunched it on EVERY pointer
+                                            // event. A spring that is thrown
+                                            // away 100+ times per second never
+                                            // settles, so on this phone the
+                                            // capsule crawled behind the finger,
+                                            // and the coroutine churn made the
+                                            // pill stutter while the list
+                                            // underneath was scrolling.
+                                            // Now it is one plain snapTo per
+                                            // event (no coroutines, no
+                                            // allocation): a fast exponential
+                                            // follow, so the capsule runs to the
+                                            // finger from its tab and then sits
+                                            // under it 1:1, while still gliding
+                                            // if touch events arrive sparsely.
+                                            capsuleAnim.job?.cancel()
                                             capsuleAnim.job = null
-                                            capsuleAnim.job = pillScope.launch {
-                                                pillCenterX.snapTo(fingerX)
+                                            capsuleDragging = true
+                                            val follow = if (wasDragging) 0.85f else 0.45f
+                                            val cur = dragPillX ?: pillCenterX.value
+                                            val next = cur + (fingerX - cur) * follow
+                                            // Plain state write: no coroutine, no
+                                            // Animatable, so a fast drag costs
+                                            // nothing. Animatable.snapTo cannot
+                                            // even be called here —
+                                            // awaitPointerEventScope is a
+                                            // restricted scope.
+                                            if (kotlin.math.abs(next - cur) > 0.05f) {
+                                                dragPillX = next
                                             }
                                         }
                                     }
@@ -741,7 +836,14 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             modifier = Modifier
                                 .matchParentSize()
                                 .clip(pillShape)
-                                .hazeEffect(hazeState) {
+                                .then(
+                                    if (screenSwitching) {
+                                        // Screen is sliding: skip the blur (see
+                                        // screenSwitching). Same near-black look,
+                                        // zero GPU cost while the frame moves.
+                                        Modifier.background(Color.Black.copy(alpha = 0.80f))
+                                    } else {
+                                        Modifier.hazeEffect(hazeState) {
                                     style = HazeStyle(
                                         // Black-tinted backdrop blur (moon's
                                         // AMOLED pick, blacker 2026-11-07):
@@ -767,7 +869,9 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     // above keeps it looking black-frosted
                                     // even at this low resolution.
                                     inputScale = HazeInputScale.Fixed(0.25f)
-                                }
+                                        }
+                                    },
+                                )
                                 .border(0.5.dp, Color.White.copy(alpha = 0.10f), pillShape),
                         )
                         // The sliding capsule (behind the tabs): it fills
@@ -776,32 +880,37 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         // minus 4dp top and bottom) so it reads as a wide
                         // horizontal capsule, never a rounded square.
                         if (indReady) {
+                            // Height = measured bar height minus 3dp top and
+                            // bottom (2026-11-09). This is what makes the
+                            // capsule sit perfectly centred with an even gap
+                            // at both ends: it no longer depends on a guessed
+                            // 47dp, so it stays right when the icon/label row
+                            // grows with the system font size, and it can
+                            // never poke out of the bar's rounded ends.
+                            val capsuleHPx = if (barHeightPx > 0) {
+                                (barHeightPx - capsuleInsetPx * 2).coerceAtLeast(1f)
+                            } else with(density) { 40.dp.toPx() }
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.CenterStart)
                                     .offset {
                                         IntOffset(
-                                            (pillCenterX.value - indW.value / 2).roundToInt(),
+                                            ((dragPillX ?: pillCenterX.value) - indW.value / 2).roundToInt(),
                                             0,
                                         )
                                     }
                                     .size(
                                         with(density) { indW.value.toDp() },
-                                        // 47dp (moon's 2026-11-09, compact
-                                        // low-end — was 64dp): the bar is
-                                        // ~48dp now (Row padding 6dp, icon
-                                        // 20dp, text 9sp), so the capsule
-                                        // sits just 0.5dp from the bar's
-                                        // top/bottom ends. Same full-pill
-                                        // shape as the bar
-                                        // (RoundedCornerShape 50), so its
-                                        // curved ends nest inside the bar's
-                                        // and never poke out. Library tabs
-                                        // thumb stays 36dp — untouched.
-                                        47.dp,
+                                        with(density) { capsuleHPx.toDp() },
                                     )
+                                    // Full pill shape, same as the bar, so the
+                                    // curved ends nest inside it.
                                     .clip(RoundedCornerShape(50))
-                                    .background(Color.White.copy(alpha = 0.22f)),
+                                    // Brighter while the finger holds it, so a
+                                    // drag reads as "I grabbed it" (2026-11-09).
+                                    .background(
+                                        Color.White.copy(alpha = if (capsuleDragging) 0.30f else 0.22f)
+                                    ),
                             )
                         }
                         Row(

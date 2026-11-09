@@ -394,6 +394,25 @@ interface WatchProgressDao {
     @Query("UPDATE watch_progress SET positionMs = :positionMs, durationMs = :durationMs, playedAt = :playedAt WHERE streamFileId = :streamFileId")
     suspend fun updatePosition(streamFileId: Long, positionMs: Long, durationMs: Long, playedAt: Long): Int
 
+    /**
+     * "This file is being opened" — refresh the row's metadata but KEEP the
+     * saved position (resume fix 2026-11-09).
+     *
+     * Detail used to `deleteByStreamFile()` + `upsert()` a fresh row here, which
+     * zeroed positionMs. That ran at the same moment the player read the saved
+     * spot, so every play from Detail started at 0:00 and the Resume button
+     * never appeared. mediaId is also re-pointed so a merged entry heals itself.
+     */
+    @Query(
+        "UPDATE watch_progress SET mediaId = :mediaId, title = :title, " +
+            "episodeLabel = :episodeLabel, posterUrl = :posterUrl, playedAt = :playedAt " +
+            "WHERE streamFileId = :streamFileId"
+    )
+    suspend fun touchOpened(
+        streamFileId: Long, mediaId: Long, title: String,
+        episodeLabel: String?, posterUrl: String?, playedAt: Long,
+    ): Int
+
     @Query("DELETE FROM watch_progress WHERE streamFileId = :streamFileId")
     suspend fun deleteByStreamFile(streamFileId: Long)
 

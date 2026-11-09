@@ -209,7 +209,14 @@ fun DetailScreen(
             m.title
         }
 
-    /** Record the watch (one row per file — delete-then-insert). */
+    /**
+     * Record the watch — WITHOUT losing the saved position (resume fix
+     * 2026-11-09). This used to be delete-then-insert, which zeroed the row at
+     * the same moment the player was reading it: every play from Detail
+     * started at 0:00 and the Resume button never showed. It is also not
+     * container-related — MKV saves exactly like MP4, the position was simply
+     * being wiped a few milliseconds after being read.
+     */
     fun recordWatch(file: StreamFileEntity) {
         scope.launch(Dispatchers.IO) {
             try {
@@ -218,17 +225,24 @@ fun DetailScreen(
                         (if (file.episodeEnd != null) "-${file.episodeEnd}" else "")
                 } else null
                 val dao = db.watchProgressDao()
-                dao.deleteByStreamFile(file.id)
-                dao.upsert(
-                    com.moon.moonstream.index.db.WatchProgressEntity(
-                        mediaId = m.id,
-                        streamFileId = file.id,
-                        title = m.title,
-                        episodeLabel = epLabel,
-                        posterUrl = m.posterUrl,
-                        playedAt = System.currentTimeMillis(),
-                    )
+                val now = System.currentTimeMillis()
+                val touched = dao.touchOpened(
+                    streamFileId = file.id, mediaId = m.id, title = m.title,
+                    episodeLabel = epLabel, posterUrl = m.posterUrl, playedAt = now,
                 )
+                // First ever play of this file: create the row (position 0).
+                if (touched == 0) {
+                    dao.upsert(
+                        com.moon.moonstream.index.db.WatchProgressEntity(
+                            mediaId = m.id,
+                            streamFileId = file.id,
+                            title = m.title,
+                            episodeLabel = epLabel,
+                            posterUrl = m.posterUrl,
+                            playedAt = now,
+                        )
+                    )
+                }
             } catch (e: Exception) { /* never break playback for logging */ }
         }
     }
