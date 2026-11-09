@@ -1629,16 +1629,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 IosNavRow("About", showDivider = false) { AppUiState.settingsRoute = "About" }
             }
 
-            // Version footer (moon's request 2026-11-03): small, one line at bottom.
-            Text(
-                "MoonStream v${BuildConfig.VERSION_NAME}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MsColors.TextSecondary.copy(alpha = 0.6f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 24.dp, bottom = 8.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
+            // (moon's 2026-11-09: the version footer is gone — the About
+            // screen already shows the version, so this line was redundant.)
         }
     } else {
         // Sub-screen: fixed header with back button + section content.
