@@ -70,6 +70,12 @@ data class StreamFileEntity(
     /** Last episode for multi-episode files (e.g. "E7-8" → episode=7, episodeEnd=8). Null = single. */
     val episodeEnd: Int? = null,
     val quality: String,
+    /**
+     * Telegram edit stamp of the message this file came from (0 = never
+     * edited). A change means the uploader fixed the caption, so the scan
+     * re-indexes the file (moon's 2026-11-09).
+     */
+    val editDate: Long = 0,
 )
 
 /**
@@ -129,6 +135,8 @@ data class UnmatchedFileEntity(
     val messageId: Long,
     val fileName: String,
     val fileSize: Long,
+    /** See [StreamFileEntity.editDate]. */
+    val editDate: Long = 0,
 )
 
 /** Per-channel user settings: anime flag + soft-remove + sync timestamp. */
@@ -174,6 +182,8 @@ data class SubtitleFileEntity(
     val episode: Int?,
     /** e.g. "Mal", "Eng", "Hin" — "unknown" when the filename gives no hint. */
     val language: String,
+    /** See [StreamFileEntity.editDate]. */
+    val editDate: Long = 0,
 )
 
 /** "X Movies · Y Shows · Z Episodes" breakdown for one channel. */

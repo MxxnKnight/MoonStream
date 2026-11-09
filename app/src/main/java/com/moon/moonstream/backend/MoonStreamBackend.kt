@@ -43,6 +43,12 @@ data class MsMessage(
     val date: Long,
     /** Telegram message caption (often has the clean release name); "" when none. */
     val caption: String = "",
+    /**
+     * Epoch seconds of the last edit (caption included); 0 = never edited.
+     * Used to re-index a file when the uploader fixes its caption
+     * (moon's 2026-11-09).
+     */
+    val editDate: Long = 0,
 )
 
 /** The logged-in Telegram user (for the Account screen). */

@@ -130,6 +130,13 @@ interface MediaDao {
     @Query("DELETE FROM media_items WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    /** Drops an entry only if nothing points at it any more. */
+    @Query(
+        "DELETE FROM media_items WHERE id = :id " +
+            "AND NOT EXISTS(SELECT 1 FROM stream_files WHERE mediaId = :id)",
+    )
+    suspend fun deleteIfEmpty(id: Long)
+
     @Query("SELECT * FROM media_items WHERE channelId = :channelId")
     suspend fun getAllByChannel(channelId: Long): List<MediaItemEntity>
 
@@ -194,6 +201,27 @@ interface MediaDao {
 interface StreamDao {
     @Query("SELECT EXISTS(SELECT 1 FROM stream_files WHERE channelId = :channelId AND messageId = :messageId)")
     suspend fun exists(channelId: Long, messageId: Long): Boolean
+
+    /**
+     * Edit stamp this message was indexed with, wherever it landed (stream,
+     * subtitle or unmatched). Null = the message isn't indexed at all.
+     * One query instead of three per message in the edit look-back.
+     */
+    @Query(
+        "SELECT editDate FROM stream_files WHERE channelId = :channelId AND messageId = :messageId " +
+            "UNION ALL SELECT editDate FROM subtitle_files WHERE channelId = :channelId AND messageId = :messageId " +
+            "UNION ALL SELECT editDate FROM unmatched_files WHERE channelId = :channelId AND messageId = :messageId",
+    )
+    suspend fun storedEditDate(channelId: Long, messageId: Long): Long?
+
+    @Query("UPDATE stream_files SET editDate = :editDate WHERE channelId = :channelId AND messageId = :messageId")
+    suspend fun setEditDate(channelId: Long, messageId: Long, editDate: Long)
+
+    @Query("DELETE FROM stream_files WHERE channelId = :channelId AND messageId = :messageId")
+    suspend fun deleteByMessage(channelId: Long, messageId: Long)
+
+    @Query("SELECT * FROM stream_files WHERE channelId = :channelId AND messageId = :messageId LIMIT 1")
+    suspend fun findByMessage(channelId: Long, messageId: Long): StreamFileEntity?
 
     @Query("SELECT * FROM stream_files")
     suspend fun getAll(): List<StreamFileEntity>
@@ -299,6 +327,12 @@ interface SubtitleDao {
     @Query("SELECT EXISTS(SELECT 1 FROM subtitle_files WHERE channelId = :channelId AND messageId = :messageId)")
     suspend fun exists(channelId: Long, messageId: Long): Boolean
 
+    @Query("UPDATE subtitle_files SET editDate = :editDate WHERE channelId = :channelId AND messageId = :messageId")
+    suspend fun setEditDate(channelId: Long, messageId: Long, editDate: Long)
+
+    @Query("DELETE FROM subtitle_files WHERE channelId = :channelId AND messageId = :messageId")
+    suspend fun deleteByMessage(channelId: Long, messageId: Long)
+
     @Query("SELECT * FROM subtitle_files")
     suspend fun getAll(): List<SubtitleFileEntity>
 
@@ -375,6 +409,9 @@ interface UnmatchedDao {
 
     @Query("DELETE FROM unmatched_files WHERE channelId = :channelId AND messageId = :messageId")
     suspend fun deleteByMessage(channelId: Long, messageId: Long)
+
+    @Query("UPDATE unmatched_files SET editDate = :editDate WHERE channelId = :channelId AND messageId = :messageId")
+    suspend fun setEditDate(channelId: Long, messageId: Long, editDate: Long)
 
     @Query("DELETE FROM unmatched_files WHERE channelId = :channelId")
     suspend fun deleteByChannel(channelId: Long)

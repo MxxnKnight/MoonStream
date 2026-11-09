@@ -191,7 +191,9 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
         }
     } }
     val inHiddenTab = segment == 4
-    val totalStreams = allItems.sumOf { it.fileCount }
+    // Low-end pass (moon's 2026-11-09): this sum walked every entry on every
+    // recomposition (it sits in a header that also moves while scrolling).
+    val totalStreams = remember(allItems) { allItems.sumOf { it.fileCount } }
 
     fun exitSelectMode() {
         selectMode = false
@@ -622,6 +624,23 @@ private fun PosterCell(
     onToggleHide: () -> Unit,
 ) {
     val context = LocalContext.current
+    // Low-end pass (moon's 2026-11-09): the poster style/template live in
+    // SharedPreferences, and reading them here ran two prefs lookups per
+    // visible cell on every scroll frame. Read once per cell, and build the
+    // display URL once per poster instead of on every recomposition.
+    val posterStyle = remember(context) {
+        com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context)
+    }
+    val posterTemplate = remember(context) {
+        com.moon.moonstream.index.scan.ScanPrefs.getPosterTemplate(context)
+    }
+    val posterUrl = remember(item.posterUrl, item.imdbId, posterStyle, posterTemplate) {
+        item.posterUrl?.let {
+            com.moon.moonstream.util.PosterStyle.displayUrl(
+                it, item.imdbId, posterStyle, posterTemplate,
+            )
+        }
+    }
     Column(
         modifier = Modifier.combinedClickable(
             onClick = onClick,
@@ -646,13 +665,9 @@ private fun PosterCell(
                     .background(MsColors.SurfaceAlt),
                 contentAlignment = Alignment.Center,
             ) {
-                if (item.posterUrl != null) {
+                if (posterUrl != null) {
                     AsyncImage(
-                        model = com.moon.moonstream.util.PosterStyle.displayUrl(
-                            item.posterUrl, item.imdbId,
-                            com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
-                            com.moon.moonstream.index.scan.ScanPrefs.getPosterTemplate(context),
-                        ),
+                        model = posterUrl,
                         contentDescription = item.title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),

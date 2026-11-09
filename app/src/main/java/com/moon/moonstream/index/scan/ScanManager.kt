@@ -3,6 +3,7 @@ package com.moon.moonstream.index.scan
 import android.content.Context
 import android.util.Log
 import com.moon.moonstream.backend.MoonStreamBackend
+import com.moon.moonstream.backend.MsMessage
 import com.moon.moonstream.index.db.MediaItemEntity
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.ScanCursorEntity
@@ -51,6 +52,14 @@ object ScanManager {
     private const val PAGE_SIZE = 100
     private const val PAGE_DELAY_MS = 350L
     private const val CHANNEL_DELAY_MS = 1_500L
+
+    /**
+     * How many pages (× [PAGE_SIZE]) past the cursor a quick scan keeps
+     * looking for edited captions. Three pages ≈ the newest 300 messages:
+     * that is where uploaders actually fix a typo, and it costs 3 extra
+     * requests per channel instead of a full rescan.
+     */
+    private const val EDIT_LOOKBACK_PAGES = 3
 
     /** Subtitle extensions the scanner indexes instead of treating as video. */
     private val SUBTITLE_EXTS = setOf("srt", "ass", "ssa", "vtt", "sub", "smi")
@@ -201,6 +210,17 @@ object ScanManager {
         var repExisting = 0
         var repUnmatched = 0
         var repChecked = 0
+        // Caption edits (moon's 2026-11-09): an edit keeps the message id and
+        // its date, so newest-first paging that stops at the cursor would
+        // never see it again. Instead of stopping dead we walk a bounded
+        // look-back window past the cursor and re-index any message whose
+        // Telegram edit stamp moved. The window is only a few pages, so a
+        // quick scan stays a quick scan.
+        var pagesPastCursor = 0
+        var reindexed = 0
+        // Entries a re-index may have emptied out (a fixed caption can move a
+        // file to a different show), refreshed once the channel is done.
+        val affectedMedia = mutableSetOf<Long>()
 
         while (true) {
             val tgStart = System.currentTimeMillis()
@@ -222,10 +242,32 @@ object ScanManager {
 
             for (msg in page) {
                 if (msg.id > newestSeen) newestSeen = msg.id
-                // Incremental: everything at/below the cursor was scanned before.
+                // Incremental: everything at/below the cursor was scanned
+                // before — except that its caption may have been edited
+                // since. Check the edit stamp inside the look-back window.
                 if (cursor != null && msg.id <= cursor) {
                     hitCursor = true
-                    break
+                    if (pagesPastCursor < EDIT_LOOKBACK_PAGES) {
+                        val stored = db.streamDao().storedEditDate(channelId, msg.id)
+                        if (stored != null && stored != msg.editDate) {
+                            db.streamDao().findByMessage(channelId, msg.id)
+                                ?.let { affectedMedia += it.mediaId }
+                            db.streamDao().deleteByMessage(channelId, msg.id)
+                            db.subtitleDao().deleteByMessage(channelId, msg.id)
+                            db.unmatchedDao().deleteByMessage(channelId, msg.id)
+                            if (handleMessage(db, target, msg, absoluteAnime, tmdbKey, omdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache) == Outcome.INDEXED) {
+                                indexed++
+                            } else {
+                                unmatched++
+                            }
+                            reindexed++
+                            com.moon.moonstream.util.AppLog.i(
+                                "SCAN",
+                                "ch=$channelId msg=${msg.id} caption edited → re-indexed",
+                            )
+                        }
+                    }
+                    continue
                 }
                 checked++
                 if (db.streamDao().exists(channelId, msg.id) ||
@@ -235,54 +277,17 @@ object ScanManager {
                     existing++
                     continue
                 }
-                // Subtitle files take the subtitle path, not the video path.
-                if (isSubtitleFile(msg.fileName)) {
-                    indexSubtitle(db, target, msg.id, msg.fileName, msg.fileSize, absoluteAnime)
-                    indexed++
-                    continue
-                }
-                // Free playability gate (moon's 2026-11-06): Telegram's own
-                // MIME type says this is not a video — it can never play, so
-                // it goes to unmatched instead of the library. No downloads,
-                // no slower scans: the mime already arrives with the message.
-                if (isNonVideoMime(msg.mimeType)) {
-                    com.moon.moonstream.util.AppLog.w(
-                        "MATCH",
-                        "'${msg.fileName}' mime=${msg.mimeType} is not a video → unmatched",
-                    )
-                    db.unmatchedDao().insert(
-                        UnmatchedFileEntity(
-                            channelId = channelId,
-                            messageId = msg.id,
-                            fileName = msg.fileName,
-                            fileSize = msg.fileSize,
-                        ),
-                    )
-                    unmatched++
-                    continue
-                }
-                val parsed = FilenameParser.parse(msg.fileName, target.isAnime, msg.caption, absoluteAnime)
-                if (parsed.title.isBlank()) {
-                    db.unmatchedDao().insert(
-                        UnmatchedFileEntity(
-                            channelId = channelId,
-                            messageId = msg.id,
-                            fileName = msg.fileName,
-                            fileSize = msg.fileSize,
-                        ),
-                    )
-                    unmatched++
-                    continue
-                }
-                val matched = indexFile(db, target, msg.id, msg.fileName, msg.fileSize, parsed, tmdbKey, omdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache)
-                if (matched) {
+                if (handleMessage(db, target, msg, absoluteAnime, tmdbKey, omdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache) == Outcome.INDEXED) {
                     indexed++
                 } else {
                     unmatched++
                 }
             }
 
-            if (hitCursor) break
+            if (hitCursor) {
+                pagesPastCursor++
+                if (pagesPastCursor >= EDIT_LOOKBACK_PAGES) break
+            }
             fromId = page.last().id
             // Rough progress: we can't know the total up front, so we pulse
             // forward a little per page and finish at markDone().
@@ -303,6 +308,20 @@ object ScanManager {
 
         if (newestSeen > (cursor ?: 0L)) {
             db.scanCursorDao().set(ScanCursorEntity(channelId, newestSeen))
+        }
+        // A re-indexed file may have left its old entry empty (caption fixed
+        // to a different show) or changed its season/episode counts.
+        if (affectedMedia.isNotEmpty()) {
+            val now = System.currentTimeMillis()
+            for (mediaId in affectedMedia) {
+                db.mediaDao().refreshAggregates(mediaId, now)
+                db.mediaDao().deleteIfEmpty(mediaId)
+            }
+        }
+        if (reindexed > 0) {
+            com.moon.moonstream.util.AppLog.i(
+                "SCAN", "ch=$channelId: $reindexed edited caption(s) re-indexed",
+            )
         }
         // Subtitles can arrive before their video files (newest-first paging),
         // so take a second pass over anything still unlinked. Manual channels
@@ -327,6 +346,77 @@ object ScanManager {
             checked - repChecked,
         )
         Log.i(TAG, "ch=$channelId done: indexed=$indexed existing=$existing unmatched=$unmatched checked=$checked")
+    }
+
+    /** What a message did: went into the library, or aside as unmatched. */
+    private enum class Outcome { INDEXED, UNMATCHED }
+
+    /**
+     * The whole per-message pipeline: subtitle → mime gate → parse → match,
+     * with the Telegram edit stamp written onto whichever row it produces.
+     * Shared by new messages and by re-indexing a message whose caption the
+     * uploader fixed (moon's 2026-11-09).
+     */
+    private suspend fun handleMessage(
+        db: MsDatabase,
+        target: ScanTarget,
+        msg: MsMessage,
+        absoluteAnime: Boolean,
+        tmdbKey: String,
+        omdbKey: String,
+        metaCache: MutableMap<String, EnrichedMeta?>,
+        animeCache: MutableMap<String, Boolean>,
+        posterStyle: Int,
+        fanartKey: String,
+        fanartCache: MutableMap<Int, String?>,
+    ): Outcome {
+        val channelId = target.channelId
+        // Subtitle files take the subtitle path, not the video path.
+        if (isSubtitleFile(msg.fileName)) {
+            indexSubtitle(db, target, msg.id, msg.fileName, msg.fileSize, absoluteAnime)
+            db.subtitleDao().setEditDate(channelId, msg.id, msg.editDate)
+            return Outcome.INDEXED
+        }
+        // Free playability gate (moon's 2026-11-06): Telegram's own
+        // MIME type says this is not a video — it can never play, so
+        // it goes to unmatched instead of the library. No downloads,
+        // no slower scans: the mime already arrives with the message.
+        if (isNonVideoMime(msg.mimeType)) {
+            com.moon.moonstream.util.AppLog.w(
+                "MATCH",
+                "'${msg.fileName}' mime=${msg.mimeType} is not a video → unmatched",
+            )
+            db.unmatchedDao().insert(
+                UnmatchedFileEntity(
+                    channelId = channelId,
+                    messageId = msg.id,
+                    fileName = msg.fileName,
+                    fileSize = msg.fileSize,
+                    editDate = msg.editDate,
+                ),
+            )
+            return Outcome.UNMATCHED
+        }
+        val parsed = FilenameParser.parse(msg.fileName, target.isAnime, msg.caption, absoluteAnime)
+        if (parsed.title.isBlank()) {
+            db.unmatchedDao().insert(
+                UnmatchedFileEntity(
+                    channelId = channelId,
+                    messageId = msg.id,
+                    fileName = msg.fileName,
+                    fileSize = msg.fileSize,
+                    editDate = msg.editDate,
+                ),
+            )
+            return Outcome.UNMATCHED
+        }
+        val matched = indexFile(db, target, msg.id, msg.fileName, msg.fileSize, parsed, tmdbKey, omdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache)
+        if (matched) {
+            db.streamDao().setEditDate(channelId, msg.id, msg.editDate)
+            return Outcome.INDEXED
+        }
+        db.unmatchedDao().setEditDate(channelId, msg.id, msg.editDate)
+        return Outcome.UNMATCHED
     }
 
     /**
@@ -572,6 +662,13 @@ object ScanManager {
         episode: Int?,
         strict: Boolean = false,
         year: String? = null,
+        /**
+         * Pre-loaded library for the similarity fallback. The relink pass
+         * calls this in a loop and used to re-query every entry for every
+         * unlinked subtitle (quadratic on a big library, slow on low-end
+         * phones) — it now loads the list once and passes it in.
+         */
+        candidates: List<MediaItemEntity>? = null,
     ): Long? {
         // 1. Same title AND the episode already exists in the library.
         if (season != null && episode != null) {
@@ -588,13 +685,19 @@ object ScanManager {
         // Strict mode stops here: no fuzzy guess, the file waits for a manual
         // attach. A near-miss title must never decide where a subtitle goes.
         if (strict) return null
-        // 3. Similarity fallback across the whole library.
-        val all = db.mediaDao().listVisible()
-        val best = all.maxByOrNull { MetadataMatcher.similarity(normTitle, it.normalizedTitle) }
-        if (best != null && MetadataMatcher.similarity(normTitle, best.normalizedTitle) >= 0.6) {
-            return best.id
+        // 3. Similarity fallback across the whole library (one score per
+        // entry — the old version scored the winner twice).
+        val all = candidates ?: db.mediaDao().listVisible()
+        var bestId: Long? = null
+        var bestScore = 0.0
+        for (e in all) {
+            val score = MetadataMatcher.similarity(normTitle, e.normalizedTitle)
+            if (score > bestScore) {
+                bestScore = score
+                bestId = e.id
+            }
         }
-        return null
+        return if (bestScore >= 0.6) bestId else null
     }
 
     /**
@@ -609,13 +712,16 @@ object ScanManager {
         strict: Boolean = false,
     ) {
         val pending = db.subtitleDao().unlinkedByChannel(channelId)
+        if (pending.isEmpty()) return
+        // Loaded once for the whole pass (strict mode never needs it).
+        val candidates = if (strict) emptyList() else db.mediaDao().listVisible()
         for (s in pending) {
             val parsed = FilenameParser.parse(s.fileName, isAnime, "", absoluteAnime)
             val norm = normalizeTitle(parsed.title)
             if (norm.isBlank()) continue
             val mediaId = resolveSubtitleMedia(
                 db, channelId, norm, parsed.season, parsed.episode,
-                strict = strict, year = parsed.year,
+                strict = strict, year = parsed.year, candidates = candidates,
             )
             if (mediaId != null) {
                 db.subtitleDao().attach(s.id, mediaId, parsed.season, parsed.episode)

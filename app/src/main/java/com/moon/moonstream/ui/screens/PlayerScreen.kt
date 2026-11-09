@@ -185,10 +185,16 @@ private fun buildRenderersFactory(context: android.content.Context): DefaultRend
         }
         AppLog.w("PLAYER", "FFmpeg extension not available — hardware decoders only")
     }
-    return DefaultRenderersFactory(context).setExtensionRendererMode(
-        if (ffmpegAvailable) DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
-        else DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF,
-    )
+    return DefaultRenderersFactory(context)
+        .setExtensionRendererMode(
+            if (ffmpegAvailable) DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+            else DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF,
+        )
+        // Low-end pass (moon's 2026-11-09): cheap Android boxes and old phones
+        // often advertise a decoder that then fails on the first frame. With
+        // fallback on, Media3 quietly moves to the next decoder for that
+        // track instead of showing a playback error.
+        .setEnableDecoderFallback(true)
 }
 
 @OptIn(UnstableApi::class)
