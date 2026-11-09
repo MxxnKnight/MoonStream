@@ -51,6 +51,12 @@ object TrainingDataExport {
         // are all recent does not walk its whole history.
         val captions = mutableMapOf<Long, String>()
         if (needed.isNotEmpty()) {
+            // The oldest message the database has: once a page's last
+            // (oldest) message is below it, nothing older can be needed,
+            // so stop. Without this, a channel with a deleted message
+            // never reaches "every caption found" and pages its whole
+            // history, looking stuck (moon's big channel, ~8000 files).
+            val oldestNeeded = needed.minOrNull() ?: Long.MAX_VALUE
             var fromId = Long.MAX_VALUE
             while (captions.size < needed.size) {
                 val page = try {
@@ -65,6 +71,7 @@ object TrainingDataExport {
                 }
                 fromId = page.last().id
                 if (captions.size >= needed.size) break
+                if (fromId < oldestNeeded) break
                 delay(PAGE_DELAY_MS)
             }
         }
