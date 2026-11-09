@@ -54,6 +54,12 @@ android {
         }
         release {
             minifyEnabled true
+            // Shrink resources (moon's 2026-11-09: update downloads are
+            // slow). Removes unused drawables/layouts/strings so the APK
+            // is smaller and downloads faster. Safe: the app has no
+            // dynamic resource loading (no getIdentifier), so nothing
+            // used is stripped.
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (ksPropsFile.exists()) {
                 signingConfig signingConfigs.release

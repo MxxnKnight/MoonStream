@@ -108,12 +108,20 @@ class UpdateDownloadService : Service() {
         _state.value = UpdateState.Downloading(0, "v${info.version}")
         AppLog.i(TAG, "Download started: v${info.version}")
         try {
+            // Throttle the notification: the downloader reports progress
+            // on every 64 KB chunk (hundreds of calls for a 41 MB APK),
+            // and each notify() is an IPC to the system. Only push a
+            // notification when the whole percent actually changes.
+            var lastNotified = -1
             val file = ApkInstaller.download(this, info) { p ->
                 _state.value = UpdateState.Downloading(p, "v${info.version}")
-                notificationManager?.notify(
-                    NOTIF_ID,
-                    buildNotification("Downloading update…", p, "v${info.version} — $p%"),
-                )
+                if (p != lastNotified) {
+                    lastNotified = p
+                    notificationManager?.notify(
+                        NOTIF_ID,
+                        buildNotification("Downloading update…", p, "v${info.version} — $p%"),
+                    )
+                }
             }
             downloadedApk = file
             _state.value = UpdateState.Done(info.version, file)
