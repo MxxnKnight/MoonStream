@@ -4,7 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.moon.moonstream.R
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.player.PlayerUrls
@@ -588,7 +588,7 @@ fun DetailScreen(
                     modifier = Modifier.weight(1f),
                     fontSize = 13,
                     // Lucide icons (moon's 2026-11-10 picks): circle-play.
-                    icon = vectorResource(R.drawable.ic_lucide_circle_play),
+                    icon = ImageVector.vectorResource(R.drawable.ic_lucide_circle_play),
                 )
                 MsOutlinePill(
                     text = "Copy Link",
@@ -600,7 +600,7 @@ fun DetailScreen(
                     modifier = Modifier.weight(1f),
                     fontSize = 13,
                     // Lucide icons (moon's 2026-11-10 picks): copy.
-                    icon = vectorResource(R.drawable.ic_lucide_copy),
+                    icon = ImageVector.vectorResource(R.drawable.ic_lucide_copy),
                 )
                 MsOutlinePill(
                     // "Subtitle" not "Add Subtitle" (moon's 2026-11-10):
@@ -611,7 +611,7 @@ fun DetailScreen(
                     modifier = Modifier.weight(1f),
                     fontSize = 13,
                     // Lucide icons (moon's 2026-11-10 picks): captions.
-                    icon = vectorResource(R.drawable.ic_lucide_captions),
+                    icon = ImageVector.vectorResource(R.drawable.ic_lucide_captions),
                 )
             }
 

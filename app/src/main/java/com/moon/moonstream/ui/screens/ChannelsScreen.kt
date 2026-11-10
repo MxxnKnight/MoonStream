@@ -1,7 +1,7 @@
 package com.moon.moonstream.ui.screens
 
 import android.widget.Toast
-import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.moon.moonstream.R
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.components.IosBottomSheet
@@ -1303,26 +1303,26 @@ private fun UnmatchedFileRow(
             ) {
                 BareIconButton(
                     // Lucide icons (moon's 2026-11-10 picks): circle-play.
-                    icon = vectorResource(R.drawable.ic_lucide_circle_play),
+                    icon = ImageVector.vectorResource(R.drawable.ic_lucide_circle_play),
                     contentDescription = "Play",
                     onClick = onPlay,
                 )
                 BareIconButton(
                     // Lucide icons (moon's 2026-11-10 picks): copy.
-                    icon = vectorResource(R.drawable.ic_lucide_copy),
+                    icon = ImageVector.vectorResource(R.drawable.ic_lucide_copy),
                     contentDescription = "Copy Link",
                     onClick = onCopyLink,
                 )
                 BareIconButton(
                     // Lucide icons (moon's 2026-11-10 picks): badge-plus.
-                    icon = vectorResource(R.drawable.ic_lucide_badge_plus),
+                    icon = ImageVector.vectorResource(R.drawable.ic_lucide_badge_plus),
                     contentDescription = "Create entry",
                     onClick = { onCreateEntry(file) },
                 )
                 BareIconButton(
                     // Lucide icons (moon's 2026-11-10 picks):
                     // git-pull-request-create-arrow.
-                    icon = vectorResource(R.drawable.ic_lucide_git_pr),
+                    icon = ImageVector.vectorResource(R.drawable.ic_lucide_git_pr),
                     contentDescription = "Link to Title",
                     onClick = onLinkToTitle,
                 )
