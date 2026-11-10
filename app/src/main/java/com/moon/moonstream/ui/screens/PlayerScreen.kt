@@ -91,7 +91,9 @@ import androidx.media3.ui.SubtitleView
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.backend.BackendProvider
+import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.IosSpinner
+import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.MsOutlinePill
 import com.moon.moonstream.ui.components.MsSlider
 import com.moon.moonstream.ui.components.MsToast
@@ -100,6 +102,7 @@ import com.moon.moonstream.ui.player.PlayerUrls
 import com.moon.moonstream.ui.player.SubDelayPrefs
 import com.moon.moonstream.ui.player.SubtitleCues
 import com.moon.moonstream.ui.player.TrackLangPrefs
+import com.moon.moonstream.ui.player.VideoTrimmer
 import com.moon.moonstream.ui.player.TdDataSource
 import com.moon.moonstream.ui.player.TdStreamUri
 import com.moon.moonstream.ui.player.TdSubUri
@@ -414,6 +417,10 @@ fun PlayerScreen(
     // when we know the file's size; otherwise fall back to the addon server
     // URL exactly as before.
     val filesLoaded = files.isNotEmpty()
+    // The file actually playing (for the trimmer + skip fetch).
+    val currentFile = remember(orderedFiles, streamFileId) {
+        orderedFiles.firstOrNull { it.id == streamFileId }
+    }
     val playUri = remember(orderedFiles, streamFileId, videoUri) {
         val f = orderedFiles.firstOrNull { it.id == streamFileId }
         if (f != null && f.fileSize > 0L) {
@@ -548,6 +555,55 @@ fun PlayerScreen(
         SubDelayPrefs.set(context, mediaId, new)
         AppLog.i("PLAYER", "Subtitle delay ${if (new >= 0) "+" else ""}${new}ms")
         // subPairs recomputes from delayMs; the load effect below rebuilds.
+    }
+
+    /** Save the marked trim range as a clip in Downloads (moon's pick 2026-11-10). */
+    fun saveTrimClip() {
+        val start = trimStartMs
+        val end = trimEndMs
+        val file = currentFile
+        if (trimSaving) return
+        if (start == null || end == null) {
+            MsToast.show("Set a start and an end first")
+            return
+        }
+        if (end <= start) {
+            MsToast.show("Set an end after the start")
+            return
+        }
+        if (file == null || file.fileSize <= 0L) {
+            MsToast.show("Can't trim this stream")
+            return
+        }
+        trimSaving = true
+        trimProgress = 0f
+        MsToast.show("Saving clip…")
+        ioScope.launch(Dispatchers.IO) {
+            val uri = VideoTrimmer.trimToDownloads(
+                context = context,
+                backend = BackendProvider.backend,
+                channelId = file.channelId,
+                messageId = file.messageId,
+                fileSize = file.fileSize,
+                fileName = file.fileName,
+                startMs = start,
+                endMs = end,
+                onProgress = { p -> trimProgress = p },
+            )
+            withContext(Dispatchers.Main) {
+                trimSaving = false
+                trimProgress = 0f
+                if (uri != null) {
+                    MsToast.show("Clip saved to Downloads")
+                    AppLog.i("PLAYER", "Trim saved: $uri")
+                    showTrimPanel = false
+                    trimStartMs = null
+                    trimEndMs = null
+                } else {
+                    MsToast.show("Couldn't save the clip")
+                }
+            }
+        }
     }
 
     // Aspect-ratio cycle (moon's pick 2026-11-02): each tap → next mode.
@@ -1034,6 +1090,14 @@ fun PlayerScreen(
     // video to move, target time shown live, seek lands on release.
     // Pair = target position ms, delta ms from where the drag started.
     var swipeSeekPreview by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+    // Video trimmer (moon's pick 2026-11-10): mark a start and an end
+    // while watching, save just that range as a new clip. The cut runs
+    // in the background (see VideoTrimmer) and lands in Downloads.
+    var showTrimPanel by remember { mutableStateOf(false) }
+    var trimStartMs by remember { mutableStateOf<Long?>(null) }
+    var trimEndMs by remember { mutableStateOf<Long?>(null) }
+    var trimSaving by remember { mutableStateOf(false) }
+    var trimProgress by remember { mutableFloatStateOf(0f) }
     // Auto-hide the feedback after 1s.
     LaunchedEffect(seekFeedback) {
         if (seekFeedback != null) {
@@ -1390,6 +1454,15 @@ fun PlayerScreen(
                         onClick = { takeScreenshot() },
                     )
                     PlayerIconButton(
+                        icon = Icons.Filled.ContentCut,
+                        contentDescription = "Trim clip",
+                        onClick = {
+                            showTrimPanel = !showTrimPanel
+                            controlsVisible = true
+                        },
+                        active = showTrimPanel,
+                    )
+                    PlayerIconButton(
                         icon = Icons.Filled.Lock,
                         contentDescription = "Lock controls",
                         onClick = {
@@ -1471,6 +1544,28 @@ fun PlayerScreen(
                     .padding(horizontal = 16.dp)
                     .padding(top = 8.dp, bottom = 12.dp),
             ) {
+                // Trimmer panel (moon's pick 2026-11-10): mark a start and
+                // an end while watching, save just that range as a clip.
+                // It sits above the seekbar so the bar stays usable for
+                // finding the exact cut points.
+                if (showTrimPanel) {
+                    TrimPanel(
+                        startMs = trimStartMs,
+                        endMs = trimEndMs,
+                        currentMs = currentPosition,
+                        durationMs = duration,
+                        saving = trimSaving,
+                        progress = trimProgress,
+                        onSetStart = { trimStartMs = currentPosition },
+                        onSetEnd = { trimEndMs = currentPosition },
+                        onJumpToStart = { trimStartMs?.let { player.seekTo(it) } },
+                        onJumpToEnd = { trimEndMs?.let { player.seekTo(it) } },
+                        onClear = { trimStartMs = null; trimEndMs = null },
+                        onClose = { showTrimPanel = false },
+                        onSave = { saveTrimClip() },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
                 // Button row: left cluster (Subs, Audio) / right cluster (Aspect).
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1578,6 +1673,8 @@ fun PlayerScreen(
                                 onSeek = { player.seekTo(it) },
                                 onScrubChange = { scrubMs = it },
                                 modifier = Modifier.fillMaxWidth(),
+                                trimStartMs = trimStartMs,
+                                trimEndMs = trimEndMs,
                             )
                         }
                         Text(
@@ -1795,7 +1892,6 @@ fun PlayerScreen(
             // Season/episode fallback chain (moon's fix 2026-11-04): currentGroup
             // can be null (e.g. movies have no season/episode), so fall back to
             // the stream file's own values from the DB.
-            val currentFile = orderedFiles.firstOrNull { it.id == streamFileId }
             val season = currentGroup?.season ?: currentFile?.season
             val ep = currentGroup?.episode ?: currentFile?.episode
             val media = try {
@@ -2664,6 +2760,10 @@ private fun MoonSeekBar(
     onSeek: (Long) -> Unit,
     onScrubChange: (Long?) -> Unit,
     modifier: Modifier = Modifier,
+    /** Trimmer selection (moon's pick 2026-11-10): the chosen clip range,
+     * drawn as an Accent band so the cut is visible on the bar. */
+    trimStartMs: Long? = null,
+    trimEndMs: Long? = null,
 ) {
     var isScrubbing by remember { mutableStateOf(false) }
     var scrubMs by remember { mutableStateOf<Long?>(null) }
@@ -2757,6 +2857,167 @@ private fun MoonSeekBar(
                     .background(MsColors.Accent),
             )
         }
+        // Trimmer range band (moon's pick 2026-11-10): the marked clip,
+        // drawn above the base track so it's visible even before any
+        // playback. Only when both ends are set and in order.
+        if (durationMs > 0L && trimStartMs != null && trimEndMs != null && trimEndMs > trimStartMs) {
+            val startFrac = (trimStartMs.toFloat() / durationMs).coerceIn(0f, 1f)
+            val endFrac = (trimEndMs.toFloat() / durationMs).coerceIn(0f, 1f)
+            if (endFrac > startFrac) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .fillMaxWidth(endFrac - startFrac)
+                        .offset { IntOffset((startFrac * constraints.maxWidth).roundToInt(), 0) }
+                        .height(barHeight + 4.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(MsColors.Accent.copy(alpha = 0.85f))
+                        .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(50)),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Trimmer panel (moon's pick 2026-11-10): mark a start and an end while
+ * watching, save just that range as a clip. Sits above the seekbar so the
+ * bar stays usable for finding the exact cut points.
+ */
+@Composable
+private fun TrimPanel(
+    startMs: Long?,
+    endMs: Long?,
+    currentMs: Long,
+    durationMs: Long,
+    saving: Boolean,
+    progress: Float,
+    onSetStart: () -> Unit,
+    onSetEnd: () -> Unit,
+    onJumpToStart: () -> Unit,
+    onJumpToEnd: () -> Unit,
+    onClear: () -> Unit,
+    onClose: () -> Unit,
+    onSave: () -> Unit,
+) {
+    val valid = startMs != null && endMs != null && endMs > startMs
+    val lengthMs = if (valid) endMs!! - startMs!! else 0L
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Trim clip",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MsColors.TextPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                if (valid) "Clip: ${formatTime(lengthMs)}" else "Mark a start and an end",
+                style = MaterialTheme.typography.labelMedium,
+                color = MsColors.TextSecondary,
+            )
+            Spacer(Modifier.width(8.dp))
+            BareIconButton(
+                icon = Icons.Filled.Close,
+                contentDescription = "Close trim",
+                onClick = onClose,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            MsOutlinePill(
+                text = "Set start",
+                onClick = onSetStart,
+                fontSize = 13,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            )
+            Text(
+                startMs?.let { formatTime(it) } ?: "--:--",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = FontFamily.Monospace,
+                ),
+                color = if (startMs != null) MsColors.Accent else MsColors.TextSecondary,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(enabled = startMs != null) { onJumpToStart() },
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                "→",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MsColors.TextSecondary,
+            )
+            Text(
+                endMs?.let { formatTime(it) } ?: "--:--",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = FontFamily.Monospace,
+                ),
+                color = if (endMs != null) MsColors.Accent else MsColors.TextSecondary,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(enabled = endMs != null) { onJumpToEnd() },
+                textAlign = TextAlign.Center,
+            )
+            MsOutlinePill(
+                text = "Set end",
+                onClick = onSetEnd,
+                fontSize = 13,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        if (saving) {
+            LinearProgressIndicator(
+                progress = { progress.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+                color = MsColors.Accent,
+                trackColor = Color.White.copy(alpha = 0.2f),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Saving clip… ${(progress * 100).toInt()}%",
+                style = MaterialTheme.typography.labelMedium,
+                color = MsColors.TextSecondary,
+            )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                MsOutlinePill(
+                    text = "Clear",
+                    onClick = onClear,
+                    fontSize = 14,
+                    modifier = Modifier.weight(1f),
+                )
+                LimePillButton(
+                    text = "Save clip",
+                    onClick = onSave,
+                    fontSize = 14,
+                    enabled = valid,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        // Hint: the current position is where Set start / Set end capture.
+        Text(
+            "Now playing: ${formatTime(currentMs)}  ·  tap a time above to jump to it",
+            style = MaterialTheme.typography.labelSmall,
+            color = MsColors.TextSecondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
 }
 
