@@ -1,5 +1,7 @@
 package com.moon.moonstream.ui.screens
 
+import androidx.compose.ui.res.vectorResource
+import com.moon.moonstream.R
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.components.IosBottomSheet
 import com.moon.moonstream.ui.components.IosDialog
@@ -357,17 +359,20 @@ fun FileRow(
                 horizontalArrangement = Arrangement.End,
             ) {
                 BareIconButton(
-                    icon = Icons.Filled.PlayArrow,
+                    // Lucide icons (moon's 2026-11-10 picks): circle-play.
+                    icon = vectorResource(R.drawable.ic_lucide_circle_play),
                     contentDescription = "Play",
                     onClick = onPlay,
                 )
                 BareIconButton(
-                    icon = Icons.Filled.ContentCopy,
+                    // Lucide icons (moon's 2026-11-10 picks): copy.
+                    icon = vectorResource(R.drawable.ic_lucide_copy),
                     contentDescription = "Copy Link",
                     onClick = onCopy,
                 )
                 BareIconButton(
-                    icon = Icons.Outlined.Delete,
+                    // Lucide icons (moon's 2026-11-10 picks): trash.
+                    icon = vectorResource(R.drawable.ic_lucide_trash),
                     contentDescription = "Delete",
                     onClick = onDelete,
                 )
@@ -441,17 +446,20 @@ fun StreamRow(
                 horizontalArrangement = Arrangement.End,
             ) {
                 BareIconButton(
-                    icon = Icons.Filled.PlayArrow,
+                    // Lucide icons (moon's 2026-11-10 picks): circle-play.
+                    icon = vectorResource(R.drawable.ic_lucide_circle_play),
                     contentDescription = "Play",
                     onClick = onPlay,
                 )
                 BareIconButton(
-                    icon = Icons.Filled.ContentCopy,
+                    // Lucide icons (moon's 2026-11-10 picks): copy.
+                    icon = vectorResource(R.drawable.ic_lucide_copy),
                     contentDescription = "Copy Link",
                     onClick = onCopy,
                 )
                 BareIconButton(
-                    icon = Icons.Outlined.Delete,
+                    // Lucide icons (moon's 2026-11-10 picks): trash.
+                    icon = vectorResource(R.drawable.ic_lucide_trash),
                     contentDescription = "Delete",
                     onClick = onDelete,
                 )
