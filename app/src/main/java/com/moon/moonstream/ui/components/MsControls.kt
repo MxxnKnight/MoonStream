@@ -159,6 +159,13 @@ fun MsOutlinePill(
     fontSize: Int = 17,
     /** Optional leading glyph (moon's 2026-11-09 icon pass). */
     icon: ImageVector? = null,
+    /**
+     * Inner padding. The default 14dp vertical padding needs ~46dp of
+     * height; a caller that forces a shorter height (the subtitle Delay
+     * steppers were 36dp) clips the text. Pass a compact padding for
+     * short buttons instead of forcing a height.
+     */
+    contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
 ) {
     Button(
         onClick = onClick,
@@ -171,7 +178,7 @@ fun MsOutlinePill(
             disabledContentColor = MsColors.TextSecondary,
         ),
         shape = RoundedCornerShape(14.dp),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
+        contentPadding = contentPadding,
     ) {
         PillLabel(text = text, fontSize = fontSize, icon = icon, bold = false)
     }
@@ -530,6 +537,12 @@ fun MsToggle(
 
 /** Mockup slider: lime. */
 @Composable
+/**
+ * iOS-style slider (moon's 2026-11-10): a thin rounded track with a white
+ * round thumb and a soft shadow — the same look as iOS Settings sliders.
+ * Used for subtitle Size and Position in the player sheet.
+ */
+@Composable
 fun MsSlider(
     value: Float,
     onValueChange: (Float) -> Unit,
@@ -542,10 +555,18 @@ fun MsSlider(
         valueRange = valueRange,
         modifier = modifier,
         colors = SliderDefaults.colors(
-            thumbColor = MsColors.Accent,
+            thumbColor = Color.White,
             activeTrackColor = MsColors.Accent,
             inactiveTrackColor = MsColors.TrackOff,
         ),
+        thumb = {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .shadow(4.dp, CircleShape)
+                    .background(Color.White, CircleShape),
+            )
+        },
     )
 }
 

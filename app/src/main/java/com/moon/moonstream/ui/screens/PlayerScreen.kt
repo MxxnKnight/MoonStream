@@ -1938,8 +1938,12 @@ fun PlayerScreen(
                                     MsOutlinePill(
                                         text = "−250ms",
                                         onClick = { adjustDelay(-250) },
-                                        modifier = Modifier.height(36.dp),
                                         fontSize = 13,
+                                        // Compact padding: the default 14dp
+                                        // vertical padding needs ~46dp, and
+                                        // forcing height(36.dp) on it clipped
+                                        // the text (moon's 2026-11-10).
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                                     )
                                     Text(
                                         formatDelay(delayMs),
@@ -1951,8 +1955,9 @@ fun PlayerScreen(
                                     MsOutlinePill(
                                         text = "+250ms",
                                         onClick = { adjustDelay(250) },
-                                        modifier = Modifier.height(36.dp),
                                         fontSize = 13,
+                                        // Compact padding, same as above.
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                                     )
                                 }
                                 // Appearance (moon's pick 2026-11-02).
@@ -1963,6 +1968,11 @@ fun PlayerScreen(
                                     color = MsColors.TextSecondary,
                                     modifier = Modifier.padding(vertical = 4.dp),
                                 )
+                                // Size as a slider (moon's 2026-11-10): the
+                                // S/M/L buttons only gave three fixed sizes;
+                                // a slider fine-tunes it. Range covers S
+                                // (0.045) through L (0.08) with room either
+                                // side. Same iOS slider as Position.
                                 Row(
                                     modifier = Modifier.fillMaxWidth()
                                         .padding(vertical = 6.dp),
@@ -1974,21 +1984,20 @@ fun PlayerScreen(
                                         color = MsColors.TextPrimary,
                                         modifier = Modifier.weight(1f),
                                     )
-                                    SheetOptionBtn("S", subTextSize == 0.045f) {
-                                        subTextSize = 0.045f
-                                        SubDelayPrefs.setTextSize(context, mediaId, 0.045f)
-                                        applySubtitleStyle()
-                                    }
-                                    SheetOptionBtn("M", subTextSize == 0.06f) {
-                                        subTextSize = 0.06f
-                                        SubDelayPrefs.setTextSize(context, mediaId, 0.06f)
-                                        applySubtitleStyle()
-                                    }
-                                    SheetOptionBtn("L", subTextSize == 0.08f) {
-                                        subTextSize = 0.08f
-                                        SubDelayPrefs.setTextSize(context, mediaId, 0.08f)
-                                        applySubtitleStyle()
-                                    }
+                                    MsSlider(
+                                        // Coerced: a value saved before the
+                                        // slider existed is always S/M/L
+                                        // (0.045/0.06/0.08, all in range),
+                                        // but never trust a stored float.
+                                        value = subTextSize.coerceIn(0.03f, 0.10f),
+                                        onValueChange = {
+                                            subTextSize = it
+                                            SubDelayPrefs.setTextSize(context, mediaId, it)
+                                            applySubtitleStyle()
+                                        },
+                                        valueRange = 0.03f..0.10f,
+                                        modifier = Modifier.weight(1.6f),
+                                    )
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth()
