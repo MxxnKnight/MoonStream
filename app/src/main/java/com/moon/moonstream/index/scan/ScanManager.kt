@@ -573,6 +573,8 @@ object ScanManager {
                     backdropUrl = meta?.backdropUrl,
                     overview = meta?.overview,
                     genres = meta?.genres?.joinToString(","),
+                    originalLanguage = meta?.originalLanguage,
+                    country = meta?.country,
                     totalSize = 0L,
                     episodeCount = 0,
                     fileCount = 0,

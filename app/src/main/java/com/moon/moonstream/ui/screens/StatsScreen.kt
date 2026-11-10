@@ -253,6 +253,7 @@ fun StatsScreen(onBack: () -> Unit) {
                             MsColors.Accent,
                             Color(0xFF7DD956),
                             Color(0xFFB388FF),
+                            Color(0xFFFF8A3D),
                         )
                         s.byType.forEachIndexed { idx, tc ->
                             Box(
@@ -291,59 +292,40 @@ fun StatsScreen(onBack: () -> Unit) {
         // Top genres.
         StatsSectionTitle("Top genres")
         Spacer(Modifier.height(8.dp))
-        StatsCard {
-            Column(modifier = Modifier.padding(14.dp)) {
-                if (s.topGenres.isEmpty()) {
-                    Text(
-                        "No genres recorded yet — they fill in as titles are indexed.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MsColors.TextSecondary,
-                    )
-                } else {
-                    val max = (s.topGenres.maxOfOrNull { it.hoursMs } ?: 1L).coerceAtLeast(1L)
-                    s.topGenres.forEach { g ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                g.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MsColors.TextPrimary,
-                                modifier = Modifier.width(96.dp),
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(8.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(Color.White.copy(alpha = 0.12f)),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth((g.hoursMs.toFloat() / max).coerceIn(0f, 1f))
-                                        .height(8.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(MsColors.Accent),
-                                )
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                formatHours(g.hoursMs),
-                                style = MaterialTheme.typography.bodyMedium.doto(),
-                                color = MsColors.TextSecondary,
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                    }
-                    Text(
-                        "Genres on ${s.genreCoverage.first} of ${s.genreCoverage.second} titles.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MsColors.TextSecondary,
-                    )
-                }
-            }
-        }
+        StatsBarList(
+            items = s.topGenres.map { it.name to it.hoursMs },
+            emptyText = "No genres recorded yet — they fill in as titles are indexed.",
+            coverageText = "Genres on ${s.genreCoverage.first} of ${s.genreCoverage.second} titles.",
+        )
+        Spacer(Modifier.height(20.dp))
+
+        // By language (moon's 2026-11-11).
+        StatsSectionTitle("By language")
+        Spacer(Modifier.height(8.dp))
+        StatsBarList(
+            items = s.topLanguages.map { it.name to it.hoursMs },
+            emptyText = "No languages recorded yet — they fill in as titles are indexed.",
+            coverageText = "Languages on ${s.languageCoverage.first} of ${s.languageCoverage.second} titles.",
+        )
+        Spacer(Modifier.height(20.dp))
+
+        // By country (moon's 2026-11-11).
+        StatsSectionTitle("By country")
+        Spacer(Modifier.height(8.dp))
+        StatsBarList(
+            items = s.topCountries.map { it.name to it.hoursMs },
+            emptyText = "No countries recorded yet — they fill in as titles are indexed.",
+            coverageText = "Countries on ${s.countryCoverage.first} of ${s.countryCoverage.second} titles.",
+        )
+        Spacer(Modifier.height(20.dp))
+
+        // By decade (moon's 2026-11-11).
+        StatsSectionTitle("By decade")
+        Spacer(Modifier.height(8.dp))
+        StatsBarList(
+            items = s.topDecades.map { it.label to it.hoursMs },
+            emptyText = "No years recorded yet — they fill in as titles are indexed.",
+        )
         Spacer(Modifier.height(20.dp))
 
         // Watch streak.
@@ -470,6 +452,77 @@ private fun StatsSectionTitle(text: String) {
         fontWeight = FontWeight.SemiBold,
         color = MsColors.TextPrimary,
     )
+}
+
+/**
+ * A bar list for the breakdown sections (genres, languages, countries,
+ * decades): a named row with an Accent bar and the hours in Doto, plus
+ * an empty state and an optional coverage caption. One shared shape so
+ * the four sections read as a family.
+ */
+@Composable
+private fun StatsBarList(
+    items: List<Pair<String, Long>>,
+    emptyText: String,
+    coverageText: String? = null,
+) {
+    StatsCard {
+        Column(modifier = Modifier.padding(14.dp)) {
+            if (items.isEmpty()) {
+                Text(
+                    emptyText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MsColors.TextSecondary,
+                )
+            } else {
+                val max = (items.maxOfOrNull { it.second } ?: 1L).coerceAtLeast(1L)
+                items.forEach { (name, hours) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.width(96.dp),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White.copy(alpha = 0.12f)),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth((hours.toFloat() / max).coerceIn(0f, 1f))
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(MsColors.Accent),
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            formatHours(hours),
+                            style = MaterialTheme.typography.bodyMedium.doto(),
+                            color = MsColors.TextSecondary,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+                coverageText?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MsColors.TextSecondary,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

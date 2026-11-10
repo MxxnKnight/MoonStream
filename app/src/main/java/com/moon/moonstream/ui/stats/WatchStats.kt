@@ -11,7 +11,8 @@ import java.util.concurrent.TimeUnit
  * - watch_progress: playedAt (last-played time, updated on every position
  *   save), positionMs, durationMs, mediaId, title, posterUrl.
  * - media_items: type, genres (v15, comma-separated; null for titles
- *   indexed before v15).
+ *   indexed before v15), originalLanguage + country (v16; null for
+ *   titles indexed before v16), year (for decades).
  *
  * "Hours watched" is a proxy: the sum of positionMs across the rows played
  * in the range. It counts time spent *into* titles, so a rewatch or a
@@ -48,6 +49,12 @@ data class FinishedItem(
 
 data class GenreCount(val name: String, val hoursMs: Long)
 
+data class LangCount(val code: String, val name: String, val hoursMs: Long)
+
+data class CountryCount(val code: String, val name: String, val hoursMs: Long)
+
+data class DecadeCount(val label: String, val hoursMs: Long)
+
 data class TypeCount(val type: String, val count: Int)
 
 data class WatchStats(
@@ -64,10 +71,55 @@ data class WatchStats(
     val topGenres: List<GenreCount>,
     /** Titles in the library that have a genre recorded (for the caption). */
     val genreCoverage: Pair<Int, Int>,
+    val topLanguages: List<LangCount>,
+    /** Titles in the library that have a language recorded. */
+    val languageCoverage: Pair<Int, Int>,
+    val topCountries: List<CountryCount>,
+    /** Titles in the library that have a country recorded. */
+    val countryCoverage: Pair<Int, Int>,
+    val topDecades: List<DecadeCount>,
     val currentStreakDays: Int,
     val longestStreakDays: Int,
     val recentlyFinished: List<FinishedItem>,
 )
+
+/** Languages that mark a series as an Asian drama (K/C/J/Thai). */
+private val DRAMA_LANGS = setOf("ko", "zh", "ja", "th")
+
+/** ISO language code → display name (only the ones in the library's orbit). */
+private val LANGUAGE_NAMES = mapOf(
+    "ml" to "Malayalam", "en" to "English", "hi" to "Hindi",
+    "ta" to "Tamil", "te" to "Telugu", "kn" to "Kannada",
+    "bn" to "Bengali", "mr" to "Marathi", "ko" to "Korean",
+    "ja" to "Japanese", "zh" to "Chinese", "th" to "Thai",
+    "es" to "Spanish", "fr" to "French", "de" to "German",
+    "it" to "Italian", "pt" to "Portuguese", "ru" to "Russian",
+    "tr" to "Turkish", "ar" to "Arabic", "fa" to "Persian",
+    "id" to "Indonesian", "ms" to "Malay", "vi" to "Vietnamese",
+    "tl" to "Filipino",
+)
+
+/** ISO country code → display name. */
+private val COUNTRY_NAMES = mapOf(
+    "IN" to "India", "US" to "United States", "KR" to "South Korea",
+    "JP" to "Japan", "CN" to "China", "GB" to "United Kingdom",
+    "TH" to "Thailand", "ES" to "Spain", "FR" to "France",
+    "DE" to "Germany", "IT" to "Italy", "BR" to "Brazil",
+    "RU" to "Russia", "TR" to "Turkey", "EG" to "Egypt",
+    "IR" to "Iran", "ID" to "Indonesia", "MY" to "Malaysia",
+    "VN" to "Vietnam", "PH" to "Philippines",
+)
+
+/** The stats type a title counts as: movies and anime as-is; a series in
+ * a drama language (Korean/Chinese/Japanese/Thai) counts as a drama,
+ * everything else stays a series. */
+private fun displayType(media: com.moon.moonstream.index.db.MediaItemEntity): String =
+    when {
+        media.type == "movie" -> "movie"
+        media.type == "anime" -> "anime"
+        media.type == "series" && media.originalLanguage in DRAMA_LANGS -> "drama"
+        else -> "series"
+    }
 
 object WatchStatsLoader {
     private const val FINISHED_FRAC = 0.9
@@ -123,12 +175,20 @@ object WatchStatsLoader {
             .sortedByDescending { it.hoursMs }
             .take(5)
 
-        // By type: distinct mediaIds played in range, grouped by type.
+        // By type: distinct mediaIds played in range, grouped by display
+        // type — movies, series, anime, and dramas (Asian-language series)
+        // each get their own slice (moon's 2026-11-11).
         val byType = inRange.map { it.mediaId }.distinct()
-            .mapNotNull { mediaById[it]?.type }
+            .mapNotNull { mediaById[it] }
+            .map { displayType(it) }
             .groupingBy { it }.eachCount()
             .map { TypeCount(it.key, it.value) }
             .sortedByDescending { it.count }
+
+        // Hours per title in range, computed once and shared by the
+        // genre / language / country / decade breakdowns below.
+        val hoursByMedia = inRange.groupBy { it.mediaId }
+            .mapValues { (_, rs) -> rs.sumOf { it.positionMs } }
 
         // Top genres: hours per genre, from titles that have genres.
         val genreHours = mutableMapOf<String, Long>()
@@ -139,7 +199,7 @@ object WatchStatsLoader {
             val gs = m.genres?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
             if (gs.isNullOrEmpty()) continue
             withGenres++
-            val hours = inRange.filter { it.mediaId == m.id }.sumOf { it.positionMs }
+            val hours = hoursByMedia[m.id] ?: 0L
             if (hours <= 0L) continue
             for (g in gs) genreHours[g] = (genreHours[g] ?: 0L) + hours
         }
@@ -147,6 +207,50 @@ object WatchStatsLoader {
             .sortedByDescending { it.value }
             .take(5)
             .map { GenreCount(it.key, it.value) }
+
+        // Top languages: hours per original language (v16).
+        val langHours = mutableMapOf<String, Long>()
+        var withLang = 0
+        for (m in media) {
+            val lang = m.originalLanguage?.takeIf { it.isNotBlank() } ?: continue
+            withLang++
+            val hours = hoursByMedia[m.id] ?: 0L
+            if (hours <= 0L) continue
+            langHours[lang] = (langHours[lang] ?: 0L) + hours
+        }
+        val topLanguages = langHours.entries
+            .sortedByDescending { it.value }
+            .take(5)
+            .map { LangCount(it.key, LANGUAGE_NAMES[it.key] ?: it.key.uppercase(), it.value) }
+
+        // Top countries: hours per country (v16).
+        val countryHours = mutableMapOf<String, Long>()
+        var withCountry = 0
+        for (m in media) {
+            val c = m.country?.takeIf { it.isNotBlank() } ?: continue
+            withCountry++
+            val hours = hoursByMedia[m.id] ?: 0L
+            if (hours <= 0L) continue
+            countryHours[c] = (countryHours[c] ?: 0L) + hours
+        }
+        val topCountries = countryHours.entries
+            .sortedByDescending { it.value }
+            .take(5)
+            .map { CountryCount(it.key, COUNTRY_NAMES[it.key] ?: it.key.uppercase(), it.value) }
+
+        // Top decades: hours per release decade, from the title year.
+        val decadeHours = mutableMapOf<String, Long>()
+        for (m in media) {
+            val y = m.year?.take(4)?.toIntOrNull() ?: continue
+            val label = "${(y / 10) * 10}s"
+            val hours = hoursByMedia[m.id] ?: 0L
+            if (hours <= 0L) continue
+            decadeHours[label] = (decadeHours[label] ?: 0L) + hours
+        }
+        val topDecades = decadeHours.entries
+            .sortedByDescending { it.value }
+            .take(5)
+            .map { DecadeCount(it.key, it.value) }
 
         // Streaks from distinct play days (all time, not just the range).
         val days = rows.map { dayStart(it.playedAt) }.distinct().sorted()
@@ -179,6 +283,11 @@ object WatchStatsLoader {
             byType = byType,
             topGenres = topGenres,
             genreCoverage = withGenres to totalMedia,
+            topLanguages = topLanguages,
+            languageCoverage = withLang to totalMedia,
+            topCountries = topCountries,
+            countryCoverage = withCountry to totalMedia,
+            topDecades = topDecades,
             currentStreakDays = current,
             longestStreakDays = longest,
             recentlyFinished = recentlyFinished,

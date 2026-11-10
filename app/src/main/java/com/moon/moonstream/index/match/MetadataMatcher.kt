@@ -39,8 +39,33 @@ data class EnrichedMeta(
     /** Genre names (e.g. ["Action", "Drama"]), for Watch Stats. Null when
      * the provider did not return any. */
     val genres: List<String>? = null,
+    /** Original language ISO code (e.g. "ml", "en", "ko"), for Watch Stats
+     * By language and for identifying Asian dramas. Null when the
+     * provider did not return one. */
+    val originalLanguage: String? = null,
+    /** Country ISO code (e.g. "IN", "US", "KR"), for Watch Stats By
+     * country. Null when the provider did not return one. */
+    val country: String? = null,
     /** 0.0–1.0 match confidence. Below 0.75 the file goes to unmatched. */
     val confidence: Double = 1.0,
+)
+
+/**
+ * Language → most likely country, for movies: TMDB search returns
+ * `original_language` but no country for movies (production countries
+ * need a separate details call, which moon's rate limits can't afford
+ * per title). For his library this is right — Malayalam/Hindi/Tamil /
+ * Telugu are Indian, Korean is South Korea, and so on. English maps
+ * to US (Hollywood is the bulk of it). TV uses TMDB `origin_country`
+ * directly, which is exact.
+ */
+private val LANGUAGE_TO_COUNTRY = mapOf(
+    "ml" to "IN", "hi" to "IN", "ta" to "IN", "te" to "IN", "kn" to "IN",
+    "bn" to "IN", "mr" to "IN", "pa" to "IN", "gu" to "IN", "or" to "IN",
+    "en" to "US", "ko" to "KR", "ja" to "JP", "zh" to "CN", "th" to "TH",
+    "es" to "ES", "fr" to "FR", "de" to "DE", "it" to "IT", "pt" to "BR",
+    "ru" to "RU", "tr" to "TR", "ar" to "EG", "fa" to "IR", "id" to "ID",
+    "ms" to "MY", "vi" to "VN", "tl" to "PH",
 )
 
 object MetadataMatcher {
@@ -60,6 +85,17 @@ object MetadataMatcher {
         val arr = obj.optJSONArray("genre_ids") ?: return null
         return (0 until arr.length()).mapNotNull { TMDB_GENRES[arr.optInt(it)] }
             .takeIf { it.isNotEmpty() }
+    }
+
+    /** Country for a TMDB search result: TV has `origin_country`
+     * (exact); movies don't, so fall back to the language map. */
+    private fun tmdbCountry(obj: JSONObject, kind: String): String? {
+        if (kind != "movie") {
+            obj.optJSONArray("origin_country")?.optString(0)
+                ?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        val lang = obj.optString("original_language").takeIf { it.isNotBlank() } ?: return null
+        return LANGUAGE_TO_COUNTRY[lang]
     }
     private const val TAG = "MetadataMatcher"
     private const val UA = "MoonStream/1.0"
@@ -250,6 +286,8 @@ object MetadataMatcher {
             imdbId = imdbId,
             tmdbId = tmdbId,
             genres = tmdbGenres(best),
+            originalLanguage = best.optString("original_language").takeIf { it.isNotBlank() },
+            country = tmdbCountry(best, kind),
             confidence = bestScore.coerceIn(0.0, 1.0),
         )
     }
@@ -397,6 +435,8 @@ object MetadataMatcher {
                 imdbId = null, // resolved on Apply via match(), not per-row
                 tmdbId = obj.optInt("id", -1).takeIf { it > 0 },
                 genres = tmdbGenres(obj),
+                originalLanguage = obj.optString("original_language").takeIf { it.isNotBlank() },
+                country = tmdbCountry(obj, kind),
             )
         }
     }
@@ -745,6 +785,9 @@ object MetadataMatcher {
             tmdbId = null,
             kitsuId = bestKitsuId,
             anilistId = anilistId,
+            // Anime is Japanese by definition (Kitsu is an anime DB).
+            originalLanguage = "ja",
+            country = "JP",
             confidence = bestScore.coerceIn(0.0, 1.0),
         )
     }

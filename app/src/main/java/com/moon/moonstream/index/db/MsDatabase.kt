@@ -21,7 +21,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ChannelConfigEntity::class,
         WatchProgressEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = false,
 )
 abstract class MsDatabase : RoomDatabase() {
@@ -166,6 +166,20 @@ abstract class MsDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v16: originalLanguage (ISO code, e.g. "ml", "en", "ko") and
+         * country (ISO code, e.g. "IN", "US", "KR") on media items,
+         * for the Watch Stats By language / By country sections and for
+         * identifying Asian dramas (moon's 2026-11-11). Nullable —
+         * titles indexed before this change have none until re-indexed.
+         */
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE media_items ADD COLUMN originalLanguage TEXT")
+                db.execSQL("ALTER TABLE media_items ADD COLUMN country TEXT")
+            }
+        }
+
         fun get(context: Context): MsDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -173,7 +187,7 @@ abstract class MsDatabase : RoomDatabase() {
                     MsDatabase::class.java,
                     "moonstream.db",
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                     // Pre-release app: unknown schema jumps still wipe and
                     // rescan. Never ship a destructive migration past v1.0
                     // without a real one.

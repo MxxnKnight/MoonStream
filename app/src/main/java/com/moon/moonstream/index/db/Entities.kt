@@ -51,6 +51,13 @@ data class MediaItemEntity(
     /** Comma-separated genres (e.g. "Action,Drama"), for Watch Stats.
      * Null = indexed before v15 or the provider had none. */
     val genres: String? = null,
+    /** Original language ISO code (e.g. "ml", "en", "ko"), for Watch Stats
+     * By language and for identifying Asian dramas. Null = indexed
+     * before v16 or the provider had none. */
+    val originalLanguage: String? = null,
+    /** Country ISO code (e.g. "IN", "US", "KR"), for Watch Stats By
+     * country. Null = indexed before v16 or the provider had none. */
+    val country: String? = null,
 )
 
 /** One Telegram file attached to a media item. */
