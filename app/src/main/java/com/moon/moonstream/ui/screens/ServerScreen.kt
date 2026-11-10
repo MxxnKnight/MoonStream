@@ -1017,11 +1017,18 @@ private fun formatCount(n: Int): String =
  * Watch Stats summary card (moon's pick 2026-11-10): a simple card under
  * the Library card — this week's hours, titles finished, current streak.
  * Tapping it opens the full stats screen.
+ *
+ * Styled to MATCH the Library card (moon's fix 2026-11-11 — the plain
+ * grey MsCard looked flat next to it): the same linear-gradient border
+ * (the glow/outline), the same radial-gradient inner, and Doto for the
+ * title and the big numbers.
  */
 @Composable
 private fun StatsSummaryCard(onOpenStats: () -> Unit) {
     val context = LocalContext.current
     var weekHours by remember { mutableStateOf<Long?>(null) }
+    var weekEpisodes by remember { mutableStateOf<Int?>(null) }
+    var weekMovies by remember { mutableStateOf<Int?>(null) }
     var finished by remember { mutableStateOf<Int?>(null) }
     var streak by remember { mutableStateOf<Int?>(null) }
 
@@ -1030,53 +1037,157 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
             val db = MsDatabase.get(context)
             val week = WatchStatsLoader.load(db, StatsRange.WEEK)
             val all = WatchStatsLoader.load(db, StatsRange.ALL)
-            Triple(week.hoursWatchedMs, all.titlesFinished, all.currentStreakDays)
+            StatsSummaryData(
+                weekHoursMs = week.hoursWatchedMs,
+                weekEpisodes = week.episodesWatched,
+                weekMovies = week.moviesWatched,
+                finished = all.titlesFinished,
+                streak = all.currentStreakDays,
+            )
         }
-        weekHours = loaded.first
-        finished = loaded.second
-        streak = loaded.third
+        weekHours = loaded.weekHoursMs
+        weekEpisodes = loaded.weekEpisodes
+        weekMovies = loaded.weekMovies
+        finished = loaded.finished
+        streak = loaded.streak
     }
 
-    MsCard(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 12.dp)
-            .clickable { onOpenStats() },
+            .clip(RoundedCornerShape(28.dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        MsColors.GlowLight,
+                        MsColors.GlowDeep,
+                        MsColors.GlowDeep.copy(alpha = 0.7f),
+                        MsColors.Bg,
+                    ),
+                ),
+            )
+            .clickable(onClick = onOpenStats)
+            .padding(1.5.dp),
     ) {
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .clip(RoundedCornerShape(26.5.dp))
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            MsColors.GlowDeep.copy(alpha = 0.75f),
+                            MsColors.GlowDeep.copy(alpha = 0.35f),
+                            MsColors.Bg,
+                            MsColors.Bg,
+                        ),
+                        center = Offset(0.15f, 0.1f),
+                        radius = 900f,
+                    ),
+                )
+                .padding(16.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Your Stats",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MsColors.TextPrimary,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    if (weekHours == null) {
-                        "Loading…"
-                    } else {
-                        "${formatStatHours(weekHours!!)} this week · " +
-                            "${finished ?: 0} finished · " +
-                            "${streak ?: 0}-day streak"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MsColors.TextSecondary,
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Your Stats",
+                            style = MaterialTheme.typography.titleMedium.doto(),
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White,
+                        )
+                        Text(
+                            "›",
+                            style = MaterialTheme.typography.titleLarge.doto(),
+                            fontWeight = FontWeight.Light,
+                            color = MsColors.TextSecondary,
+                            modifier = Modifier.padding(start = 4.dp),
+                        )
+                    }
+                    Text(
+                        text = if (streak == null) "" else "${streak}d streak",
+                        style = MaterialTheme.typography.bodyMedium.doto(),
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = if (weekHours == null) "…" else formatStatHours(weekHours!!),
+                        style = MaterialTheme.typography.displaySmall.doto(),
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Text(
+                        text = "this week",
+                        style = MaterialTheme.typography.bodyMedium.doto(),
+                        color = MsColors.TextSecondary,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                    Text(
+                        text = "${finished ?: 0} finished",
+                        style = MaterialTheme.typography.bodyMedium.doto(),
+                        fontWeight = FontWeight.SemiBold,
+                        color = MsColors.TextSecondary,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    val breakStyle = MaterialTheme.typography.bodySmall.doto()
+                    Text(
+                        text = "${weekEpisodes ?: 0} Episodes",
+                        style = breakStyle,
+                        color = MsColors.TextSecondary,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                    Text(text = "·", style = breakStyle, color = MsColors.TextSecondary)
+                    Text(
+                        text = "${weekMovies ?: 0} Movies",
+                        style = breakStyle,
+                        color = MsColors.TextSecondary,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
             }
-            Icon(
-                Icons.Filled.ChevronRight,
-                contentDescription = "Open stats",
-                tint = MsColors.TextSecondary,
-            )
         }
     }
 }
+
+private data class StatsSummaryData(
+    val weekHoursMs: Long,
+    val weekEpisodes: Int,
+    val weekMovies: Int,
+    val finished: Int,
+    val streak: Int,
+)
 
 /** "18h 24m" for the stats card. */
 private fun formatStatHours(ms: Long): String {
