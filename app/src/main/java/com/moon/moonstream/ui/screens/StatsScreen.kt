@@ -1,6 +1,7 @@
 package com.moon.moonstream.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +29,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -38,7 +41,6 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.ui.components.BareIconButton
-import com.moon.moonstream.ui.components.MsCard
 import com.moon.moonstream.ui.components.MsSegmented
 import com.moon.moonstream.ui.stats.MostWatchedItem
 import com.moon.moonstream.ui.stats.StatsRange
@@ -46,6 +48,7 @@ import com.moon.moonstream.ui.stats.WatchStats
 import com.moon.moonstream.ui.stats.WatchStatsLoader
 import com.moon.moonstream.ui.theme.Inter
 import com.moon.moonstream.ui.theme.MsColors
+import com.moon.moonstream.ui.theme.doto
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -59,6 +62,12 @@ import kotlinx.coroutines.withContext
  * screen (under the Library card). All numbers come from watch_progress
  * + media_items; "hours watched" is the sum of positionMs (time into
  * titles), the best the DB holds.
+ *
+ * Look (moon's fix 2026-11-11 — the first version was flat grey cards
+ * and plain Inter next to the Library card's glow): Doto for every
+ * number and title, and every card is a StatsCard — a subtle radial
+ * Accent glow + a hairline outline, the Library card's language turned
+ * down so a screen full of cards doesn't become a wall of blue.
  */
 @Composable
 fun StatsScreen(onBack: () -> Unit) {
@@ -93,7 +102,7 @@ fun StatsScreen(onBack: () -> Unit) {
             )
             Text(
                 "Your Stats",
-                style = MaterialTheme.typography.headlineSmall.copy(fontFamily = Inter),
+                style = MaterialTheme.typography.headlineSmall.doto(),
                 fontWeight = FontWeight.Bold,
                 color = MsColors.TextPrimary,
                 modifier = Modifier.padding(start = 8.dp),
@@ -158,7 +167,7 @@ fun StatsScreen(onBack: () -> Unit) {
         // Watch time chart.
         StatsSectionTitle("Watch time")
         Spacer(Modifier.height(8.dp))
-        MsCard {
+        StatsCard {
             Column(modifier = Modifier.padding(14.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().height(120.dp),
@@ -176,7 +185,7 @@ fun StatsScreen(onBack: () -> Unit) {
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height((hours / max * 88f).coerceAtLeast(if (hours > 0f) 4f else 2f).dp)
-                                    .clip(RoundedCornerShape(4.dp))
+                                    .clip(RoundedCornerShape(6.dp))
                                     .background(
                                         if (selectedBar == idx) MsColors.Accent
                                         else MsColors.Accent.copy(alpha = 0.55f),
@@ -195,7 +204,7 @@ fun StatsScreen(onBack: () -> Unit) {
                     val (label, hours) = s.chartBars[idx]
                     Text(
                         "$label — ${formatHours((hours * 3_600_000f).toLong())}",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = Inter),
+                        style = MaterialTheme.typography.bodyMedium.doto(),
                         color = MsColors.TextPrimary,
                         modifier = Modifier.padding(top = 10.dp),
                     )
@@ -208,11 +217,21 @@ fun StatsScreen(onBack: () -> Unit) {
         if (s.mostWatched.isNotEmpty()) {
             StatsSectionTitle("Most watched")
             Spacer(Modifier.height(8.dp))
-            MsCard {
+            StatsCard {
                 Column(modifier = Modifier.padding(14.dp)) {
                     s.mostWatched.forEachIndexed { idx, item ->
                         MostWatchedRow(item, idx + 1)
-                        if (idx < s.mostWatched.lastIndex) Spacer(Modifier.height(12.dp))
+                        if (idx < s.mostWatched.lastIndex) {
+                            // iOS list hairline between rows (moon's fix 2026-11-11).
+                            Spacer(Modifier.height(10.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .background(MsColors.Divider),
+                            )
+                            Spacer(Modifier.height(10.dp))
+                        }
                     }
                 }
             }
@@ -223,7 +242,7 @@ fun StatsScreen(onBack: () -> Unit) {
         if (s.byType.isNotEmpty()) {
             StatsSectionTitle("By type")
             Spacer(Modifier.height(8.dp))
-            MsCard {
+            StatsCard {
                 Column(modifier = Modifier.padding(14.dp)) {
                     val total = s.byType.sumOf { it.count }.coerceAtLeast(1)
                     Row(
@@ -258,7 +277,7 @@ fun StatsScreen(onBack: () -> Unit) {
                             )
                             Text(
                                 "${tc.count} · ${(tc.count * 100 / total)}%",
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.bodyMedium.doto(),
                                 color = MsColors.TextSecondary,
                             )
                         }
@@ -272,7 +291,7 @@ fun StatsScreen(onBack: () -> Unit) {
         // Top genres.
         StatsSectionTitle("Top genres")
         Spacer(Modifier.height(8.dp))
-        MsCard {
+        StatsCard {
             Column(modifier = Modifier.padding(14.dp)) {
                 if (s.topGenres.isEmpty()) {
                     Text(
@@ -311,7 +330,7 @@ fun StatsScreen(onBack: () -> Unit) {
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 formatHours(g.hoursMs),
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.bodyMedium.doto(),
                                 color = MsColors.TextSecondary,
                             )
                         }
@@ -330,7 +349,7 @@ fun StatsScreen(onBack: () -> Unit) {
         // Watch streak.
         StatsSectionTitle("Watch streak")
         Spacer(Modifier.height(8.dp))
-        MsCard {
+        StatsCard {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(14.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -350,10 +369,10 @@ fun StatsScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(20.dp))
 
         // Recently finished.
+        StatsSectionTitle("Recently finished")
+        Spacer(Modifier.height(8.dp))
         if (s.recentlyFinished.isNotEmpty()) {
-            StatsSectionTitle("Recently finished")
-            Spacer(Modifier.height(8.dp))
-            MsCard {
+            StatsCard {
                 Column(modifier = Modifier.padding(14.dp)) {
                     s.recentlyFinished.forEachIndexed { idx, item ->
                         Row(
@@ -387,11 +406,59 @@ fun StatsScreen(onBack: () -> Unit) {
                                 )
                             }
                         }
-                        if (idx < s.recentlyFinished.lastIndex) Spacer(Modifier.height(12.dp))
+                        if (idx < s.recentlyFinished.lastIndex) {
+                            // iOS list hairline between rows.
+                            Spacer(Modifier.height(10.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .background(MsColors.Divider),
+                            )
+                            Spacer(Modifier.height(10.dp))
+                        }
                     }
                 }
             }
+        } else {
+            StatsCard {
+                Text(
+                    "Nothing finished yet — finish a title and it'll show up here.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MsColors.TextSecondary,
+                    modifier = Modifier.padding(14.dp),
+                )
+            }
         }
+    }
+}
+
+/**
+ * The stats screen's card (moon's fix 2026-11-11): the Library card's
+ * language turned down — a subtle radial Accent glow in the top-left
+ * corner plus a hairline outline — so a screen full of cards feels
+ * rich instead of flat grey, without becoming a wall of blue.
+ */
+@Composable
+private fun StatsCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(
+                        MsColors.GlowDeep.copy(alpha = 0.35f),
+                        MsColors.GlowDeep.copy(alpha = 0.12f),
+                        Color(0xFF1C1C1E),
+                        Color(0xFF1C1C1E),
+                    ),
+                    center = Offset(0.15f, 0.1f),
+                    radius = 600f,
+                ),
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp)),
+    ) {
+        content()
     }
 }
 
@@ -399,7 +466,7 @@ fun StatsScreen(onBack: () -> Unit) {
 private fun StatsSectionTitle(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.titleMedium.copy(fontFamily = Inter),
+        style = MaterialTheme.typography.titleMedium.doto(),
         fontWeight = FontWeight.SemiBold,
         color = MsColors.TextPrimary,
     )
@@ -407,11 +474,11 @@ private fun StatsSectionTitle(text: String) {
 
 @Composable
 private fun StatCard(value: String, label: String, modifier: Modifier = Modifier) {
-    MsCard(modifier = modifier) {
+    StatsCard(modifier = modifier) {
         Column(modifier = Modifier.padding(14.dp)) {
             Text(
                 value,
-                style = MaterialTheme.typography.headlineSmall.copy(fontFamily = Inter),
+                style = MaterialTheme.typography.headlineSmall.doto(),
                 fontWeight = FontWeight.Bold,
                 color = MsColors.TextPrimary,
             )
@@ -433,7 +500,7 @@ private fun MostWatchedRow(item: MostWatchedItem, rank: Int) {
     ) {
         Text(
             "$rank",
-            style = MaterialTheme.typography.titleMedium.copy(fontFamily = Inter),
+            style = MaterialTheme.typography.titleMedium.doto(),
             fontWeight = FontWeight.Bold,
             color = MsColors.Accent,
             modifier = Modifier.width(24.dp),
@@ -466,9 +533,15 @@ private fun MostWatchedRow(item: MostWatchedItem, rank: Int) {
     }
 }
 
-/** "18h 24m" / "1,842h" / "45m" — hours with minutes when under a day. */
+/**
+ * "18h 24m" / "1,842h" / "45m" — hours with minutes when under a day.
+ * Under a minute it shows seconds ("32s") instead of "0m", which read
+ * as missing data (moon's video 2026-11-11: three "0m · 1 ep" rows).
+ */
 private fun formatHours(ms: Long): String {
-    val totalMin = (ms / 60_000L).toInt()
+    val totalSec = (ms / 1000L).toInt()
+    if (totalSec < 60) return "${totalSec}s"
+    val totalMin = totalSec / 60
     val h = totalMin / 60
     val m = totalMin % 60
     return if (h >= 100) {

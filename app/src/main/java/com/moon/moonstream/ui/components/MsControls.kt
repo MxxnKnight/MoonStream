@@ -903,6 +903,9 @@ fun MsSegmented(
     var pillReady by remember { mutableStateOf(false) }
 
     // Snap into place on first measure, slide on every change after that.
+    // The glide uses the Library tabs' spring (0.9 / 260 — slow and
+    // visible, moon's fix 2026-11-11) so the pill moves like the rest
+    // of the app instead of snapping.
     LaunchedEffect(selected, segW) {
         if (segW <= 0f) return@LaunchedEffect
         val target = pillX(selected.coerceIn(options.indices))
@@ -913,16 +916,16 @@ fun MsSegmented(
             pillXAnim.animateTo(
                 target,
                 animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow,
+                    dampingRatio = 0.9f,
+                    stiffness = 260f,
                 ),
             )
         }
     }
 
     val slideSpec = spring<Float>(
-        dampingRatio = Spring.DampingRatioNoBouncy,
-        stiffness = Spring.StiffnessMediumLow,
+        dampingRatio = 0.9f,
+        stiffness = 260f,
     )
     val dragState = rememberDraggableState { delta ->
         scope.launch {
