@@ -94,6 +94,8 @@ import androidx.compose.ui.unit.sp
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.ui.components.MsCard
 import com.moon.moonstream.ui.state.AppUiState
+import com.moon.moonstream.ui.stats.StatsRange
+import com.moon.moonstream.ui.stats.WatchStatsLoader
 import com.moon.moonstream.ui.theme.Doto
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.ui.theme.doto
@@ -125,6 +127,7 @@ import kotlin.math.roundToInt
 fun ServerScreen(
     onOpenLibrary: () -> Unit = {},
     onOpenDetail: (Long) -> Unit = {},
+    onOpenStats: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val on = AppUiState.serverOn
@@ -206,6 +209,11 @@ fun ServerScreen(
         // they don't need the server running.
         MsSectionEyebrow("LIBRARY")
         LibraryDashboardCard(onOpenLibrary = onOpenLibrary)
+
+        // Watch Stats (moon's pick 2026-11-10): a simple card under the
+        // Library card — this week's hours, titles finished, streak.
+        // Tapping it opens the full stats screen.
+        StatsSummaryCard(onOpenStats = onOpenStats)
 
         RecentlyAddedRow(onOpenLibrary = onOpenLibrary, onOpenDetail = onOpenDetail)
 
@@ -1004,6 +1012,79 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
 
 private fun formatCount(n: Int): String =
     String.format(Locale.US, "%,d", n)
+
+/**
+ * Watch Stats summary card (moon's pick 2026-11-10): a simple card under
+ * the Library card — this week's hours, titles finished, current streak.
+ * Tapping it opens the full stats screen.
+ */
+@Composable
+private fun StatsSummaryCard(onOpenStats: () -> Unit) {
+    val context = LocalContext.current
+    var weekHours by remember { mutableStateOf<Long?>(null) }
+    var finished by remember { mutableStateOf<Int?>(null) }
+    var streak by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(Unit) {
+        val loaded = withContext(Dispatchers.IO) {
+            val db = MsDatabase.get(context)
+            val week = WatchStatsLoader.load(db, StatsRange.WEEK)
+            val all = WatchStatsLoader.load(db, StatsRange.ALL)
+            Triple(week.hoursWatchedMs, all.titlesFinished, all.currentStreakDays)
+        }
+        weekHours = loaded.first
+        finished = loaded.second
+        streak = loaded.third
+    }
+
+    MsCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            .clickable { onOpenStats() },
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Your Stats",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MsColors.TextPrimary,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (weekHours == null) {
+                        "Loading…"
+                    } else {
+                        "${formatStatHours(weekHours!!)} this week · " +
+                            "${finished ?: 0} finished · " +
+                            "${streak ?: 0}-day streak"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MsColors.TextSecondary,
+                )
+            }
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = "Open stats",
+                tint = MsColors.TextSecondary,
+            )
+        }
+    }
+}
+
+/** "18h 24m" for the stats card. */
+private fun formatStatHours(ms: Long): String {
+    val totalMin = (ms / 60_000L).toInt()
+    val h = totalMin / 60
+    val m = totalMin % 60
+    return if (h > 0) "${h}h ${m}m" else "${m}m"
+}
 
 private fun formatBytes(bytes: Long): String {
     if (bytes <= 0) return "0 B"

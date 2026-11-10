@@ -175,6 +175,7 @@ object BackupManager {
                     .put("updatedAt", m.updatedAt)
                     .put("hidden", m.hidden)
                     .put("isCustom", m.isCustom)
+                    .put("genres", m.genres)
             }))
             .put("stream_files", arr(db.streamDao().getAll().map { f ->
                 JSONObject()
@@ -311,6 +312,7 @@ object BackupManager {
                     updatedAt = updatedAt,
                     hidden = o.optBoolean("hidden", false),
                     isCustom = o.optBoolean("isCustom", false),
+                    genres = o.optString("genres", null),
                 )
                 val newId = db.mediaDao().upsert(entity)
                 // upsert() with id=0 returns the new row id; with an existing

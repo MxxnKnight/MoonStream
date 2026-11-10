@@ -36,11 +36,31 @@ data class EnrichedMeta(
     val kitsuId: String? = null,
     /** AniList anime ID, for AniSkip API (it needs AniList, not Kitsu). */
     val anilistId: String? = null,
+    /** Genre names (e.g. ["Action", "Drama"]), for Watch Stats. Null when
+     * the provider did not return any. */
+    val genres: List<String>? = null,
     /** 0.0–1.0 match confidence. Below 0.75 the file goes to unmatched. */
     val confidence: Double = 1.0,
 )
 
 object MetadataMatcher {
+    // TMDB genre ids (stable, same for movie and TV) → names. TMDB search
+    // returns genre_ids, not names, so the map lives here (moon's 2026-11-10,
+    // for Watch Stats Top Genres).
+    private val TMDB_GENRES = mapOf(
+        28 to "Action", 12 to "Adventure", 16 to "Animation", 35 to "Comedy",
+        80 to "Crime", 99 to "Documentary", 18 to "Drama", 10751 to "Family",
+        14 to "Fantasy", 36 to "History", 27 to "Horror", 10402 to "Music",
+        9648 to "Mystery", 10749 to "Romance", 878 to "Sci-Fi", 10770 to "TV Movie",
+        53 to "Thriller", 10752 to "War", 37 to "Western",
+    )
+
+    /** Map a TMDB genre_ids array to names (unknown ids dropped). */
+    private fun tmdbGenres(obj: JSONObject): List<String>? {
+        val arr = obj.optJSONArray("genre_ids") ?: return null
+        return (0 until arr.length()).mapNotNull { TMDB_GENRES[arr.optInt(it)] }
+            .takeIf { it.isNotEmpty() }
+    }
     private const val TAG = "MetadataMatcher"
     private const val UA = "MoonStream/1.0"
     /** A title this similar is a clear match — a wrong filename year must not veto it. */
@@ -229,6 +249,7 @@ object MetadataMatcher {
             backdropUrl = backdrop,
             imdbId = imdbId,
             tmdbId = tmdbId,
+            genres = tmdbGenres(best),
             confidence = bestScore.coerceIn(0.0, 1.0),
         )
     }
@@ -338,6 +359,10 @@ object MetadataMatcher {
             backdropUrl = obj.optString("background").takeIf { it.isNotBlank() },
                 imdbId = obj.optString("id").takeIf { it.startsWith("tt") },
                 tmdbId = null,
+                genres = obj.optJSONArray("genres")?.let { arr ->
+                    (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }
+                        .takeIf { it.isNotEmpty() }
+                },
                 // Cinemeta catalog is already ranked by relevance; use title
                 // similarity as the confidence.
                 confidence = similarity(query, name).coerceIn(0.0, 1.0),
@@ -371,6 +396,7 @@ object MetadataMatcher {
                 posterUrl = poster,
                 imdbId = null, // resolved on Apply via match(), not per-row
                 tmdbId = obj.optInt("id", -1).takeIf { it > 0 },
+                genres = tmdbGenres(obj),
             )
         }
     }

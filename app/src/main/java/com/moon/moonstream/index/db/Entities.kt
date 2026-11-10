@@ -48,6 +48,9 @@ data class MediaItemEntity(
     val hidden: Boolean = false,
     /** User-created via the Create screen (never auto-matched / re-matched). */
     val isCustom: Boolean = false,
+    /** Comma-separated genres (e.g. "Action,Drama"), for Watch Stats.
+     * Null = indexed before v15 or the provider had none. */
+    val genres: String? = null,
 )
 
 /** One Telegram file attached to a media item. */

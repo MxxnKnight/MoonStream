@@ -96,6 +96,7 @@ import com.moon.moonstream.ui.screens.LogsScreen
 import com.moon.moonstream.ui.screens.ServerScreen
 import com.moon.moonstream.ui.screens.SettingsScreen
 import com.moon.moonstream.ui.screens.SplashScreen
+import com.moon.moonstream.ui.screens.StatsScreen
 import com.moon.moonstream.ui.model.CreatePrefill
 import com.moon.moonstream.ui.model.PrefillFile
 import com.moon.moonstream.ui.state.AppUiState
@@ -117,6 +118,9 @@ sealed interface AppScreen {
     data class Create(val prefill: CreatePrefill? = null) : AppScreen
     data object Settings : AppScreen
     data object Logs : AppScreen
+    /** Watch Stats (moon's pick 2026-11-10): opened from the stats card
+     *  on the home screen, under the Library card. */
+    data object Stats : AppScreen
     data class Player(
         val videoUrl: String,
         val title: String,
@@ -407,7 +411,9 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     AppScreen.Server -> ServerScreen(
                         onOpenLibrary = { go(AppScreen.Library) },
                         onOpenDetail = { id -> go(AppScreen.Detail(id)) },
+                        onOpenStats = { go(AppScreen.Stats) },
                     )
+                    AppScreen.Stats -> StatsScreen(onBack = { back() })
                     AppScreen.Library ->
                         LibraryScreen(onOpenDetail = { id -> go(AppScreen.Detail(id)) })
                     is AppScreen.Detail ->
