@@ -32,6 +32,12 @@ object AnimeSkip {
         /** Ending start/end in seconds, null if not in DB. */
         val edStart: Double?,
         val edEnd: Double?,
+        /** Recap ("previously on") start/end in seconds, null if not in DB. */
+        val recapStart: Double?,
+        val recapEnd: Double?,
+        /** "Next time" preview start/end in seconds, null if not in DB. */
+        val previewStart: Double?,
+        val previewEnd: Double?,
     )
 
     /**
@@ -65,7 +71,7 @@ object AnimeSkip {
             // 3. Fetch that episode's timestamps and pair consecutive
             // markers into intervals.
             val times = findTimestamps(episodeId, clientId) ?: return@withContext null
-            AppLog.i(TAG, "AnimeSkip: op=${times.opStart}-${times.opEnd} ed=${times.edStart}-${times.edEnd}")
+            AppLog.i(TAG, "AnimeSkip: op=${times.opStart}-${times.opEnd} ed=${times.edStart}-${times.edEnd} recap=${times.recapStart}-${times.recapEnd} preview=${times.previewStart}-${times.previewEnd}")
             times
         } catch (e: Exception) {
             AppLog.w(TAG, "AnimeSkip failed: ${e.message}")
@@ -163,6 +169,10 @@ object AnimeSkip {
         var opEnd: Double? = null
         var edStart: Double? = null
         var edEnd: Double? = null
+        var recapStart: Double? = null
+        var recapEnd: Double? = null
+        var previewStart: Double? = null
+        var previewEnd: Double? = null
         for (i in markers.indices) {
             val (at, typeName) = markers[i]
             // The last marker has no next marker, so it has no end.
@@ -174,13 +184,18 @@ object AnimeSkip {
                 "Credits", "New Credits", "Mixed Credits", "Ending", "Outro", "ED" -> {
                     if (edStart == null) { edStart = at; edEnd = end }
                 }
-                // Recap / Preview markers pair the same way, but the
-                // player only shows a Skip Intro button, so they are
-                // ignored here.
+                // Recap / Preview markers pair the same way — the player
+                // shows them in the same Skip button (moon's 2026-11-10).
+                "Recap" -> {
+                    if (recapStart == null) { recapStart = at; recapEnd = end }
+                }
+                "Preview" -> {
+                    if (previewStart == null) { previewStart = at; previewEnd = end }
+                }
                 else -> {}
             }
         }
-        if (opStart == null && edStart == null) return null
-        return SkipTimes(opStart, opEnd, edStart, edEnd)
+        if (opStart == null && edStart == null && recapStart == null && previewStart == null) return null
+        return SkipTimes(opStart, opEnd, edStart, edEnd, recapStart, recapEnd, previewStart, previewEnd)
     }
 }

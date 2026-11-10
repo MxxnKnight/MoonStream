@@ -23,6 +23,12 @@ object AniSkip {
         /** Ending start/end in seconds, null if not in DB. */
         val edStart: Double?,
         val edEnd: Double?,
+        /** Recap ("previously on") start/end in seconds, null if not in DB. */
+        val recapStart: Double?,
+        val recapEnd: Double?,
+        /** "Next time" preview start/end in seconds — AnimeSkip only (AniSkip has no preview type), null if not in DB. */
+        val previewStart: Double? = null,
+        val previewEnd: Double? = null,
     )
 
     /**
@@ -41,7 +47,7 @@ object AniSkip {
             // AniSkip v2 real route: /v2/skip-times/{anilistId}/{episode}
             // with types[] and episodeLength query params.
             val url = "$BASE/$anilistId/$episode" +
-                "?types[]=op&types[]=ed&episodeLength=${episodeLength.coerceAtLeast(1)}"
+                "?types[]=op&types[]=ed&types[]=recap&episodeLength=${episodeLength.coerceAtLeast(1)}"
             AppLog.i(TAG, "Fetching: $url")
             val conn = (URL(url).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 10_000
@@ -63,6 +69,8 @@ object AniSkip {
                 var opEnd: Double? = null
                 var edStart: Double? = null
                 var edEnd: Double? = null
+                var recapStart: Double? = null
+                var recapEnd: Double? = null
                 for (i in 0 until results.length()) {
                     val r = results.optJSONObject(i) ?: continue
                     // Real API uses camelCase: skipType, interval.startTime/endTime.
@@ -74,10 +82,11 @@ object AniSkip {
                     when (type) {
                         "op" -> { opStart = start; opEnd = end }
                         "ed" -> { edStart = start; edEnd = end }
+                        "recap" -> { recapStart = start; recapEnd = end }
                     }
                 }
-                AppLog.i(TAG, "AniSkip: op=$opStart-$opEnd ed=$edStart-$edEnd")
-                SkipTimes(opStart, opEnd, edStart, edEnd)
+                AppLog.i(TAG, "AniSkip: op=$opStart-$opEnd ed=$edStart-$edEnd recap=$recapStart-$recapEnd")
+                SkipTimes(opStart, opEnd, edStart, edEnd, recapStart, recapEnd)
             } finally {
                 conn.disconnect()
             }

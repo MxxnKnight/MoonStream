@@ -119,6 +119,10 @@ private enum class PlayerSheet { SUBS, AUDIO, PLAYLIST, EPISODES }
 /** One selectable track row. */
 private data class TrackOpt(val group: TrackGroup, val index: Int, val label: String)
 
+/** One skippable segment (intro, ending/outro, recap, preview) — the single
+ * Skip button shows the label of whichever segment the playhead is inside. */
+private data class SkipSegment(val startMs: Long, val endMs: Long, val label: String)
+
 /** Brightness/volume gesture HUD state. */
 private sealed class GestureHud(val fraction: Float) {
     class Brightness(f: Float) : GestureHud(f)
@@ -1637,25 +1641,30 @@ fun PlayerScreen(
             val isAnime = media?.type == "anime"
             val isMovie = media?.type == "movie"
             // Anime → AniSkip via AniList ID (mapped from Kitsu at index),
-            // then Anime Skip when AniSkip has no opening.
+            // then Anime Skip when AniSkip has no opening. A provider wins
+            // when it has ANY skippable segment (intro, ending, recap,
+            // preview) — not just an intro (moon's 2026-11-10: an episode
+            // with only an ending must not be discarded).
             if (isAnime && ep != null && !media?.anilistId.isNullOrBlank()) {
                 val durSecs = duration.coerceAtLeast(1L) / 1000
                 val aniskip = AniSkip.getSkipTimes(media!!.anilistId!!, ep, durSecs)
-                if (aniskip?.opEnd != null) {
+                if (aniskip != null && (aniskip.opEnd != null || aniskip.edEnd != null || aniskip.recapEnd != null)) {
                     skipTimes = aniskip
                     skipSource = "AniSkip"
                 } else {
                     val clientId = ScanPrefs.getAnimeSkipClientId(context)
                     val animeskip = AnimeSkip.getSkipTimes(media.anilistId!!, season, ep, clientId)
-                    if (animeskip?.opEnd != null) {
-                        skipTimes = AniSkip.SkipTimes(animeskip.opStart, animeskip.opEnd, animeskip.edStart, animeskip.edEnd)
+                    if (animeskip != null && (animeskip.opEnd != null || animeskip.edEnd != null || animeskip.recapEnd != null || animeskip.previewEnd != null)) {
+                        skipTimes = AniSkip.SkipTimes(animeskip.opStart, animeskip.opEnd, animeskip.edStart, animeskip.edEnd, animeskip.recapStart, animeskip.recapEnd, animeskip.previewStart, animeskip.previewEnd)
                         skipSource = "AnimeSkip"
                     }
                 }
                 return@LaunchedEffect
             }
             // Series/movies → IntroDB via IMDb ID, then SkipDB when IntroDB
-            // has no intro.
+            // has no segment at all. Same "any segment wins" rule: an
+            // IntroDB answer with only an outro must not fall through and
+            // lose it.
             val imdb = media?.imdbId
             if (!imdb.isNullOrBlank()) {
                 if (!isMovie && (season == null || ep == null)) {
@@ -1669,7 +1678,7 @@ fun PlayerScreen(
                         episode = if (isMovie) null else ep,
                         isMovie = isMovie,
                     )
-                    if (introdb?.introEndSec != null) {
+                    if (introdb != null && (introdb.introEndSec != null || introdb.outroEndSec != null)) {
                         introSegs = introdb
                         skipSource = "IntroDB"
                     } else {
@@ -1679,8 +1688,8 @@ fun PlayerScreen(
                             episode = if (isMovie) null else ep,
                             isMovie = isMovie,
                         )
-                        if (skipdb?.introEndSec != null) {
-                            introSegs = IntroDb.Segments(skipdb.introStartSec, skipdb.introEndSec, skipdb.outroStartSec, skipdb.outroEndSec)
+                        if (skipdb != null && (skipdb.introEndSec != null || skipdb.outroEndSec != null || skipdb.recapEndSec != null || skipdb.previewEndSec != null)) {
+                            introSegs = IntroDb.Segments(skipdb.introStartSec, skipdb.introEndSec, skipdb.outroStartSec, skipdb.outroEndSec, skipdb.recapStartSec, skipdb.recapEndSec, skipdb.previewStartSec, skipdb.previewEndSec)
                             skipSource = "SkipDB"
                         }
                     }
@@ -1690,24 +1699,43 @@ fun PlayerScreen(
             }
         }
 
-        // Resolve the intro window from whichever API answered.
-        val apiEndMs: Long? = skipTimes?.opEnd?.let { (it * 1000).toLong() }
-            ?: introSegs?.introEndSec?.let { (it * 1000).toLong() }
-        val apiStartMs: Long = skipTimes?.opStart?.let { (it * 1000).toLong() }
-            ?: introSegs?.introStartSec?.let { (it * 1000).toLong() }
-            ?: 0L
-        val apiSource = skipSource
-        // Show ONLY during the actual intro from the API. No data = no button.
-        val showSkipIntro = apiEndMs != null &&
-            currentPosition in apiStartMs until apiEndMs &&
-            !controlsLocked
-        if (showSkipIntro) {
-            // apiEndMs is non-null here (showSkipIntro requires it).
-            val endMs = apiEndMs!!
+        // One Skip button for EVERY skippable segment (moon's 2026-11-10):
+        // intro, ending/outro, recap, preview — the label follows whichever
+        // segment the playhead is inside. The data already came from the
+        // APIs above; this just turns it into one list in play order.
+        // A segment is kept only when it has a real end after its start.
+        val skipSegments = remember(skipTimes, introSegs) {
+            fun seg(startSec: Double?, endSec: Double?, label: String): SkipSegment? {
+                val s = startSec?.let { (it * 1000).toLong() } ?: return null
+                val e = endSec?.let { (it * 1000).toLong() } ?: return null
+                if (e <= s) return null
+                return SkipSegment(s, e, label)
+            }
+            buildList {
+                skipTimes?.let { t ->
+                    seg(t.opStart, t.opEnd, "Skip Intro")?.let { add(it) }
+                    seg(t.edStart, t.edEnd, "Skip Ending")?.let { add(it) }
+                    seg(t.recapStart, t.recapEnd, "Skip Recap")?.let { add(it) }
+                    seg(t.previewStart, t.previewEnd, "Skip Preview")?.let { add(it) }
+                }
+                introSegs?.let { g ->
+                    seg(g.introStartSec, g.introEndSec, "Skip Intro")?.let { add(it) }
+                    seg(g.outroStartSec, g.outroEndSec, "Skip Outro")?.let { add(it) }
+                    seg(g.recapStartSec, g.recapEndSec, "Skip Recap")?.let { add(it) }
+                    seg(g.previewStartSec, g.previewEndSec, "Skip Preview")?.let { add(it) }
+                }
+            }.sortedBy { it.startMs }
+        }
+        // Show ONLY while the playhead is inside a segment. No data = no button.
+        val currentSegment = skipSegments.firstOrNull { currentPosition in it.startMs until it.endMs }
+        val showSkip = currentSegment != null && !controlsLocked
+        if (showSkip) {
+            // currentSegment is non-null here (showSkip requires it).
+            val seg = currentSegment!!
             Button(
                 onClick = {
-                    player.seekTo(endMs)
-                    AppLog.i("PLAYER", "Skip intro: ${currentPosition/1000}s → ${endMs/1000}s ($apiSource)")
+                    player.seekTo(seg.endMs)
+                    AppLog.i("PLAYER", "Skip ${seg.label}: ${currentPosition/1000}s → ${seg.endMs/1000}s ($skipSource)")
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -1718,7 +1746,7 @@ fun PlayerScreen(
                     contentColor = MsColors.OnAccent,
                 ),
             ) {
-                Text("Skip Intro", fontWeight = FontWeight.Bold)
+                Text(seg.label, fontWeight = FontWeight.Bold)
             }
         }
 

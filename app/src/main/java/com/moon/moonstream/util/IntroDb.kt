@@ -22,6 +22,12 @@ object IntroDb {
         val introEndSec: Double?,
         val outroStartSec: Double?,
         val outroEndSec: Double?,
+        /** Recap ("previously on") — SkipDB only; IntroDB leaves it null. */
+        val recapStartSec: Double? = null,
+        val recapEndSec: Double? = null,
+        /** "Next time" preview — SkipDB only; IntroDB leaves it null. */
+        val previewStartSec: Double? = null,
+        val previewEndSec: Double? = null,
     )
 
     /**

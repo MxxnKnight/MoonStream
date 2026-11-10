@@ -24,6 +24,12 @@ object SkipDb {
         val introEndSec: Double?,
         val outroStartSec: Double?,
         val outroEndSec: Double?,
+        /** Recap ("previously on") start/end in seconds, null if absent. */
+        val recapStartSec: Double?,
+        val recapEndSec: Double?,
+        /** "Next time" preview start/end in seconds, null if absent. */
+        val previewStartSec: Double?,
+        val previewEndSec: Double?,
     )
 
     /**
@@ -71,8 +77,12 @@ object SkipDb {
                     introEndSec = segmentEndSec(segments.optJSONObject("intro")),
                     outroStartSec = segmentStartSec(segments.optJSONObject("outro")),
                     outroEndSec = segmentEndSec(segments.optJSONObject("outro")),
+                    recapStartSec = segmentStartSec(segments.optJSONObject("recap")),
+                    recapEndSec = segmentEndSec(segments.optJSONObject("recap")),
+                    previewStartSec = segmentStartSec(segments.optJSONObject("preview")),
+                    previewEndSec = segmentEndSec(segments.optJSONObject("preview")),
                 )
-                AppLog.i(TAG, "SkipDB: intro=${segs.introStartSec}-${segs.introEndSec}")
+                AppLog.i(TAG, "SkipDB: intro=${segs.introStartSec}-${segs.introEndSec} outro=${segs.outroStartSec}-${segs.outroEndSec} recap=${segs.recapStartSec}-${segs.recapEndSec} preview=${segs.previewStartSec}-${segs.previewEndSec}")
                 segs
             } finally {
                 conn.disconnect()
