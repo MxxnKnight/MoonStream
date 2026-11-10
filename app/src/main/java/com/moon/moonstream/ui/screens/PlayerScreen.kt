@@ -597,6 +597,7 @@ fun PlayerScreen(
                     MsToast.show("Clip saved to Downloads")
                     AppLog.i("PLAYER", "Trim saved: $uri")
                     showTrimPanel = false
+                    trimLoop = false
                     trimStartMs = null
                     trimEndMs = null
                 } else {
@@ -1098,6 +1099,9 @@ fun PlayerScreen(
     var trimEndMs by remember { mutableStateOf<Long?>(null) }
     var trimSaving by remember { mutableStateOf(false) }
     var trimProgress by remember { mutableFloatStateOf(0f) }
+    // Loop preview (moon's pick 2026-11-10): while on, the marked range
+    // plays on repeat so the cut can be checked before saving.
+    var trimLoop by remember { mutableStateOf(false) }
     // Auto-hide the feedback after 1s.
     LaunchedEffect(seekFeedback) {
         if (seekFeedback != null) {
@@ -1224,6 +1228,25 @@ fun PlayerScreen(
         if (controlsVisible && isPlaying && !controlsLocked) {
             delay(3000)
             controlsVisible = false
+        }
+    }
+
+    // Trim loop preview (moon's pick 2026-11-10): while on, the marked
+    // range plays on repeat. Jumps back to the start when the playhead
+    // passes the end, checked every 100ms so the loop is tight. The
+    // effect restarts (and re-seeks) if the marks move while looping.
+    LaunchedEffect(trimLoop, trimStartMs, trimEndMs) {
+        if (!trimLoop) return@LaunchedEffect
+        val start = trimStartMs ?: return@LaunchedEffect
+        val end = trimEndMs ?: return@LaunchedEffect
+        if (end <= start) return@LaunchedEffect
+        player.seekTo(start)
+        player.playWhenReady = true
+        while (true) {
+            delay(100)
+            if (player.currentPosition >= end) {
+                player.seekTo(start)
+            }
         }
     }
 
@@ -1556,12 +1579,14 @@ fun PlayerScreen(
                         durationMs = duration,
                         saving = trimSaving,
                         progress = trimProgress,
+                        looping = trimLoop,
                         onSetStart = { trimStartMs = currentPosition },
                         onSetEnd = { trimEndMs = currentPosition },
                         onJumpToStart = { trimStartMs?.let { player.seekTo(it) } },
                         onJumpToEnd = { trimEndMs?.let { player.seekTo(it) } },
-                        onClear = { trimStartMs = null; trimEndMs = null },
-                        onClose = { showTrimPanel = false },
+                        onClear = { trimStartMs = null; trimEndMs = null; trimLoop = false },
+                        onClose = { showTrimPanel = false; trimLoop = false },
+                        onToggleLoop = { trimLoop = !trimLoop },
                         onSave = { saveTrimClip() },
                     )
                     Spacer(Modifier.height(8.dp))
@@ -2892,12 +2917,14 @@ private fun TrimPanel(
     durationMs: Long,
     saving: Boolean,
     progress: Float,
+    looping: Boolean,
     onSetStart: () -> Unit,
     onSetEnd: () -> Unit,
     onJumpToStart: () -> Unit,
     onJumpToEnd: () -> Unit,
     onClear: () -> Unit,
     onClose: () -> Unit,
+    onToggleLoop: () -> Unit,
     onSave: () -> Unit,
 ) {
     val valid = startMs != null && endMs != null && endMs > startMs
@@ -3002,6 +3029,24 @@ private fun TrimPanel(
                     fontSize = 14,
                     modifier = Modifier.weight(1f),
                 )
+                // Loop preview (moon's pick 2026-11-10): plays the marked
+                // range on repeat. Blue while looping, outline when off.
+                if (looping) {
+                    LimePillButton(
+                        text = "Stop preview",
+                        onClick = onToggleLoop,
+                        fontSize = 14,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    MsOutlinePill(
+                        text = "Preview",
+                        onClick = onToggleLoop,
+                        fontSize = 14,
+                        enabled = valid,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
                 LimePillButton(
                     text = "Save clip",
                     onClick = onSave,
