@@ -28,6 +28,7 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1067,7 +1068,13 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
                     ),
                 ),
             )
-            .clickable(onClick = onOpenStats)
+            .clickable(
+                // No Android ripple (moon's fix 2026-11-11): the grey flash
+                // on tap looked wrong on the gradient card.
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onOpenStats,
+            )
             .padding(1.5.dp),
     ) {
         Box(

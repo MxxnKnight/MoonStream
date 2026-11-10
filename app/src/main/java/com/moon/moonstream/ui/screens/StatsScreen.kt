@@ -3,6 +3,7 @@ package com.moon.moonstream.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -177,7 +178,13 @@ fun StatsScreen(onBack: () -> Unit) {
                     val max = (s.chartBars.maxOfOrNull { it.second } ?: 0f).coerceAtLeast(1f)
                     s.chartBars.forEachIndexed { idx, (label, hours) ->
                         Column(
-                            modifier = Modifier.weight(1f).clickable { selectedBar = idx },
+                            // No Android ripple on tap (moon's fix 2026-11-11):
+                            // the grey flash behind the bar looked wrong.
+                            // The bar itself going full Accent is the feedback.
+                            modifier = Modifier.weight(1f).clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() },
+                            ) { selectedBar = idx },
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Bottom,
                         ) {
