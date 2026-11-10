@@ -65,7 +65,7 @@ object FilenameParser {
     private val trailingLangRe = Regex(
         """(?i)(?:\s+(?:hindi|tamil|telugu|malayalam|kannada|bengali|punjabi|marathi|gujarati|urdu|odia|oriya|assamese|english|korean|japanese|dubbed|dual\s+audio|multi\s+audio|dual|multi|audio|org))+$""",
     )
-    private val mentionRe = Regex("""(?:^|\s)@[\w_]+""")
+    private val mentionRe = Regex("""(?:^|[\s._\-])@[\w_]+""")
     /**
      * Popular spam/uploader tags (moon's 2026-11-10, big-channel export).
      * These sit at the very start of the filename and must be stripped as a
@@ -451,6 +451,18 @@ object FilenameParser {
                 work = full + work.substring(abbrParen.range.last + 1)
             }
         }
+
+        // Normalize separators to spaces (moon's 2026-11-10, Link-to-Title
+        // prefill): the quality-cut and year regexes use `\b` word
+        // boundaries, but `_` counts as a word character — so in an
+        // underscore-separated name ("Mirai_2025_Malayalam_HQ_HDRip_1080p")
+        // no quality word ever matched and the title stayed dirty ("Mirai
+        // Malayalam HQ HDRip 1080p...") instead of "Mirai". Dots and dashes
+        // are already non-word chars, so this only changes `_` (and
+        // collapses repeats). Safe: every S/E, year and language regex
+        // below treats space, dot, underscore and dash as separators
+        // interchangeably.
+        work = work.replace(Regex("""[._\-]+"""), " ").replace(Regex("""\s+"""), " ").trim()
 
         var season: Int? = leadingSeason
         var episode: Int? = leadingEpisode
