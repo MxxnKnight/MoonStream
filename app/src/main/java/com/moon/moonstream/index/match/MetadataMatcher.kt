@@ -677,8 +677,14 @@ object MetadataMatcher {
             ).filter { it.isNotBlank() }
             // When the file has episode info, it's a series episode — never a
             // movie. Boost TV-type results so "Psycho-Pass" (TV) beats
-            // "Psycho-Pass: The Movie".
+            // "Psycho-Pass: The Movie". (moon's 2026-11-10, big-channel
+            // export: 81 "Once Upon a Time" episodes all matched to the
+            // anime MOVIE "Windaria" because its alt-title is "Once Upon
+            // a Time" and scored 1.0 — the +0.15 TV boost couldn't beat
+            // a perfect alt-title match. So a movie result is now skipped
+            // outright for episode files, not just un-boosted.)
             val showType = attr.optString("showType", "")
+            if (preferSeries && showType.equals("movie", ignoreCase = true)) continue
             val typeBoost = if (preferSeries && showType.equals("TV", ignoreCase = true)) 0.15 else 0.0
             for (c in candidates) {
                 val s = similarity(title, c) + typeBoost

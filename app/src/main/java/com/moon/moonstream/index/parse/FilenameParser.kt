@@ -66,6 +66,21 @@ object FilenameParser {
         """(?i)(?:\s+(?:hindi|tamil|telugu|malayalam|kannada|bengali|punjabi|marathi|gujarati|urdu|odia|oriya|assamese|english|korean|japanese|dubbed|dual\s+audio|multi\s+audio|dual|multi|audio|org))+$""",
     )
     private val mentionRe = Regex("""(?:^|\s)@[\w_]+""")
+    /**
+     * Popular spam/uploader tags (moon's 2026-11-10, big-channel export).
+     * These sit at the very start of the filename and must be stripped as a
+     * whole BEFORE the greedy mentionRe runs — mentionRe's `[\w_]+` eats
+     * through underscores, so "@Central_Links_Flood_2007..." lost the title
+     * "Flood" along with the tag. A denylist of the exact handles is precise;
+     * new tags get added here when moon reports them. Also strips the short
+     * uppercase release prefixes (MTR/CS/MCU/ONR/MP/MSF/MF) that sit at the
+     * start the same way. Bracket tags ([MS], [D&O], [K-Lands], [PFM],
+     * [RTBT]...) are already stripped by the leading-bracket logic in
+     * parse(); this handles the @ and bare-prefix forms.
+     */
+    private val spamTagRe = Regex(
+        """(?i)^(?:@(?:central_links|smile_upload|dvdwoall_scam_1|dvdwoall|dvdwo|tamil_genz_linkzz|tamil_genz|tr_web|moviesnowlinks|trending_movies|movieztamizha|scifimovies4u|starkmv|hdmlinx|cinewod|swm_links|m4mhd|ucparadiso|cc)|(?:MTR|CS|MCU|ONR|MP|MSF|MF))[\s._\-]*""",
+    )
     private val emojiRe = Regex(
         "[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF\u2300-\u23FF\u2B50\u2B55\u200D\uFE0F]",
     )
@@ -90,7 +105,12 @@ object FilenameParser {
         // "S01.EP.1", "S1E1", "Season 1 Episode 2") — moon's 2026-11-09
         // pack check exposed that "S04 EP 01" was not matching at all and
         // the number was then read as an absolute episode in season 1.
-        """(?i)(?<![a-z0-9])(?:s|season\s*)(\d{1,2})[\s._-]*(?:e|ep|episode)[\s._-]*(\d{1,4})(?![a-z0-9])""",
+        // The lookahead after the episode number is digits-only (moon's
+        // 2026-11-10, big-channel export): "S1_EP_1Meow" fuses the marker
+        // to the title with no separator, so a letter may follow the
+        // number (the title starts there). A digit must NOT follow, or
+        // "S1E12" would read as episode 1.
+        """(?i)(?<![a-z0-9])(?:s|season\s*)(\d{1,2})[\s._-]*(?:e|ep|episode)[\s._-]*(\d{1,4})(?![0-9])""",
     )
 
     /** "Complete Series", "All Seasons", "Season 2 Complete" — a batch. */
@@ -211,6 +231,15 @@ object FilenameParser {
     fun clean(raw: String): String {
         var text = urlRe.replace(raw, " ")
         text = domainRe.replace(text, " ")
+        // Strip a leading spam/uploader tag FIRST (moon's 2026-11-10): the
+        // greedy mentionRe below would eat the title along with the tag
+        // when they're joined by underscores. Repeat in case a file has
+        // two tags stacked ("@DVDWO [MS] Title...").
+        var prev: String
+        do {
+            prev = text
+            text = spamTagRe.replace(text, "")
+        } while (text != prev)
         text = mentionRe.replace(text, " ")
         text = emojiRe.replace(text, " ")
         // Drop promo lines, keep the rest.
@@ -338,6 +367,23 @@ object FilenameParser {
         absoluteAnime: Boolean = false,
     ): ParsedMedia {
         val name = bestName(rawFileName, caption)
+        // Generic name, no usable caption (moon's 2026-11-10, big-channel
+        // export): "video_15210643456.mp4" was force-matched to "One Day".
+        // A file with no real title must go to unmatched, never to a
+        // guessed title. bestName already prefers a good caption, so if
+        // the CHOSEN name is still generic, nothing real was found.
+        if (genericNameRe.matches(name)) {
+            return ParsedMedia(
+                title = "",
+                type = "movie",
+                year = null,
+                season = null,
+                episode = null,
+                quality = "1080p",
+                qualityBadge = "1080p",
+                languages = emptyList(),
+            )
+        }
         // An explicit IMDb id (filename OR caption) wins over any title
         // guessing; remove it so it never pollutes the title.
         val imdbId = imdbRe.find(rawFileName)?.value?.lowercase()
@@ -434,7 +480,19 @@ object FilenameParser {
                     val start = episode
                     if (end != null && start != null && end > start) episodeEnd = end
                 }
-                title = before(m)
+                // Title is normally BEFORE the marker ("Show S01E01").
+                // But a leading marker ("S1_EP_1Meow,...") has nothing
+                // before it — the title follows the marker (moon's
+                // 2026-11-10, big-channel export). Take the text after
+                // the marker; the cleanup below strips the language,
+                // "Season 1 Episode 1", etc. from it.
+                val beforeTitle = before(m)
+                title = if (beforeTitle.isNotBlank()) {
+                    beforeTitle
+                } else {
+                    work.substring(m.range.last + 1)
+                        .trim(' ', '.', '_', '-', '[', ']', '(', ')', '\t')
+                }
             } ?: nxnRe.find(work)?.let { m ->
                 season = m.groupValues[1].toIntOrNull()
                 episode = m.groupValues[2].toIntOrNull()
