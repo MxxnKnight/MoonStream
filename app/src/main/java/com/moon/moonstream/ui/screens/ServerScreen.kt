@@ -774,6 +774,13 @@ private data class LibraryStats(
  * REAL Room stats (no more fake numbers). The count-up runs once on load —
  * no looping animation, so it costs nothing after the first second.
  */
+// Count-ups toward the real values. The card counts up from 0 ONCE per
+// app launch (moon's 2026-11-10: the files-count animation is gone —
+// 5c1dbf7 made the first load snap too). Returning to the home screen must
+// NOT replay from 0 (moon's 2026-11-06), so this flag lives OUTSIDE the
+// composition: it survives navigation, and resets on app restart.
+private var libraryCardCountedUp = false
+
 @Composable
 private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
     val context = LocalContext.current
@@ -799,17 +806,25 @@ private fun LibraryDashboardCard(onOpenLibrary: () -> Unit) {
         latest = loaded.second
     }
 
-    // Count-ups toward the real values — once per composition only. A fresh
-    // composition (back from another screen) snaps to the real values at
-    // once instead of counting up from 0 again (moon's 2026-11-06: the
-    // numbers replayed on every return, e.g. "0 files"). Real changes while
-    // the screen is visible still count up.
+    // Count-ups toward the real values. First load this app launch counts
+    // up from 0 (the animation moon missed); a fresh composition (back from
+    // another screen) snaps to the real values at once instead of counting
+    // up from 0 again (moon's 2026-11-06: the numbers replayed on every
+    // return, e.g. "0 files"). Real changes while the screen is visible
+    // still count up.
     val titles = remember { Animatable(0f) }
     val files = remember { Animatable(0f) }
     var statsSettled by remember { mutableStateOf(false) }
     LaunchedEffect(stats) {
         if (stats.titles > 0 || stats.files > 0) {
-            if (!statsSettled) {
+            if (!libraryCardCountedUp) {
+                // First load this app launch: count up from 0.
+                libraryCardCountedUp = true
+                statsSettled = true
+                titles.animateTo(stats.titles.toFloat(), tween(1100))
+                files.animateTo(stats.files.toFloat(), tween(1100))
+            } else if (!statsSettled) {
+                // Returning to the home screen: snap, don't replay from 0.
                 titles.snapTo(stats.titles.toFloat())
                 files.snapTo(stats.files.toFloat())
                 statsSettled = true
