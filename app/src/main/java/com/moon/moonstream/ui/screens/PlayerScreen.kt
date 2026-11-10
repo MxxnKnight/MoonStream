@@ -16,6 +16,8 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -96,6 +98,8 @@ import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.player.MsDataSourceFactory
 import com.moon.moonstream.ui.player.PlayerUrls
 import com.moon.moonstream.ui.player.SubDelayPrefs
+import com.moon.moonstream.ui.player.SubtitleCues
+import com.moon.moonstream.ui.player.TrackLangPrefs
 import com.moon.moonstream.ui.player.TdDataSource
 import com.moon.moonstream.ui.player.TdStreamUri
 import com.moon.moonstream.ui.player.TdSubUri
@@ -114,7 +118,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 /** Which bottom sheet is open in the player. */
-private enum class PlayerSheet { SUBS, AUDIO, PLAYLIST, EPISODES }
+private enum class PlayerSheet { SUBS, AUDIO, PLAYLIST, EPISODES, SUBLINES }
 
 /** One selectable track row. */
 private data class TrackOpt(val group: TrackGroup, val index: Int, val label: String)
@@ -439,6 +443,11 @@ fun PlayerScreen(
     val subSecond = remember { LanguagePrefs.subtitleSecond(context) }
     val audioFirst = remember { LanguagePrefs.audioFirst(context) }
     val audioSecond = remember { LanguagePrefs.audioSecond(context) }
+    // Per-entry remembered language (moon's pick 2026-11-10): the track
+    // language picked once for this entry wins over the global Settings
+    // choice on every later episode.
+    val entrySubIso = remember(mediaId) { TrackLangPrefs.getSubLang(context, mediaId) }
+    val entryAudioIso = remember(mediaId) { TrackLangPrefs.getAudioLang(context, mediaId) }
     val chosenSubLang = remember(allSubs, subFirst, subSecond) {
         LanguagePrefs.chooseSubtitle(allSubs.map { it.language }, subFirst, subSecond)
     }
@@ -448,10 +457,17 @@ fun PlayerScreen(
     // work with the addon server off, delay applied on-device); the server
     // route stays as a fallback for odd rows. Preferred language sorts first,
     // which is what Media3 picks.
-    val subPairs = remember(allSubs, delayMs, chosenSubLang) {
+    val subPairs = remember(allSubs, delayMs, chosenSubLang, entrySubIso) {
         allSubs
             .sortedByDescending { sub ->
-                chosenSubLang?.let { LanguagePrefs.matches(sub.language, it) } ?: false
+                // Remembered per-entry language sorts first; otherwise the
+                // global Settings choice, as before.
+                val subIso = LanguagePrefs.iso(sub.language)
+                when {
+                    entrySubIso != null && subIso != null && subIso == entrySubIso -> true
+                    chosenSubLang?.let { LanguagePrefs.matches(sub.language, it) } ?: false -> true
+                    else -> false
+                }
             }
             .map { sub ->
                 val uri = if (sub.fileSize in 1..TdSubUri.MAX_BYTES) {
@@ -463,6 +479,46 @@ fun PlayerScreen(
                 }
                 SubTrack(uri, sub.fileName, sub.language)
             }
+    }
+
+    // Subtitle file loaded from the phone (moon's pick 2026-11-10): a
+    // .srt/.ass/.vtt picked with the system file picker. It joins the
+    // media item's subtitle list (first, so Media3 picks it when its
+    // language matches the preference). The subtitle delay does NOT shift
+    // it — the delay only works on the Telegram/server subtitle sources.
+    var externalSub by remember { mutableStateOf<SubTrack?>(null) }
+    val subPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val name = contentResolverDisplayName(context, uri)
+            ?: uri.lastPathSegment?.substringAfterLast('/') ?: "subtitle.srt"
+        val ext = name.substringAfterLast('.', "").lowercase()
+        if (ext !in setOf("srt", "ass", "ssa", "vtt", "sub")) {
+            MsToast.show("Not a subtitle file (.srt, .ass, .vtt)")
+            return@rememberLauncherForActivityResult
+        }
+        try {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        } catch (e: Exception) {
+            // Read permission for this session is enough; persist is best-effort.
+            AppLog.w("PLAYER", "External sub persist permission failed: ${e.message}")
+        }
+        // Language: the preferred subtitle language, so Media3 picks this
+        // file automatically. "und" when nothing is preferred.
+        val lang = entrySubIso ?: chosenSubLang?.let { LanguagePrefs.iso(it) } ?: "und"
+        externalSub = SubTrack(uri, name, lang)
+        AppLog.i("PLAYER", "External subtitle loaded: $name ($lang)")
+        MsToast.show(name)
+    }
+
+    // The media item's subtitle list: a phone-loaded file first (so
+    // Media3 picks it when its language matches), then the channel subs.
+    val mediaSubs = remember(subPairs, externalSub) {
+        listOfNotNull(externalSub) + subPairs
     }
 
     fun episodeLabel(f: StreamFileEntity): String =
@@ -713,10 +769,56 @@ fun PlayerScreen(
             subsOff = (opt == null)
             selectedOpt = opt
         }
+        // Remember the picked language for this entry (moon's pick
+        // 2026-11-10): the next episode opens with the same language.
+        // "Off" clears the remembered subtitle language.
+        val pickedLang = opt?.let {
+            try { it.group.getFormat(it.index).language } catch (e: Exception) { null }
+        }
+        if (forSubs) TrackLangPrefs.setSubLang(context, mediaId, pickedLang)
+        else TrackLangPrefs.setAudioLang(context, mediaId, pickedLang)
         val name = opt?.label ?: "Off"
         AppLog.i("PLAYER", "Track picked (${if (forSubs) "subs" else "audio"}): $name")
         MsToast.show(name)
         sheet = null
+    }
+
+    // Subtitle list (moon's pick 2026-11-10): all lines of the subtitle
+    // that's playing, tap one to jump there. Null = not loaded yet.
+    var subCues by remember { mutableStateOf<List<com.moon.moonstream.ui.player.SubCue>?>(null) }
+    var subCuesLoading by remember { mutableStateOf(false) }
+    fun openSubLines() {
+        if (subCuesLoading) return
+        // The active subtitle track: the one Media3 selected (its id is
+        // "sub_<index>" into mediaSubs), else the first subtitle we have.
+        val active = run {
+            val snap = player.currentTracks
+            val selGroup = snap.groups.find { it.type == C.TRACK_TYPE_TEXT && it.isSelected }
+            val format = selGroup?.let { g ->
+                val override = player.trackSelectionParameters.overrides[g.mediaTrackGroup]
+                val idx = try { override?.trackIndices?.get(0) ?: 0 } catch (e: Exception) { 0 }
+                try { g.getTrackFormat(idx) } catch (e: Exception) { null }
+            }
+            val subIdx = format?.id?.removePrefix("sub_")?.toIntOrNull()
+            if (subIdx != null && subIdx in mediaSubs.indices) mediaSubs[subIdx]
+            else mediaSubs.firstOrNull()
+        }
+        if (active == null) {
+            MsToast.show("No subtitles on this video")
+            return
+        }
+        subCues = null
+        subCuesLoading = true
+        sheet = PlayerSheet.SUBLINES
+        ioScope.launch(Dispatchers.IO) {
+            val bytes = readSubtitleBytes(context, active.uri)
+            val cues = bytes?.let { SubtitleCues.parse(it, active.fileName) } ?: emptyList()
+            withContext(Dispatchers.Main) {
+                subCues = cues
+                subCuesLoading = false
+                if (cues.isEmpty()) MsToast.show("Couldn't read these subtitles")
+            }
+        }
     }
 
     var mediaReady by remember { mutableStateOf(false) }
@@ -724,7 +826,7 @@ fun PlayerScreen(
     // Load / rebuild the media item. First run: resume check (prompt, or
     // straight to the saved spot for the header Play button). Later runs
     // (subs arrived, delay changed): rebuild keeping position + play state.
-    LaunchedEffect(playUri, subPairs, filesLoaded, chosenSubLang) {
+    LaunchedEffect(playUri, mediaSubs, filesLoaded, chosenSubLang) {
         // The Room row can land a frame after the screen opens. Wait for it,
         // otherwise playback would start on the HTTP fallback and swap
         // sources (and lose the resume choice) mid-load.
@@ -752,15 +854,18 @@ fun PlayerScreen(
             player.currentPosition.coerceAtLeast(0L)
         }
         val keepPlaying = if (isFirst) false else player.isPlaying
-        player.setMediaItem(buildMediaItem(playUri, subPairs), pos)
+        player.setMediaItem(buildMediaItem(playUri, mediaSubs), pos)
         // Language picks are applied per media item (a new item resets tracks).
         // Audio keeps a real first/second order; text uses the language we
         // found on this title, so "Mal, else Eng" doesn't need two passes.
+        // A language remembered for this entry (moon's pick 2026-11-10)
+        // leads the list, ahead of the global Settings choice.
         val audioLangs = listOfNotNull(
+            entryAudioIso,
             LanguagePrefs.iso(audioFirst),
             LanguagePrefs.iso(audioSecond),
         ).distinct()
-        val textLang = chosenSubLang?.let { LanguagePrefs.iso(it) }
+        val textLang = entrySubIso ?: chosenSubLang?.let { LanguagePrefs.iso(it) }
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .apply {
                 if (audioLangs.isNotEmpty()) setPreferredAudioLanguages(*audioLangs.toTypedArray())
@@ -925,6 +1030,10 @@ fun PlayerScreen(
     var seekFeedback by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
     var lastSeekTapTime by remember { mutableStateOf(0L) }
     var seekTapCount by remember { mutableStateOf(0) }
+    // Horizontal swipe-to-seek (moon's pick 2026-11-10): drag across the
+    // video to move, target time shown live, seek lands on release.
+    // Pair = target position ms, delta ms from where the drag started.
+    var swipeSeekPreview by remember { mutableStateOf<Pair<Long, Long>?>(null) }
     // Auto-hide the feedback after 1s.
     LaunchedEffect(seekFeedback) {
         if (seekFeedback != null) {
@@ -1162,6 +1271,39 @@ fun PlayerScreen(
                             }
                             gestureHud = GestureHud.Volume(volumeFloat)
                         }
+                    }
+                }
+            }
+            .pointerInput(sheet, controlsLocked) {
+                // Horizontal swipes: seek (moon's pick 2026-11-10). A full
+                // screen-width swipe moves 90s — small drags nudge a few
+                // seconds, big drags jump. The target time shows live in
+                // the centre HUD; the seek itself lands once, on release,
+                // so a network stream isn't re-buffered mid-drag.
+                var accPx = 0f
+                var startMs = 0L
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        accPx = 0f
+                        startMs = player.currentPosition
+                        swipeSeekPreview = startMs to 0L
+                    },
+                    onDragEnd = {
+                        val target = swipeSeekPreview?.first
+                        swipeSeekPreview = null
+                        if (target != null && sheet == null && !controlsLocked) {
+                            player.seekTo(target)
+                        }
+                    },
+                    onDragCancel = { swipeSeekPreview = null },
+                ) { change, dragAmount ->
+                    if (sheet == null && !controlsLocked) {
+                        change.consume()
+                        accPx += dragAmount
+                        val widthPx = size.width.toFloat().coerceAtLeast(1f)
+                        val target = (startMs + (accPx / widthPx * 90_000f).toLong())
+                            .coerceIn(0L, player.duration.coerceAtLeast(0L))
+                        swipeSeekPreview = target to (target - startMs)
                     }
                 }
             }
@@ -1561,6 +1703,27 @@ fun PlayerScreen(
             }
         }
 
+        // Swipe-to-seek preview (moon's pick 2026-11-10): centre pill with
+        // the target time + how far it moves, while the finger drags.
+        // Text only, same as the double-tap feedback (moon's 2026-11-04).
+        swipeSeekPreview?.let { (targetMs, deltaMs) ->
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                val sign = if (deltaMs >= 0) "+" else "−"
+                val deltaSecs = kotlin.math.abs(deltaMs) / 1000
+                Text(
+                    "${formatTime(targetMs)}  ($sign${deltaSecs}s)",
+                    color = Color.White.copy(alpha = 0.85f),
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+            }
+        }
+
         // Next-up card (TMPlayer pattern): last 30s of an episode.
         // Hidden while controls are locked.
         if (showNextUp && nextUpFile != null && nextGroup != null && !controlsLocked) {
@@ -1891,6 +2054,7 @@ fun PlayerScreen(
                             PlayerSheet.AUDIO -> "Audio"
                             PlayerSheet.PLAYLIST -> "Playlist"
                             PlayerSheet.EPISODES -> "Episodes"
+                            PlayerSheet.SUBLINES -> "Subtitle lines"
                         },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -1920,6 +2084,27 @@ fun PlayerScreen(
                                     label = opt.label,
                                     selected = opt == selectedOpt,
                                     onClick = { selectTrack(opt, forSubs) },
+                                )
+                            }
+                            // Load a subtitle file from the phone (moon's
+                            // pick 2026-11-10). Subtitles only — the Audio
+                            // sheet has no subtitle rows.
+                            if (forSubs) {
+                                TrackRow(
+                                    label = if (externalSub != null)
+                                        "Phone file: ${externalSub!!.fileName}"
+                                    else "Load from phone…",
+                                    selected = false,
+                                    onClick = {
+                                        subPicker.launch(arrayOf("*/*"))
+                                    },
+                                )
+                                // All subtitle lines (moon's pick 2026-11-10):
+                                // jump to a moment by its dialogue.
+                                TrackRow(
+                                    label = "All lines…",
+                                    selected = false,
+                                    onClick = { openSubLines() },
                                 )
                             }
                             // Subtitle delay (moon's pick 2026-11-02): ±250ms steps.
@@ -2214,6 +2399,62 @@ fun PlayerScreen(
                                 }
                             }
                         }
+                        PlayerSheet.SUBLINES -> {
+                            // All subtitle lines (moon's pick 2026-11-10).
+                            // Tap a line to jump to that moment; the line
+                            // playing now is highlighted in Accent.
+                            if (subCuesLoading) {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(vertical = 24.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    IosSpinner()
+                                }
+                            } else if (subCues.isNullOrEmpty()) {
+                                Text(
+                                    "No lines found in these subtitles",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MsColors.TextSecondary,
+                                    modifier = Modifier.padding(vertical = 12.dp),
+                                )
+                            } else {
+                                val cues = subCues!!
+                                cues.forEach { cue ->
+                                    val isCurrent =
+                                        currentPosition in cue.startMs until cue.endMs
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                sheet = null
+                                                player.seekTo(cue.startMs)
+                                            }
+                                            .padding(vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            formatTime(cue.startMs),
+                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                fontFamily = FontFamily.Monospace,
+                                            ),
+                                            color = if (isCurrent) MsColors.Accent
+                                            else MsColors.TextSecondary,
+                                            modifier = Modifier.width(64.dp),
+                                        )
+                                        Text(
+                                            cue.text,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (isCurrent) MsColors.Accent
+                                            else MsColors.TextPrimary,
+                                            modifier = Modifier.weight(1f),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                     Spacer(Modifier.height(8.dp))
                 }
@@ -2307,6 +2548,40 @@ fun PlayerScreen(
 
 /** One subtitle track: where the bytes come from, its name, its language. */
 internal data class SubTrack(val uri: Uri, val fileName: String, val language: String)
+
+/** Display name of a content:// Uri (system file picker), or null. */
+private fun contentResolverDisplayName(context: android.content.Context, uri: Uri): String? {
+    return try {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx) else null
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
+/** Read a subtitle file's raw bytes through the player's data source
+ * (tdsub://, http:// server, or content:// phone file), or null. */
+private suspend fun readSubtitleBytes(context: android.content.Context, uri: Uri): ByteArray? =
+    withContext(Dispatchers.IO) {
+        try {
+            val ds = com.moon.moonstream.ui.player.MsDataSourceFactory(context).createDataSource()
+            ds.open(androidx.media3.datasource.DataSpec(uri))
+            val out = java.io.ByteArrayOutputStream()
+            val buf = ByteArray(8192)
+            while (true) {
+                val n = ds.read(buf, 0, buf.size)
+                if (n == -1) break
+                out.write(buf, 0, n)
+            }
+            try { ds.close() } catch (ignored: Exception) { /* ignore */ }
+            out.toByteArray()
+        } catch (e: Exception) {
+            AppLog.w("PLAYER", "Subtitle list read failed: ${e.message}")
+            null
+        }
+    }
 
 /** Build the player's media item: video + subtitle tracks (mime from real file names). */
 @OptIn(UnstableApi::class)
