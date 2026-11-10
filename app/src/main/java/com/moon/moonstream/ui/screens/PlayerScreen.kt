@@ -1225,9 +1225,11 @@ fun PlayerScreen(
         }
     }
 
-    // Auto-hide controls after 3s.
-    LaunchedEffect(controlsVisible, isPlaying) {
-        if (controlsVisible && isPlaying && !controlsLocked) {
+    // Auto-hide controls after 3s. Skipped while the trim panel is open
+    // (moon's bug 2026-11-10: the trimmer vanished after a few seconds
+    // like the normal UI — while trimming, the panel must stay put).
+    LaunchedEffect(controlsVisible, isPlaying, showTrimPanel) {
+        if (controlsVisible && isPlaying && !controlsLocked && !showTrimPanel) {
             delay(3000)
             controlsVisible = false
         }
@@ -1305,15 +1307,17 @@ fun PlayerScreen(
                         if (controlsLocked) {
                             // Locked: tap reveals the slide-to-unlock pill.
                             showUnlockPill = true
-                        } else {
+                        } else if (!showTrimPanel) {
+                            // While trimming, a tap must not hide the panel
+                            // (moon's bug 2026-11-10).
                             controlsVisible = !controlsVisible
                         }
                     },
                     onDoubleTap = { offset ->
                         // Double-tap left/right: ∓10s with animated feedback.
                         // Consecutive double-taps accumulate (+20s, +30s...).
-                        // Disabled while locked.
-                        if (!controlsLocked) {
+                        // Disabled while locked or trimming.
+                        if (!controlsLocked && !showTrimPanel) {
                             val forward = offset.x > size.width / 2
                             val now = System.currentTimeMillis()
                             seekTapCount =
@@ -1329,14 +1333,15 @@ fun PlayerScreen(
                     },
                 )
             }
-            .pointerInput(sheet, controlsLocked) {
+            .pointerInput(sheet, controlsLocked, showTrimPanel) {
                 // Vertical swipes: left half = brightness, right half = volume
-                // (video-player style). Skipped while a sheet is open or locked.
+                // (video-player style). Skipped while a sheet is open, locked,
+                // or trimming (moon's bug 2026-11-10).
                 detectVerticalDragGestures(
                     onDragEnd = { /* HUD hides on its own timer */ },
                     onDragCancel = { },
                 ) { change, dragAmount ->
-                    if (sheet == null && !controlsLocked) {
+                    if (sheet == null && !controlsLocked && !showTrimPanel) {
                         change.consume()
                         // Up = increase; a full-height swipe ≈ the full range.
                         val delta = -dragAmount / 800f
@@ -1363,12 +1368,14 @@ fun PlayerScreen(
                     }
                 }
             }
-            .pointerInput(sheet, controlsLocked) {
+            .pointerInput(sheet, controlsLocked, showTrimPanel) {
                 // Horizontal swipes: seek (moon's pick 2026-11-10). A full
                 // screen-width swipe moves 90s — small drags nudge a few
                 // seconds, big drags jump. The target time shows live in
                 // the centre HUD; the seek itself lands once, on release,
                 // so a network stream isn't re-buffered mid-drag.
+                // Skipped while a sheet is open, locked, or trimming
+                // (moon's bug 2026-11-10).
                 var accPx = 0f
                 var startMs = 0L
                 detectHorizontalDragGestures(
@@ -1380,13 +1387,13 @@ fun PlayerScreen(
                     onDragEnd = {
                         val target = swipeSeekPreview?.first
                         swipeSeekPreview = null
-                        if (target != null && sheet == null && !controlsLocked) {
+                        if (target != null && sheet == null && !controlsLocked && !showTrimPanel) {
                             player.seekTo(target)
                         }
                     },
                     onDragCancel = { swipeSeekPreview = null },
                 ) { change, dragAmount ->
-                    if (sheet == null && !controlsLocked) {
+                    if (sheet == null && !controlsLocked && !showTrimPanel) {
                         change.consume()
                         accPx += dragAmount
                         val widthPx = size.width.toFloat().coerceAtLeast(1f)
@@ -1464,6 +1471,7 @@ fun PlayerScreen(
                             icon = Icons.Filled.PlaylistPlay,
                             contentDescription = "Episodes",
                             onClick = { sheet = PlayerSheet.EPISODES },
+                            enabled = !showTrimPanel,
                         )
                     }
                     if (showPlaylistBtn) {
@@ -1471,12 +1479,14 @@ fun PlayerScreen(
                             icon = Icons.Filled.List,
                             contentDescription = "Playlist",
                             onClick = { sheet = PlayerSheet.PLAYLIST },
+                            enabled = !showTrimPanel,
                         )
                     }
                     PlayerIconButton(
                         icon = Icons.Filled.PhotoCamera,
                         contentDescription = "Screenshot",
                         onClick = { takeScreenshot() },
+                        enabled = !showTrimPanel,
                     )
                     PlayerIconButton(
                         icon = Icons.Filled.ContentCut,
@@ -1495,6 +1505,7 @@ fun PlayerScreen(
                             controlsVisible = false
                             showUnlockPill = true
                         },
+                        enabled = !showTrimPanel,
                     )
                 }
             }
@@ -1603,11 +1614,13 @@ fun PlayerScreen(
                             icon = Icons.Filled.ClosedCaption,
                             contentDescription = "Subtitles",
                             onClick = { openTrackSheet(PlayerSheet.SUBS) },
+                            enabled = !showTrimPanel,
                         )
                         PlayerIconButton(
                             icon = Icons.Filled.Audiotrack,
                             contentDescription = "Audio",
                             onClick = { openTrackSheet(PlayerSheet.AUDIO) },
+                            enabled = !showTrimPanel,
                         )
                     }
                     Spacer(Modifier.weight(1f))
@@ -1619,6 +1632,7 @@ fun PlayerScreen(
                                 icon = Icons.Filled.SkipNext,
                                 contentDescription = "Next episode",
                                 onClick = { switchEpisode(nextFile) },
+                                enabled = !showTrimPanel,
                             )
                         }
                         // Resume from saved position (moon's pick 2026-11-02):
@@ -1630,12 +1644,14 @@ fun PlayerScreen(
                                 icon = Icons.Filled.History,
                                 contentDescription = "Resume from saved position",
                                 onClick = { player.seekTo(savedResumePos) },
+                                enabled = !showTrimPanel,
                             )
                         }
                         // Aspect button shows the current mode as its label
                         // (mpvex-style stateful button).
                         Surface(
                             onClick = { cycleResize() },
+                            enabled = !showTrimPanel,
                             shape = RoundedCornerShape(50),
                             color = Color.White.copy(alpha = 0.12f),
                             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
@@ -1648,13 +1664,13 @@ fun PlayerScreen(
                                 Icon(
                                     Icons.Filled.AspectRatio,
                                     contentDescription = "Aspect ratio",
-                                    tint = Color.White,
+                                    tint = Color.White.copy(alpha = if (showTrimPanel) 0.35f else 1f),
                                     modifier = Modifier.size(20.dp),
                                 )
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     resizeModes[resizeIndex].third,
-                                    color = Color.White,
+                                    color = Color.White.copy(alpha = if (showTrimPanel) 0.35f else 1f),
                                     style = MaterialTheme.typography.labelMedium.copy(
                                         fontFamily = FontFamily.Monospace
                                     ),
@@ -2745,9 +2761,14 @@ private fun PlayerIconButton(
     iconSize: Dp = 20.dp,
     active: Boolean = false,
     modifier: Modifier = Modifier,
+    /** Disabled (dimmed, taps ignored) — used while trimming, so only
+     *  Back, Trim, the seekbar and transport stay live (moon's bug
+     *  2026-11-10). */
+    enabled: Boolean = true,
 ) {
     Surface(
         onClick = onClick,
+        enabled = enabled,
         shape = CircleShape,
         color = Color.White.copy(alpha = 0.12f),
         modifier = modifier.size(size),
@@ -2757,7 +2778,8 @@ private fun PlayerIconButton(
             Icon(
                 icon,
                 contentDescription = contentDescription,
-                tint = if (active) MsColors.Accent else Color.White,
+                tint = if (active) MsColors.Accent
+                    else Color.White.copy(alpha = if (enabled) 1f else 0.35f),
                 modifier = Modifier.size(iconSize),
             )
         }
