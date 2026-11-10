@@ -436,6 +436,22 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                     ),
                                 )
                             },
+                            onCreateEntryBulk = { files ->
+                                go(
+                                    AppScreen.Create(
+                                        CreatePrefill(
+                                            files = files.map {
+                                                PrefillFile(
+                                                    channelId = it.channelId,
+                                                    messageId = it.messageId,
+                                                    fileName = it.fileName,
+                                                    fileSize = it.fileSize,
+                                                )
+                                            },
+                                        ),
+                                    ),
+                                )
+                            },
                         )
                     is AppScreen.Create -> CreateScreen(
                         prefill = screen.prefill ?: CreatePrefill(),

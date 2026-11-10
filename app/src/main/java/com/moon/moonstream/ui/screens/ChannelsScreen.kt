@@ -174,7 +174,11 @@ private object ChannelRowCache {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
+fun ChannelsScreen(
+    onCreateEntry: (UnmatchedFileEntity?) -> Unit = {},
+    /** Bulk custom entry (moon's 2026-11-10): several selected unmatched files */
+    onCreateEntryBulk: (List<UnmatchedFileEntity>) -> Unit = {},
+) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
@@ -626,23 +630,41 @@ fun ChannelsScreen(onCreateEntry: (UnmatchedFileEntity?) -> Unit = {}) {
         )
 
         // Fixed bulk bar (moon's 2026-11-09): while selecting unmatched
-        // files the "Link N to Title" button stays pinned above the
-        // navigation pill, so selecting files at the bottom of a long
-        // list no longer means scrolling back to the top to reach it.
-        // It only shows while something is selected.
+        // files the action buttons stay pinned above the navigation pill,
+        // so selecting files at the bottom of a long list no longer means
+        // scrolling back to the top to reach them. It only shows while
+        // something is selected. Two actions (moon's 2026-11-10): link the
+        // files to an existing title, or make a custom entry out of them
+        // (for files that aren't a real movie/show at all).
         if (bulkBarVisible) {
-            LimePillButton(
-                text = "Link ${unmatchedSelectedIds.size} to Title",
-                onClick = {
-                    linkFileBulk = filteredUnmatched.filter {
-                        unmatchedSelectedIds.contains(it.id)
-                    }
-                },
+            Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .padding(start = 16.dp, end = 16.dp, bottom = 96.dp),
-            )
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LimePillButton(
+                    text = "Link ${unmatchedSelectedIds.size} to Title",
+                    onClick = {
+                        linkFileBulk = filteredUnmatched.filter {
+                            unmatchedSelectedIds.contains(it.id)
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                MsOutlinePill(
+                    text = "Custom Content",
+                    onClick = {
+                        onCreateEntryBulk(
+                            filteredUnmatched.filter {
+                                unmatchedSelectedIds.contains(it.id)
+                            },
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
     }
 
