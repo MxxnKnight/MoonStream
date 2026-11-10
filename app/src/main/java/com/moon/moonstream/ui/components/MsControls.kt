@@ -535,13 +535,12 @@ fun MsToggle(
     }
 }
 
-/** Mockup slider: lime. */
-@Composable
 /**
  * iOS-style slider (moon's 2026-11-10): a thin rounded track with a white
  * round thumb and a soft shadow — the same look as iOS Settings sliders.
  * Used for subtitle Size and Position in the player sheet.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun MsSlider(
     value: Float,

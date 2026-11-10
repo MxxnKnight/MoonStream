@@ -557,56 +557,6 @@ fun PlayerScreen(
         // subPairs recomputes from delayMs; the load effect below rebuilds.
     }
 
-    /** Save the marked trim range as a clip in Downloads (moon's pick 2026-11-10). */
-    fun saveTrimClip() {
-        val start = trimStartMs
-        val end = trimEndMs
-        val file = currentFile
-        if (trimSaving) return
-        if (start == null || end == null) {
-            MsToast.show("Set a start and an end first")
-            return
-        }
-        if (end <= start) {
-            MsToast.show("Set an end after the start")
-            return
-        }
-        if (file == null || file.fileSize <= 0L) {
-            MsToast.show("Can't trim this stream")
-            return
-        }
-        trimSaving = true
-        trimProgress = 0f
-        MsToast.show("Saving clip…")
-        ioScope.launch(Dispatchers.IO) {
-            val uri = VideoTrimmer.trimToDownloads(
-                context = context,
-                backend = BackendProvider.backend,
-                channelId = file.channelId,
-                messageId = file.messageId,
-                fileSize = file.fileSize,
-                fileName = file.fileName,
-                startMs = start,
-                endMs = end,
-                onProgress = { p -> trimProgress = p },
-            )
-            withContext(Dispatchers.Main) {
-                trimSaving = false
-                trimProgress = 0f
-                if (uri != null) {
-                    MsToast.show("Clip saved to Downloads")
-                    AppLog.i("PLAYER", "Trim saved: $uri")
-                    showTrimPanel = false
-                    trimLoop = false
-                    trimStartMs = null
-                    trimEndMs = null
-                } else {
-                    MsToast.show("Couldn't save the clip")
-                }
-            }
-        }
-    }
-
     // Aspect-ratio cycle (moon's pick 2026-11-02): each tap → next mode.
     // Essential three only: Fit (letterbox), Fill/Stretch (fill, may distort),
     // Zoom (crop to fill, no distortion).
@@ -1102,6 +1052,58 @@ fun PlayerScreen(
     // Loop preview (moon's pick 2026-11-10): while on, the marked range
     // plays on repeat so the cut can be checked before saving.
     var trimLoop by remember { mutableStateOf(false) }
+
+    /** Save the marked trim range as a clip in Downloads (moon's pick 2026-11-10).
+     * Declared AFTER the trim state above — a local fun can only see
+     * state declared before it in this scope. */
+    fun saveTrimClip() {
+        val start = trimStartMs
+        val end = trimEndMs
+        val file = currentFile
+        if (trimSaving) return
+        if (start == null || end == null) {
+            MsToast.show("Set a start and an end first")
+            return
+        }
+        if (end <= start) {
+            MsToast.show("Set an end after the start")
+            return
+        }
+        if (file == null || file.fileSize <= 0L) {
+            MsToast.show("Can't trim this stream")
+            return
+        }
+        trimSaving = true
+        trimProgress = 0f
+        MsToast.show("Saving clip…")
+        ioScope.launch(Dispatchers.IO) {
+            val uri = VideoTrimmer.trimToDownloads(
+                context = context,
+                backend = BackendProvider.backend,
+                channelId = file.channelId,
+                messageId = file.messageId,
+                fileSize = file.fileSize,
+                fileName = file.fileName,
+                startMs = start,
+                endMs = end,
+                onProgress = { p -> trimProgress = p },
+            )
+            withContext(Dispatchers.Main) {
+                trimSaving = false
+                trimProgress = 0f
+                if (uri != null) {
+                    MsToast.show("Clip saved to Downloads")
+                    AppLog.i("PLAYER", "Trim saved: $uri")
+                    showTrimPanel = false
+                    trimLoop = false
+                    trimStartMs = null
+                    trimEndMs = null
+                } else {
+                    MsToast.show("Couldn't save the clip")
+                }
+            }
+        }
+    }
     // Auto-hide the feedback after 1s.
     LaunchedEffect(seekFeedback) {
         if (seekFeedback != null) {
