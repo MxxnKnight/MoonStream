@@ -287,6 +287,11 @@ fun CreateScreen(
                     db.unmatchedDao().deleteByMessage(s.channelId, s.messageId)
                 }
                 db.mediaDao().refreshAggregates(mediaId, System.currentTimeMillis())
+                // Bug (moon's 2026-11-10): when a moved-in file was its old
+                // entry's only stream, that entry stayed in the library
+                // with zero files. The new entry's aggregates are already
+                // refreshed above, so it has files and is safe here.
+                db.mediaDao().deleteEmpty()
                 withContext(Dispatchers.Main) {
                     MsToast.show("Entry created")
                     onDone(mediaId)

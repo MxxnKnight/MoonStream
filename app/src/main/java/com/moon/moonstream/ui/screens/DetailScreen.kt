@@ -459,6 +459,10 @@ fun DetailScreen(
             db.streamDao().moveToMedia(file.id, target.id)
             db.mediaDao().refreshAggregates(m.id, now)
             db.mediaDao().refreshAggregates(target.id, now)
+            // Bug (moon's 2026-11-10): when the moved file was the entry's
+            // only stream, the old entry stayed in the library with zero
+            // files. Drop entries left empty by the move.
+            db.mediaDao().deleteEmpty()
             withContext(Dispatchers.Main) {
                 MsToast.show("File moved to ${target.title}")
             }

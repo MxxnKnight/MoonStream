@@ -218,6 +218,13 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             .map {
                                 com.moon.moonstream.index.scan.ScanTarget(
                                     it.channelId, it.title, it.isAnime,
+                                    // Bug (moon's 2026-11-10): this was
+                                    // missing, so manualOnly defaulted to
+                                    // false and the auto-scan on open looked
+                                    // manual-channel files up online — a file
+                                    // called " cake " became the film "Cake".
+                                    // The Channels screen already passes it.
+                                    it.manualOnly,
                                 )
                             }
                         if (targets.isNotEmpty()) {
