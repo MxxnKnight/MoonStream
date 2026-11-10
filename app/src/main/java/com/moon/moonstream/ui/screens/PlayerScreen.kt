@@ -1082,6 +1082,33 @@ fun PlayerScreen(
         }
     }
 
+    /** Apply a dragged range from the trim drawer slider (moon's pick
+     * 2026-11-11 — side drawer). Dragging a handle sets that mark (even
+     * when it was unset). Keeps at least 1ms between the marks and both
+     * inside the video; ignores a change that would break that at an edge.
+     * Uses player.duration (the `duration` state is declared later). */
+    fun applyTrimRange(range: ClosedFloatingPointRange<Float>) {
+        val dur = player.duration.coerceAtLeast(0L)
+        if (dur <= 0L) return
+        val oldS = trimStartMs ?: 0L
+        val oldE = trimEndMs ?: dur
+        var s = range.start.roundToLong().coerceIn(0L, dur)
+        var e = range.endInclusive.roundToLong().coerceIn(0L, dur)
+        if (e <= s) {
+            if (s != oldS) e = (s + 1L).coerceAtMost(dur)
+            else s = (e - 1L).coerceAtLeast(0L)
+            if (e <= s) return
+        }
+        trimStartMs = s
+        trimEndMs = e
+    }
+
+    /** After a slider drag ends, jump the video to the clip start so the
+     * frame there is visible right away. */
+    fun finishTrimRange() {
+        trimStartMs?.let { player.seekTo(it) }
+    }
+
     /** Save the marked trim range as a clip in Downloads (moon's pick 2026-11-10).
      * Declared AFTER the trim state above — a local fun can only see
      * state declared before it in this scope. */
@@ -1609,34 +1636,9 @@ fun PlayerScreen(
                     .padding(horizontal = 16.dp)
                     .padding(top = 8.dp, bottom = 12.dp),
             ) {
-                // Trimmer panel (moon's pick 2026-11-10): mark a start and
-                // an end while watching, save just that range as a clip.
-                // It sits above the seekbar so the bar stays usable for
-                // finding the exact cut points.
-                if (showTrimPanel) {
-                    TrimPanel(
-                        startMs = trimStartMs,
-                        endMs = trimEndMs,
-                        currentMs = currentPosition,
-                        durationMs = duration,
-                        saving = trimSaving,
-                        progress = trimProgress,
-                        looping = trimLoop,
-                        stepIsFrame = trimStepFrame,
-                        onToggleStep = { trimStepFrame = !trimStepFrame },
-                        onNudgeStart = { dir -> nudgeTrimMark(true, dir) },
-                        onNudgeEnd = { dir -> nudgeTrimMark(false, dir) },
-                        onSetStart = { trimStartMs = currentPosition },
-                        onSetEnd = { trimEndMs = currentPosition },
-                        onJumpToStart = { trimStartMs?.let { player.seekTo(it) } },
-                        onJumpToEnd = { trimEndMs?.let { player.seekTo(it) } },
-                        onClear = { trimStartMs = null; trimEndMs = null; trimLoop = false },
-                        onClose = { showTrimPanel = false; trimLoop = false },
-                        onToggleLoop = { trimLoop = !trimLoop },
-                        onSave = { saveTrimClip() },
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
+                // The trimmer now lives in a side drawer on the right
+                // (moon's pick 2026-11-11, image 3) — see TrimDrawer below.
+                // It no longer sits above the seekbar.
                 // Button row: left cluster (Subs, Audio) / right cluster (Aspect).
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1771,6 +1773,43 @@ fun PlayerScreen(
                     }
                 }
             }
+        }
+
+        // Trimmer side drawer (moon's pick 2026-11-11, image 3): a
+        // right-side panel that replaces the old bottom trim panel.
+        // Full height on the right; the video stays visible on the
+        // left. The X in its header (or the scissors button) closes it.
+        // While it is open the trim lockout (above) already disables the
+        // gestures and the other buttons, so touches here stay here.
+        if (showTrimPanel) {
+            TrimDrawer(
+                startMs = trimStartMs,
+                endMs = trimEndMs,
+                currentMs = currentPosition,
+                durationMs = duration,
+                saving = trimSaving,
+                progress = trimProgress,
+                looping = trimLoop,
+                stepIsFrame = trimStepFrame,
+                onToggleStep = { trimStepFrame = !trimStepFrame },
+                onNudgeStart = { dir -> nudgeTrimMark(true, dir) },
+                onNudgeEnd = { dir -> nudgeTrimMark(false, dir) },
+                onSetStart = { trimStartMs = currentPosition },
+                onSetEnd = { trimEndMs = currentPosition },
+                onJumpToStart = { trimStartMs?.let { player.seekTo(it) } },
+                onJumpToEnd = { trimEndMs?.let { player.seekTo(it) } },
+                onRangeChange = { range -> applyTrimRange(range) },
+                onRangeChangeFinished = { finishTrimRange() },
+                onClear = { trimStartMs = null; trimEndMs = null; trimLoop = false },
+                onClose = { showTrimPanel = false; trimLoop = false },
+                onToggleLoop = { trimLoop = !trimLoop },
+                onSave = { saveTrimClip() },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 8.dp, end = 8.dp, bottom = 8.dp)
+                    .fillMaxHeight()
+                    .width(300.dp),
+            )
         }
 
         // Brightness/volume gesture HUD (mpvex-style): slim vertical slider
@@ -2967,7 +3006,20 @@ private fun MoonSeekBar(
  * bar stays usable for finding the exact cut points.
  */
 @Composable
-private fun TrimPanel(
+/**
+ * Trimmer side drawer (moon's pick 2026-11-11, image 3): a right-side
+ * panel that replaces the old bottom TrimPanel. Same marks, same engine
+ * (VideoTrimmer) — only the shape changed: Start/End steppers, a
+ * dual-handle range slider, Set start/end, Preview, Reset, Save Clip.
+ * Full height on the right; the video stays visible on the left.
+ * Compact + scrollable so it fits a landscape phone's short height.
+ * The -1s/+1s buttons from the image are NOT duplicated here — the
+ * < > arrows on the Start/End boxes already nudge by the header step
+ * (1s or 1 frame), which is the same job.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun TrimDrawer(
     startMs: Long?,
     endMs: Long?,
     currentMs: Long,
@@ -2983,47 +3035,55 @@ private fun TrimPanel(
     onSetEnd: () -> Unit,
     onJumpToStart: () -> Unit,
     onJumpToEnd: () -> Unit,
+    onRangeChange: (ClosedFloatingPointRange<Float>) -> Unit,
+    onRangeChangeFinished: () -> Unit,
     onClear: () -> Unit,
     onClose: () -> Unit,
     onToggleLoop: () -> Unit,
     onSave: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val valid = startMs != null && endMs != null && endMs > startMs
     val lengthMs = if (valid) endMs!! - startMs!! else 0L
+    // Slider range: unset marks show as the full video; dragging a
+    // handle sets that mark (see applyTrimRange).
+    val durF = durationMs.coerceAtLeast(1L).toFloat()
+    val sliderValue: ClosedFloatingPointRange<Float> =
+        (startMs?.toFloat() ?: 0f).coerceIn(0f, durF)..(endMs?.toFloat() ?: durF).coerceIn(0f, durF)
+    val scrollState = rememberScrollState()
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            // More see-through than before (moon's pick 2026-11-11):
-            // 0.55 so the video shows through the panel.
-            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(20.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+            .verticalScroll(scrollState)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
+        // Header: scissors + title + step toggle + close.
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Icon(
+                Icons.Filled.ContentCut,
+                contentDescription = null,
+                tint = MsColors.Accent,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(6.dp))
             Text(
-                "Trim clip",
+                "Trim Video",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MsColors.TextPrimary,
                 modifier = Modifier.weight(1f),
             )
-            Text(
-                if (valid) "Clip: ${formatTime(lengthMs)}" else "Mark a start and an end",
-                style = MaterialTheme.typography.labelMedium,
-                color = MsColors.TextSecondary,
-            )
-            Spacer(Modifier.width(8.dp))
-            // Nudge step toggle (moon's pick 2026-11-11): 1s per tap,
-            // or 1 frame (~33ms) per tap for exact cuts.
             MsOutlinePill(
                 text = if (stepIsFrame) "Step: 1f" else "Step: 1s",
                 onClick = onToggleStep,
                 fontSize = 12,
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(6.dp))
             BareIconButton(
                 icon = Icons.Filled.Close,
                 contentDescription = "Close trim",
@@ -3031,9 +3091,31 @@ private fun TrimPanel(
             )
         }
         Spacer(Modifier.height(10.dp))
+        // Start / End steppers: < time > each; the < > nudge by the
+        // header step (1s or 1 frame) and jump the video there.
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TrimMarkBox(
+                label = "Start",
+                timeMs = startMs,
+                onNudge = onNudgeStart,
+                onJump = onJumpToStart,
+                modifier = Modifier.weight(1f),
+            )
+            TrimMarkBox(
+                label = "End",
+                timeMs = endMs,
+                onNudge = onNudgeEnd,
+                onJump = onJumpToEnd,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        // Set start / Set end: capture the playhead into each mark.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             MsOutlinePill(
@@ -3041,81 +3123,42 @@ private fun TrimPanel(
                 onClick = onSetStart,
                 fontSize = 13,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            )
-            // Start mark cluster: nudge − / time / nudge + (moon's pick
-            // 2026-11-11). Nudges move the mark by the header step (1s or
-            // 1 frame) and jump the video there so the frame is visible.
-            Row(
                 modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                TrimNudgeButton(
-                    icon = Icons.Filled.Remove,
-                    contentDescription = "Move start earlier",
-                    enabled = startMs != null,
-                    onClick = { onNudgeStart(-1) },
-                )
-                Text(
-                    startMs?.let { formatTime(it) } ?: "--:--",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontFamily = FontFamily.Monospace,
-                    ),
-                    color = if (startMs != null) MsColors.Accent else MsColors.TextSecondary,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(enabled = startMs != null) { onJumpToStart() },
-                    textAlign = TextAlign.Center,
-                )
-                TrimNudgeButton(
-                    icon = Icons.Filled.Add,
-                    contentDescription = "Move start later",
-                    enabled = startMs != null,
-                    onClick = { onNudgeStart(1) },
-                )
-            }
-            Text(
-                "→",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MsColors.TextSecondary,
             )
-            // End mark cluster: same nudge pair.
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                TrimNudgeButton(
-                    icon = Icons.Filled.Remove,
-                    contentDescription = "Move end earlier",
-                    enabled = endMs != null,
-                    onClick = { onNudgeEnd(-1) },
-                )
-                Text(
-                    endMs?.let { formatTime(it) } ?: "--:--",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontFamily = FontFamily.Monospace,
-                    ),
-                    color = if (endMs != null) MsColors.Accent else MsColors.TextSecondary,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(enabled = endMs != null) { onJumpToEnd() },
-                    textAlign = TextAlign.Center,
-                )
-                TrimNudgeButton(
-                    icon = Icons.Filled.Add,
-                    contentDescription = "Move end later",
-                    enabled = endMs != null,
-                    onClick = { onNudgeEnd(1) },
-                )
-            }
             MsOutlinePill(
                 text = "Set end",
                 onClick = onSetEnd,
                 fontSize = 13,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier.weight(1f),
             )
         }
+        Spacer(Modifier.height(8.dp))
+        // Dual-handle range slider: drag either handle to move that
+        // mark (it sets the mark if it was unset). Disabled until the
+        // video length is known.
+        RangeSlider(
+            value = sliderValue,
+            onValueChange = onRangeChange,
+            onValueChangeFinished = onRangeChangeFinished,
+            valueRange = 0f..durF,
+            enabled = durationMs > 0L,
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = MsColors.Accent,
+                inactiveTrackColor = Color.White.copy(alpha = 0.12f),
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        // Duration + where the video is now (tap a time above to jump).
+        Text(
+            if (valid) "Duration: ${formatTime(lengthMs)}  ·  Now: ${formatTime(currentMs)}"
+            else "Mark a start and an end  ·  Now: ${formatTime(currentMs)}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MsColors.TextSecondary,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+        )
         Spacer(Modifier.height(10.dp))
         if (saving) {
             LinearProgressIndicator(
@@ -3131,36 +3174,36 @@ private fun TrimPanel(
                 color = MsColors.TextSecondary,
             )
         } else {
+            // Loop preview: plays the marked range on repeat.
+            if (looping) {
+                LimePillButton(
+                    text = "Stop preview",
+                    onClick = onToggleLoop,
+                    fontSize = 14,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                MsOutlinePill(
+                    text = "Preview",
+                    onClick = onToggleLoop,
+                    fontSize = 14,
+                    enabled = valid,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 MsOutlinePill(
-                    text = "Clear",
+                    text = "Reset",
                     onClick = onClear,
                     fontSize = 14,
                     modifier = Modifier.weight(1f),
                 )
-                // Loop preview (moon's pick 2026-11-10): plays the marked
-                // range on repeat. Blue while looping, outline when off.
-                if (looping) {
-                    LimePillButton(
-                        text = "Stop preview",
-                        onClick = onToggleLoop,
-                        fontSize = 14,
-                        modifier = Modifier.weight(1f),
-                    )
-                } else {
-                    MsOutlinePill(
-                        text = "Preview",
-                        onClick = onToggleLoop,
-                        fontSize = 14,
-                        enabled = valid,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
                 LimePillButton(
-                    text = "Save clip",
+                    text = "Save Clip",
                     onClick = onSave,
                     fontSize = 14,
                     enabled = valid,
@@ -3168,13 +3211,61 @@ private fun TrimPanel(
                 )
             }
         }
-        // Hint: the current position is where Set start / Set end capture.
-        Text(
-            "Now playing: ${formatTime(currentMs)}  ·  tap a time above to jump to it",
-            style = MaterialTheme.typography.labelSmall,
-            color = MsColors.TextSecondary,
-            modifier = Modifier.padding(top = 8.dp),
-        )
+    }
+}
+
+/** One Start/End stepper box: < time > with the label above the time.
+ * The < > nudge by the panel step; tapping the time jumps there. */
+@Composable
+private fun TrimMarkBox(
+    label: String,
+    timeMs: Long?,
+    onNudge: (Int) -> Unit,
+    onJump: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFF1C1C1E),
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            TrimNudgeButton(
+                icon = Icons.Filled.ChevronLeft,
+                contentDescription = "Move $label earlier",
+                enabled = timeMs != null,
+                onClick = { onNudge(-1) },
+            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(enabled = timeMs != null) { onJump() },
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MsColors.TextSecondary,
+                )
+                Text(
+                    timeMs?.let { formatTime(it) } ?: "--:--",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    color = if (timeMs != null) MsColors.Accent else MsColors.TextSecondary,
+                )
+            }
+            TrimNudgeButton(
+                icon = Icons.Filled.ChevronRight,
+                contentDescription = "Move $label later",
+                enabled = timeMs != null,
+                onClick = { onNudge(1) },
+            )
+        }
     }
 }
 
