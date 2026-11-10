@@ -1052,6 +1052,35 @@ fun PlayerScreen(
     // Loop preview (moon's pick 2026-11-10): while on, the marked range
     // plays on repeat so the cut can be checked before saving.
     var trimLoop by remember { mutableStateOf(false) }
+    // Nudge step (moon's pick 2026-11-11): false = 1 second per tap,
+    // true = 1 frame (~33ms) per tap. Toggled from the panel header.
+    var trimStepFrame by remember { mutableStateOf(false) }
+
+    /** Nudge one trim mark by the current step (moon's pick 2026-11-11).
+     * Clamped so start stays before end and both stay inside the video.
+     * Seeks the playhead to the new mark so the frame is visible right away.
+     * Declared AFTER the trim state above — a local fun can only see
+     * state declared before it in this scope. */
+    fun nudgeTrimMark(isStart: Boolean, dir: Int) {
+        val stepMs = if (trimStepFrame) 33L else 1000L
+        val delta = stepMs * dir
+        // player.duration (not the `duration` state — that is declared
+        // later in this scope, so it is not visible here).
+        val dur = player.duration.coerceAtLeast(0L)
+        if (isStart) {
+            val cur = trimStartMs ?: return
+            val end = trimEndMs ?: dur
+            val newStart = (cur + delta).coerceIn(0L, (end - 1L).coerceAtLeast(0L))
+            trimStartMs = newStart
+            player.seekTo(newStart)
+        } else {
+            val cur = trimEndMs ?: return
+            val start = trimStartMs ?: 0L
+            val newEnd = (cur + delta).coerceIn(start + 1L, dur)
+            trimEndMs = newEnd
+            player.seekTo(newEnd)
+        }
+    }
 
     /** Save the marked trim range as a clip in Downloads (moon's pick 2026-11-10).
      * Declared AFTER the trim state above — a local fun can only see
@@ -1593,6 +1622,10 @@ fun PlayerScreen(
                         saving = trimSaving,
                         progress = trimProgress,
                         looping = trimLoop,
+                        stepIsFrame = trimStepFrame,
+                        onToggleStep = { trimStepFrame = !trimStepFrame },
+                        onNudgeStart = { dir -> nudgeTrimMark(true, dir) },
+                        onNudgeEnd = { dir -> nudgeTrimMark(false, dir) },
                         onSetStart = { trimStartMs = currentPosition },
                         onSetEnd = { trimEndMs = currentPosition },
                         onJumpToStart = { trimStartMs?.let { player.seekTo(it) } },
@@ -2942,6 +2975,10 @@ private fun TrimPanel(
     saving: Boolean,
     progress: Float,
     looping: Boolean,
+    stepIsFrame: Boolean,
+    onToggleStep: () -> Unit,
+    onNudgeStart: (Int) -> Unit,
+    onNudgeEnd: (Int) -> Unit,
     onSetStart: () -> Unit,
     onSetEnd: () -> Unit,
     onJumpToStart: () -> Unit,
@@ -2956,7 +2993,9 @@ private fun TrimPanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(16.dp))
+            // More see-through than before (moon's pick 2026-11-11):
+            // 0.55 so the video shows through the panel.
+            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Row(
@@ -2974,6 +3013,15 @@ private fun TrimPanel(
                 if (valid) "Clip: ${formatTime(lengthMs)}" else "Mark a start and an end",
                 style = MaterialTheme.typography.labelMedium,
                 color = MsColors.TextSecondary,
+            )
+            Spacer(Modifier.width(8.dp))
+            // Nudge step toggle (moon's pick 2026-11-11): 1s per tap,
+            // or 1 frame (~33ms) per tap for exact cuts.
+            MsOutlinePill(
+                text = if (stepIsFrame) "Step: 1f" else "Step: 1s",
+                onClick = onToggleStep,
+                fontSize = 12,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
             )
             Spacer(Modifier.width(8.dp))
             BareIconButton(
@@ -2994,33 +3042,73 @@ private fun TrimPanel(
                 fontSize = 13,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             )
-            Text(
-                startMs?.let { formatTime(it) } ?: "--:--",
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontFamily = FontFamily.Monospace,
-                ),
-                color = if (startMs != null) MsColors.Accent else MsColors.TextSecondary,
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(enabled = startMs != null) { onJumpToStart() },
-                textAlign = TextAlign.Center,
-            )
+            // Start mark cluster: nudge − / time / nudge + (moon's pick
+            // 2026-11-11). Nudges move the mark by the header step (1s or
+            // 1 frame) and jump the video there so the frame is visible.
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                TrimNudgeButton(
+                    icon = Icons.Filled.Remove,
+                    contentDescription = "Move start earlier",
+                    enabled = startMs != null,
+                    onClick = { onNudgeStart(-1) },
+                )
+                Text(
+                    startMs?.let { formatTime(it) } ?: "--:--",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    color = if (startMs != null) MsColors.Accent else MsColors.TextSecondary,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(enabled = startMs != null) { onJumpToStart() },
+                    textAlign = TextAlign.Center,
+                )
+                TrimNudgeButton(
+                    icon = Icons.Filled.Add,
+                    contentDescription = "Move start later",
+                    enabled = startMs != null,
+                    onClick = { onNudgeStart(1) },
+                )
+            }
             Text(
                 "→",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MsColors.TextSecondary,
             )
-            Text(
-                endMs?.let { formatTime(it) } ?: "--:--",
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontFamily = FontFamily.Monospace,
-                ),
-                color = if (endMs != null) MsColors.Accent else MsColors.TextSecondary,
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(enabled = endMs != null) { onJumpToEnd() },
-                textAlign = TextAlign.Center,
-            )
+            // End mark cluster: same nudge pair.
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                TrimNudgeButton(
+                    icon = Icons.Filled.Remove,
+                    contentDescription = "Move end earlier",
+                    enabled = endMs != null,
+                    onClick = { onNudgeEnd(-1) },
+                )
+                Text(
+                    endMs?.let { formatTime(it) } ?: "--:--",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    color = if (endMs != null) MsColors.Accent else MsColors.TextSecondary,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(enabled = endMs != null) { onJumpToEnd() },
+                    textAlign = TextAlign.Center,
+                )
+                TrimNudgeButton(
+                    icon = Icons.Filled.Add,
+                    contentDescription = "Move end later",
+                    enabled = endMs != null,
+                    onClick = { onNudgeEnd(1) },
+                )
+            }
             MsOutlinePill(
                 text = "Set end",
                 onClick = onSetEnd,
@@ -3087,6 +3175,34 @@ private fun TrimPanel(
             color = MsColors.TextSecondary,
             modifier = Modifier.padding(top = 8.dp),
         )
+    }
+}
+
+/** Small round − / + button that nudges one trim mark by the panel's
+ * step (1s or 1 frame). Dimmed and inert until its mark is set. */
+@Composable
+private fun TrimNudgeButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = CircleShape,
+        color = Color.White.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+        modifier = Modifier.size(32.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = contentDescription,
+                tint = Color.White.copy(alpha = if (enabled) 1f else 0.35f),
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
 }
 
