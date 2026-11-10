@@ -39,13 +39,13 @@ import coil.compose.AsyncImage
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.MsCard
-import com.moon.moonstream.ui.components.MsColors
 import com.moon.moonstream.ui.components.MsSegmented
 import com.moon.moonstream.ui.stats.MostWatchedItem
 import com.moon.moonstream.ui.stats.StatsRange
 import com.moon.moonstream.ui.stats.WatchStats
 import com.moon.moonstream.ui.stats.WatchStatsLoader
 import com.moon.moonstream.ui.theme.Inter
+import com.moon.moonstream.ui.theme.MsColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
