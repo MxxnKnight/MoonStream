@@ -1,7 +1,10 @@
 package com.moon.moonstream.ui.stats
 
 import com.moon.moonstream.index.db.MsDatabase
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
@@ -55,6 +58,9 @@ data class CountryCount(val code: String, val name: String, val hoursMs: Long)
 
 data class DecadeCount(val label: String, val hoursMs: Long)
 
+/** Hours per video quality ("1080p", "720p", …) — the files actually played. */
+data class QualityCount(val label: String, val hoursMs: Long)
+
 data class TypeCount(val type: String, val count: Int)
 
 data class WatchStats(
@@ -81,6 +87,25 @@ data class WatchStats(
     val currentStreakDays: Int,
     val longestStreakDays: Int,
     val recentlyFinished: List<FinishedItem>,
+
+    // ---- 2026-11-11: hero, habits and library numbers ----
+    /** Same-length period just before this one (0 = nothing / all time). */
+    val prevHoursMs: Long = 0L,
+    /** Time watched today, whatever the range. */
+    val todayMs: Long = 0L,
+    /** Busiest single day in the range: "Sat" + its hours. */
+    val bestDayLabel: String = "",
+    val bestDayMs: Long = 0L,
+    /** Distinct days with a play in the range. */
+    val activeDays: Int = 0,
+    /** Longest single file watched in the range (position reached). */
+    val longestSessionMs: Long = 0L,
+    /** Hours per quality, from stream_files.quality of the played files. */
+    val byQuality: List<QualityCount> = emptyList(),
+    /** Library snapshot: titles, Telegram files, total size. */
+    val libraryTitles: Int = 0,
+    val libraryFiles: Int = 0,
+    val libraryBytes: Long = 0L,
 )
 
 /** Languages that mark a series as an Asian drama (K/C/J/Thai). */
@@ -158,6 +183,43 @@ object WatchStatsLoader {
 
         // Chart bars.
         val chartBars = chartBars(inRange, range, now)
+
+        // ---- 2026-11-11: hero, habits and library numbers ----
+        val dayMs = TimeUnit.DAYS.toMillis(1)
+        val today = dayStart(now)
+        val todayMs = rows.filter { it.playedAt >= today }.sumOf { it.positionMs }
+        // Same-length window before the selected one, for the hero's delta.
+        val prevHoursMs = when (range) {
+            StatsRange.WEEK -> rows.filter {
+                it.playedAt >= now - 14 * dayMs && it.playedAt < now - 7 * dayMs
+            }
+            StatsRange.MONTH -> rows.filter {
+                it.playedAt >= now - 60 * dayMs && it.playedAt < now - 30 * dayMs
+            }
+            StatsRange.ALL -> emptyList()
+        }.sumOf { it.positionMs }
+        val perDay = inRange.groupBy { dayStart(it.playedAt) }
+            .mapValues { (_, rs) -> rs.sumOf { it.positionMs } }
+        val activeDays = perDay.count { it.value > 0 }
+        val bestDay = perDay.maxByOrNull { it.value }
+        val bestDayLabel = bestDay
+            ?.let { SimpleDateFormat("EEE", Locale.getDefault()).format(Date(it.key)) }
+            ?: ""
+        val bestDayMs = bestDay?.value ?: 0L
+        val longestSessionMs = inRange.maxOfOrNull { it.positionMs } ?: 0L
+        // Played files → their quality, so "By quality" is about watching,
+        // not about what the library happens to hold.
+        val streams = db.streamDao().getAll()
+        val qualityByFile = streams.associate { it.id to it.quality }
+        val byQuality = inRange
+            .groupBy { it.streamFileId }
+            .mapValues { (_, rs) -> rs.sumOf { it.positionMs } }
+            .filterValues { it > 0L }
+            .entries
+            .groupBy { qualityByFile[it.key]?.takeIf { q -> q.isNotBlank() } ?: "Unknown" }
+            .map { (label, entries) -> QualityCount(label, entries.sumOf { it.value }) }
+            .sortedByDescending { it.hoursMs }
+            .take(5)
 
         // Most watched: top 5 mediaIds by summed positionMs in range.
         val mostWatched = inRange
@@ -291,6 +353,16 @@ object WatchStatsLoader {
             currentStreakDays = current,
             longestStreakDays = longest,
             recentlyFinished = recentlyFinished,
+            prevHoursMs = prevHoursMs,
+            todayMs = todayMs,
+            bestDayLabel = bestDayLabel,
+            bestDayMs = bestDayMs,
+            activeDays = activeDays,
+            longestSessionMs = longestSessionMs,
+            byQuality = byQuality,
+            libraryTitles = media.size,
+            libraryFiles = streams.size,
+            libraryBytes = streams.sumOf { it.fileSize },
         )
     }
 

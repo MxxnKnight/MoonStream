@@ -189,6 +189,9 @@ class MainActivity : ComponentActivity() {
 fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     val authState by telegramManager.authState.collectAsState()
     val context = LocalContext.current
+    // Low-RAM / animations-off switch, read once (see ui/theme/Motion.kt).
+    // On the G96 the screen slide gets shorter and drops its scale fade.
+    val reducedMotion = com.moon.moonstream.ui.theme.rememberReducedMotion()
 
     // Haze blur state (experiment branch): the screens are the blur source,
     // the bottom pill is the blurred overlay.
@@ -324,7 +327,9 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     // Keep the pill blur off while a screen slide runs (see screenSwitching).
     LaunchedEffect(current) {
         screenSwitching = true
-        delay(185)
+        // Matches the slide below: the pill keeps its cheap tint for the
+        // whole switch and gets its blur back when the slide lands.
+        delay(if (reducedMotion) 180 else 320)
         screenSwitching = false
     }
 
@@ -362,25 +367,49 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                     // on the G96, and the pill already drops its blur
                     // during a switch (screenSwitching).
                     val dir = slideDir
+                    // Fluid iOS-style curve (moon's 2026-11-11 — "more
+                    // perfect like fluid"): a fast start and a long soft
+                    // landing, Apple's standard ease-out, instead of the
+                    // symmetric ease. 300ms normally; 170ms on a low-RAM
+                    // phone with the incoming scale fade dropped — scaling a
+                    // full-screen layer makes the GPU redraw it every frame,
+                    // which is the one thing the G96 can't do during a slide.
+                    val ms = if (reducedMotion) 170 else 300
+                    val ease = androidx.compose.animation.core.CubicBezierEasing(
+                        0.32f, 0.72f, 0f, 1f,
+                    )
                     if (dir == 0) {
                         // No direction to respect (tab replaced by itself):
                         // a short fade only.
-                        fadeIn(tween(90)) togetherWith ExitTransition.None
+                        fadeIn(tween(if (reducedMotion) 80 else 120, easing = ease)) togetherWith
+                            ExitTransition.None
                     } else {
-                        val spec = tween<IntOffset>(250, easing = FastOutSlowInEasing)
-                        val fadeSpec = tween<Float>(250, easing = FastOutSlowInEasing)
-                        slideInHorizontally(
+                        val spec = tween<IntOffset>(ms, easing = ease)
+                        val fadeSpec = tween<Float>(ms, easing = ease)
+                        val enter = slideInHorizontally(
                             initialOffsetX = { fullWidth -> dir * fullWidth },
                             animationSpec = spec,
-                        ) + fadeIn(fadeSpec) togetherWith
-                            slideOutHorizontally(
-                                // Outgoing only travels a quarter of the
-                                // width (WhatsApp parallax) — it stays
-                                // peeking at the edge, dimmed, instead of
-                                // flying fully off.
-                                targetOffsetX = { fullWidth -> -dir * fullWidth / 4 },
-                                animationSpec = spec,
-                            ) + fadeOut(fadeSpec)
+                        ) + fadeIn(fadeSpec) +
+                            if (reducedMotion) {
+                                androidx.compose.animation.EnterTransition.None
+                            } else {
+                                // Barely-there zoom on arrival: the incoming
+                                // screen starts 4% small and settles, which is
+                                // what makes the swap read as depth rather
+                                // than a flat sheet.
+                                androidx.compose.animation.scaleIn(
+                                    initialScale = 0.96f,
+                                    animationSpec = tween(ms, easing = ease),
+                                )
+                            }
+                        val exit = slideOutHorizontally(
+                            // Outgoing travels a third of the width and dims
+                            // (iOS/WhatsApp parallax), so the two screens
+                            // overlap instead of one flying fully off.
+                            targetOffsetX = { fullWidth -> -dir * fullWidth / 3 },
+                            animationSpec = spec,
+                        ) + fadeOut(fadeSpec)
+                        enter togetherWith exit
                     }
                 },
                 label = "screenSwitch",
