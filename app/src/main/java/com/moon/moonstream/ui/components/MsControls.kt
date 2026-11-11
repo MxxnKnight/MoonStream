@@ -25,7 +25,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.indication.LocalIndication
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.verticalScroll
@@ -84,7 +83,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import android.widget.Toast
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -134,25 +132,20 @@ fun LimePillButton(
     /** Optional leading glyph (moon's 2026-11-09 icon pass). */
     icon: ImageVector? = null,
 ) {
-    // No Android ripple on tap (moon's fix 2026-11-11, Detail screen):
-    // iOS buttons don't ripple — the tap just fires. Same for
-    // MsOutlinePill below, so every pill in the app behaves the same.
-    CompositionLocalProvider(LocalIndication provides null) {
-        Button(
-            onClick = onClick,
-            modifier = modifier,
-            enabled = enabled,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MsColors.Accent,
-                contentColor = Color.White,
-                disabledContainerColor = Color(0xFF38383A),
-                disabledContentColor = MsColors.TextSecondary,
-            ),
-            shape = RoundedCornerShape(14.dp),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
-        ) {
-            PillLabel(text = text, fontSize = fontSize, icon = icon, bold = true)
-        }
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MsColors.Accent,
+            contentColor = Color.White,
+            disabledContainerColor = Color(0xFF38383A),
+            disabledContentColor = MsColors.TextSecondary,
+        ),
+        shape = RoundedCornerShape(14.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
+    ) {
+        PillLabel(text = text, fontSize = fontSize, icon = icon, bold = true)
     }
 }
 
@@ -174,23 +167,20 @@ fun MsOutlinePill(
      */
     contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
 ) {
-    // No Android ripple on tap (moon's fix 2026-11-11) — see LimePillButton.
-    CompositionLocalProvider(LocalIndication provides null) {
-        Button(
-            onClick = onClick,
-            modifier = modifier,
-            enabled = enabled,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF1C1C1E),
-                contentColor = MsColors.Accent,
-                disabledContainerColor = Color(0xFF1C1C1E),
-                disabledContentColor = MsColors.TextSecondary,
-            ),
-            shape = RoundedCornerShape(14.dp),
-            contentPadding = contentPadding,
-        ) {
-            PillLabel(text = text, fontSize = fontSize, icon = icon, bold = false)
-        }
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color(0xFF1C1C1E),
+            contentColor = MsColors.Accent,
+            disabledContainerColor = Color(0xFF1C1C1E),
+            disabledContentColor = MsColors.TextSecondary,
+        ),
+        shape = RoundedCornerShape(14.dp),
+        contentPadding = contentPadding,
+    ) {
+        PillLabel(text = text, fontSize = fontSize, icon = icon, bold = false)
     }
 }
 
