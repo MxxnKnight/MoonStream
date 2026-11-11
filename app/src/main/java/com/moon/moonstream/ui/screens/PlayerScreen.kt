@@ -119,6 +119,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 /** Which bottom sheet is open in the player. */
 private enum class PlayerSheet { SUBS, AUDIO, PLAYLIST, EPISODES, SUBLINES }
@@ -3000,12 +3001,6 @@ private fun MoonSeekBar(
     }
 }
 
-/**
- * Trimmer panel (moon's pick 2026-11-10): mark a start and an end while
- * watching, save just that range as a clip. Sits above the seekbar so the
- * bar stays usable for finding the exact cut points.
- */
-@Composable
 /**
  * Trimmer side drawer (moon's pick 2026-11-11, image 3): a right-side
  * panel that replaces the old bottom TrimPanel. Same marks, same engine
