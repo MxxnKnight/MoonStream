@@ -25,7 +25,10 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.indication.LocalIndication
+import androidx.compose.foundation.IndicationNodeFactory
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.verticalScroll
@@ -123,6 +126,25 @@ import com.moon.moonstream.ui.theme.MsRadii
 // Inter everywhere via MaterialTheme typography.
 // ---------------------------------------------------------------------------
 
+/**
+ * A do-nothing Indication: iOS buttons don't ripple.
+ *
+ * Compose 1.7's LocalIndication is NON-nullable, so "no ripple" cannot be
+ * written as `LocalIndication provides null` — that fails to compile. The
+ * equivalent is to provide an Indication that draws nothing.
+ * (moon's 2026-11-11 no-ripple pass; fixed the same day.)
+ */
+private object NoIndication : IndicationNodeFactory {
+    /** A node that draws nothing and reacts to nothing. */
+    private class NoNode : Modifier.Node()
+
+    override fun create(interactionSource: InteractionSource): DelegatableNode = NoNode()
+
+    override fun equals(other: Any?): Boolean = other === this
+
+    override fun hashCode(): Int = -1
+}
+
 /** Primary action: iOS-style blue button, rounded 14dp (moon's iOS rebuild 2026-11-04). */
 @Composable
 fun LimePillButton(
@@ -137,7 +159,7 @@ fun LimePillButton(
     // No Android ripple on tap (moon's fix 2026-11-11, Detail screen):
     // iOS buttons don't ripple — the tap just fires. Same for
     // MsOutlinePill below, so every pill in the app behaves the same.
-    CompositionLocalProvider(LocalIndication provides null) {
+    CompositionLocalProvider(LocalIndication provides NoIndication) {
         Button(
             onClick = onClick,
             modifier = modifier,
@@ -175,7 +197,7 @@ fun MsOutlinePill(
     contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
 ) {
     // No Android ripple on tap (moon's fix 2026-11-11) — see LimePillButton.
-    CompositionLocalProvider(LocalIndication provides null) {
+    CompositionLocalProvider(LocalIndication provides NoIndication) {
         Button(
             onClick = onClick,
             modifier = modifier,

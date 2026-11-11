@@ -1032,6 +1032,32 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
     var weekMovies by remember { mutableStateOf<Int?>(null) }
     var finished by remember { mutableStateOf<Int?>(null) }
     var streak by remember { mutableStateOf<Int?>(null) }
+    var todayMs by remember { mutableStateOf<Long?>(null) }
+    var prevHoursMs by remember { mutableStateOf<Long?>(null) }
+    var chart by remember { mutableStateOf<List<Pair<String, Float>>>(emptyList()) }
+    // One-shot count-up of the big number (moon's 2026-11-11): it reads the
+    // animation inside the Text, so only that line recomposes while it runs.
+    val hoursAnim = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(weekHours) {
+        hoursAnim.snapTo(0f)
+        hoursAnim.animateTo(
+            1f,
+            androidx.compose.animation.core.tween(
+                700,
+                easing = androidx.compose.animation.core.FastOutSlowInEasing,
+            ),
+        )
+    }
+    // " · ↑12%" against the previous week, or "" when there is nothing to
+    // compare with yet.
+    val deltaSuffix = run {
+        val now = weekHours
+        val prev = prevHoursMs
+        if (now == null || prev == null || prev <= 0L) "" else {
+            val pct = ((now - prev) * 100f / prev).toInt()
+            if (pct >= 0) " · ↑$pct%" else " · ↓${-pct}%"
+        }
+    }
 
     LaunchedEffect(Unit) {
         val loaded = withContext(Dispatchers.IO) {
@@ -1044,6 +1070,9 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
                 weekMovies = week.moviesWatched,
                 finished = all.titlesFinished,
                 streak = all.currentStreakDays,
+                todayMs = week.todayMs,
+                prevHoursMs = week.prevHoursMs,
+                chartBars = week.chartBars,
             )
         }
         weekHours = loaded.weekHoursMs
@@ -1051,6 +1080,9 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
         weekMovies = loaded.weekMovies
         finished = loaded.finished
         streak = loaded.streak
+        todayMs = loaded.todayMs
+        prevHoursMs = loaded.prevHoursMs
+        chart = loaded.chartBars
     }
 
     Box(
@@ -1132,7 +1164,8 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = if (weekHours == null) "…" else formatStatHours(weekHours!!),
+                        text = if (weekHours == null) "…"
+                        else formatStatHours((weekHours!! * hoursAnim.value).toLong()),
                         style = MaterialTheme.typography.displaySmall.doto(),
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -1142,7 +1175,7 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
                         modifier = Modifier.weight(1f, fill = false),
                     )
                     Text(
-                        text = "this week",
+                        text = "this week" + deltaSuffix,
                         style = MaterialTheme.typography.bodyMedium.doto(),
                         color = MsColors.TextSecondary,
                         modifier = Modifier.padding(bottom = 6.dp),
@@ -1183,6 +1216,37 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
                         modifier = Modifier.weight(1f, fill = false),
                     )
                 }
+
+                // Last 7 days as tiny bars (moon's 2026-11-11): the same
+                // chart as the stats screen, in one cheap row — 7 flat
+                // boxes and no animation, so the home screen stays light.
+                if (chart.any { it.second > 0f }) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        val max = (chart.maxOfOrNull { it.second } ?: 0f).coerceAtLeast(0.001f)
+                        chart.forEach { (_, hours) ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight((hours / max).coerceIn(0.07f, 1f))
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(MsColors.Accent.copy(alpha = 0.7f)),
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = "Today ${formatStatHours(todayMs ?: 0L)}",
+                    style = MaterialTheme.typography.labelSmall.doto(),
+                    color = MsColors.TextSecondary.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    softWrap = false,
+                )
             }
         }
     }
@@ -1194,6 +1258,9 @@ private data class StatsSummaryData(
     val weekMovies: Int,
     val finished: Int,
     val streak: Int,
+    val todayMs: Long,
+    val prevHoursMs: Long,
+    val chartBars: List<Pair<String, Float>>,
 )
 
 /** "18h 24m" for the stats card. */
