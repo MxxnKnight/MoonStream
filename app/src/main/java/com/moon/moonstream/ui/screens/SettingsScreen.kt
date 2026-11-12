@@ -1528,6 +1528,39 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     },
                 )
             }
+            // Credits (moon's 2026-11-12): iOS-style groups — the libraries
+            // the app is built on, the services it looks data up from, and
+            // the apps and designs it took inspiration from.
+            CreditSectionHeader("Libraries")
+            IosGroup {
+                CreditRow("TDLib", "Telegram's library — the login, channels, and downloads")
+                CreditRow("ExoPlayer (media3)", "The in-app video player")
+                CreditRow("FFmpeg", "Extra audio decoders (EAC3, DTS, TrueHD)")
+                CreditRow("Jetpack Compose + Material 3", "The UI toolkit")
+                CreditRow("Room", "The on-phone library database")
+                CreditRow("Coil", "Poster images")
+                CreditRow("Haze", "The blur behind the bottom pill")
+                CreditRow("Kotlin", "The language the app is written in", showDivider = false)
+            }
+            CreditSectionHeader("Services")
+            IosGroup {
+                CreditRow("TMDB", "Movie and TV info, posters")
+                CreditRow("Cinemeta", "Metadata and backdrops")
+                CreditRow("Kitsu", "Anime info")
+                CreditRow("TVmaze", "TV info")
+                CreditRow("Jikan", "Anime info")
+                CreditRow("OMDb", "Ratings and info")
+                CreditRow("AniSkip / Anime Skip", "Anime skip times")
+                CreditRow("IntroDB / SkipDB", "Intro, outro, and recap times", showDivider = false)
+            }
+            CreditSectionHeader("Inspired by")
+            IosGroup {
+                CreditRow("mpvEx", "The player UI reference")
+                CreditRow("Nuvio", "The bottom pill and library look")
+                CreditRow("Stremio", "The streaming-app idea")
+                CreditRow("iOS / Cupertino", "The design language")
+                CreditRow("Lucide", "The icons", showDivider = false)
+            }
         }
     }
 
@@ -2166,5 +2199,61 @@ private fun CacheStorageBlock() {
             style = MaterialTheme.typography.bodySmall,
             color = MsColors.TextSecondary,
         )
+    }
+}
+
+/**
+ * iOS-style section header above a credit group (moon's credits 2026-11-12):
+ * small caps grey text, the way iOS Settings labels its groups.
+ */
+@Composable
+private fun CreditSectionHeader(title: String) {
+    Text(
+        text = title.uppercase(),
+        style = MaterialTheme.typography.labelMedium,
+        color = MsColors.TextSecondary,
+        modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp),
+    )
+}
+
+/**
+ * One credit row inside an [IosGroup]: name on top, what it does below.
+ * iOS-style — no chevron, no action, just the credit. The hairline matches
+ * [IosNavRow]'s divider (0.5dp, inset 16dp, #38383A).
+ */
+@Composable
+private fun CreditRow(
+    name: String,
+    desc: String,
+    showDivider: Boolean = true,
+) {
+    Column {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontSize = 16.sp,
+                color = Color.White,
+            )
+            Text(
+                text = desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MsColors.TextSecondary,
+            )
+        }
+        if (showDivider) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp)
+                    .height(0.5.dp)
+                    .background(Color(0xFF38383A)),
+            )
+        }
     }
 }
