@@ -386,7 +386,10 @@ fun PlayerScreen(
     var gestureHud by remember { mutableStateOf<GestureHud?>(null) }
 
     fun setBrightness(v: Float) {
-        brightness = v.coerceIn(0.05f, 1f)
+        // Floor is 0 (moon's fix 2026-11-12): the old 0.05 floor stopped
+        // the swipe at 5%. 0 is the dimmest the hardware goes — the
+        // screen stays on, just very dark, and a swipe up brings it back.
+        brightness = v.coerceIn(0f, 1f)
         try {
             activity?.window?.attributes?.let { lp ->
                 lp.screenBrightness = brightness
