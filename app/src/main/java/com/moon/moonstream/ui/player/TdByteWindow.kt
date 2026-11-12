@@ -437,7 +437,25 @@ internal class TdByteWindow(
      */
     fun downloadedAheadBytes(fromByte: Long): Long {
         var idx = LowStorageWindow.chunkIndex(fromByte.coerceAtLeast(0L))
-        while (true) {
+        val last = LowStorageWindow.chunkCount(fileSize)
+        // Skip the evicted region at the playhead: ExoPlayer reads ~50s
+        // ahead to fill its RAM buffer, and advance() evicts everything
+        // more than 10 MB behind the READ position — so the playhead chunk
+        // itself is usually already deleted (its bytes are in RAM). A
+        // missing chunk at the start must not end the run, or the seekbar
+        // band reads as zero exactly when the buffer is healthy (moon's
+        // 0.15.152 report: "better! but still no buffer line").
+        while (idx < last) {
+            val f = chunkFile(idx)
+            if (f.exists() && f.length() > 0L) break
+            idx++
+        }
+        if (idx >= last) {
+            // Nothing downloaded at or after the playhead — no band.
+            return fromByte.coerceAtLeast(0L).coerceAtMost(fileSize)
+        }
+        // Measure the contiguous run from the first available chunk.
+        while (idx < last) {
             val f = chunkFile(idx)
             if (!f.exists() || f.length() <= 0L) break
             idx++
