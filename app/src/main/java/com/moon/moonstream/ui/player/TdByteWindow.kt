@@ -59,6 +59,94 @@ internal class TdByteWindow(
     private var openIndex = -1L
     private var openFile: RandomAccessFile? = null
 
+    /**
+     * Bulk download for the prefetch (moon's buffer fix 2026-11-13): pulls
+     * [count] chunks in ONE backend request and splits them into chunk
+     * files. Each Telegram request costs ~1s on moon's connection whether
+     * it carries 1 MB or 8 MB (his log: every 1 MB chunk took 900-1200ms),
+     * so one chunk per request capped downloads at ~1 MB/s and the
+     * prefetch never got ahead of ExoPlayer's reads — only ~4s of video
+     * was ever ready. One 8 MB request carries 8 chunks for the same ~1s,
+     * so the prefetch runs up to 8x faster. The reader (urgent, on-demand)
+     * still uses the single-chunk [download] — it needs one chunk with
+     * minimal latency. Must be called while holding [mutex].
+     */
+    private suspend fun downloadRange(fromIndex: Long, count: Int) {
+        if (closed) return
+        val last = LowStorageWindow.chunkCount(fileSize)
+        val endExclusive = minOf(fromIndex + count, last)
+        if (fromIndex >= endExclusive) return
+        // Skip a leading run already on disk (a re-run may overlap).
+        var first = fromIndex
+        while (first < endExclusive && have(first)) first++
+        if (first >= endExclusive) return
+        val start = LowStorageWindow.chunkStart(first)
+        val end = LowStorageWindow.chunkStart(endExclusive).coerceAtMost(fileSize)
+        val want = (end - start).toInt()
+        if (want <= 0) return
+
+        val startedAt = SystemClock.elapsedRealtime()
+        val buf = ByteArray(want)
+        var got = 0
+        var emptyReplies = 0
+        var requests = 0
+        while (got < want) {
+            if (closed) return
+            awaitRateLimit()
+            requests++
+            val bytes = try {
+                BackendProvider.backend.readFileRange(
+                    channelId = channelId,
+                    messageId = messageId,
+                    offset = start + got,
+                    length = want - got,
+                )
+            } catch (e: Exception) {
+                throw IOException("Telegram read failed at chunk $first", e)
+            }
+            if (bytes.isEmpty()) {
+                emptyReplies++
+                if (emptyReplies >= LowStorageWindow.MAX_EMPTY_REPLIES) {
+                    throw IOException("No bytes for chunks $first..${endExclusive - 1} (offset ${start + got})")
+                }
+                registerEmptyReply(first, emptyReplies)
+                continue
+            }
+            emptyReplies = 0
+            registerBytes()
+            bytes.copyInto(buf, got)
+            got += bytes.size
+        }
+
+        // Split the range into per-chunk files. A chunk already on disk is
+        // left alone (its bytes are in buf but need no rewrite).
+        var off = 0
+        for (idx in first until endExclusive) {
+            if (closed) return
+            val len = LowStorageWindow.chunkLength(idx, fileSize).toInt()
+            if (!have(idx)) {
+                val target = chunkFile(idx)
+                val partial = File(dir, "chunk_${idx}.part")
+                partial.delete()
+                partial.writeBytes(buf.copyOfRange(off, off + len))
+                if (!partial.renameTo(target)) {
+                    target.delete()
+                    if (!partial.renameTo(target)) {
+                        partial.copyTo(target, overwrite = true)
+                        partial.delete()
+                    }
+                }
+            }
+            off += len
+        }
+        AppLog.d(
+            "TDLOCAL",
+            "chunks $first..${endExclusive - 1} stored: " +
+                "${want / 1024} KB in ${SystemClock.elapsedRealtime() - startedAt} ms " +
+                "($requests request${if (requests == 1) "" else "s"})",
+        )
+    }
+
     /** Chunk index the last eviction/prefetch pass ran for. */
     private var lastAdvanceIndex = -1L
 
@@ -301,8 +389,17 @@ internal class TdByteWindow(
         prefetchFrom = fromIndex
         prefetchUntil = fromIndex + count
         prefetchJob = prefetchScope.launch {
-            for (idx in todo) {
+            // Bulk batches (moon's buffer fix 2026-11-13): 8 chunks per
+            // request via downloadRange — one ~1s request carries 8 MB
+            // instead of 1 MB, so the prefetch outpaces ExoPlayer's reads
+            // and the buffer actually builds. Batches stop at gaps (a chunk
+            // that landed meanwhile) so each batch is one contiguous range.
+            var i = 0
+            while (i < todo.size) {
                 if (closed) return@launch
+                val first = todo[i]
+                var n = 1
+                while (i + n < todo.size && n < PREFETCH_BATCH_CHUNKS && todo[i + n] == first + n) n++
                 try {
                     // Yield to a blocked reader — but not forever. An
                     // unbounded yield starves the prefetch when the buffer
@@ -318,14 +415,15 @@ internal class TdByteWindow(
                         waitedMs += 50L
                     }
                     mutex.withLock {
-                        if (!closed && !have(idx)) download(idx)
+                        if (!closed) downloadRange(first, n)
                     }
                 } catch (e: Exception) {
                     // Prefetch is an optimisation — playback still works, and
                     // one failure means stop piling on extra requests.
-                    AppLog.i("TDLOCAL", "prefetch chunk $idx skipped: ${e.message}")
+                    AppLog.i("TDLOCAL", "prefetch chunks $first..${first + n - 1} skipped: ${e.message}")
                     return@launch
                 }
+                i += n
             }
         }
     }
@@ -472,5 +570,10 @@ internal class TdByteWindow(
 
         /** Ceiling on a single backoff wait (plus up to 25% jitter). */
         const val MAX_BACKOFF_MS = 8_000L
+
+        /** Chunks per bulk prefetch request (moon's buffer fix 2026-11-13):
+         *  8 x 1 MB = 8 MB per request, so one ~1s Telegram round-trip
+         *  carries 8 chunks instead of 1. */
+        const val PREFETCH_BATCH_CHUNKS = 8
     }
 }
