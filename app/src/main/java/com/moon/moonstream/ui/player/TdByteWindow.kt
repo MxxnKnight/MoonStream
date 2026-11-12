@@ -431,7 +431,13 @@ internal class TdByteWindow(
         }
     }
 
-    /** Closes handles and removes this file's chunks from disk. */
+    /** Closes handles and stops the prefetch. Does NOT delete the chunks:
+     *  ExoPlayer closes/reopens the DataSource during playback (seeks,
+     *  reopens), and deleting here wiped the whole buffer every time —
+     *  the 0.15.151 stall (moon's log 2026-11-13: the 11 MB window was
+     *  deleted on every reopen, so the buffer never grew past 11 MB).
+     *  Chunks are deleted explicitly on player close (PlayerScreen
+     *  onDispose) and by eviction while playing. */
     fun release() {
         closed = true
         prefetchJob?.cancel()
@@ -442,7 +448,6 @@ internal class TdByteWindow(
         openFile = null
         openIndex = -1L
         TdStreamCache.markInactive(channelId, messageId)
-        TdStreamCache.clearFile(context, channelId, messageId)
         AppLog.i("TDLOCAL", "window closed for msg=$messageId")
     }
 

@@ -88,6 +88,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
+import com.moon.moonstream.cache.TdStreamCache
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.backend.BackendProvider
@@ -433,6 +434,16 @@ fun PlayerScreen(
             videoUri
         }
     }
+    // Channel/message for the chunk cleanup on close (moon's rule: both
+    // caches cleared on every player close). Held in a rememberUpdatedState
+    // because the onDispose below captures the first composition's values
+    // and files load async (currentFile starts null) — this always reads
+    // the CURRENT file at dispose time. Library files come from
+    // currentFile; unmatched files (no library row) from the tdfile:// URI.
+    val closeTarget by rememberUpdatedState(
+        currentFile?.let { it.channelId to it.messageId }
+            ?: TdStreamUri.parse(videoUri)?.let { it.channelId to it.messageId },
+    )
     val groups = remember(orderedFiles) {
         orderedFiles.groupBy { Pair(it.season, it.episode) }
             .map { (key, fs) -> EpisodeGroup(key.first, key.second, fs) }
@@ -1029,6 +1040,22 @@ fun PlayerScreen(
                                     if (deleted) "deleted" else "NOT deleted (backend said no)",
                             )
                         }
+                    } catch (e: Exception) { /* never break close */ }
+                }
+            }
+            // Delete the player chunks on close (moon's rule: BOTH caches
+            // cleared on every player close). Runs for EVERY file, including
+            // unmatched ones (streamFileId 0) — closeTarget falls back to
+            // the tdfile:// URI for those. This used to happen in
+            // TdByteWindow.release(), but ExoPlayer closes/reopens the
+            // DataSource during playback and each reopen wiped the buffer
+            // (the 0.15.151 stall — moon's log showed the 11 MB window
+            // deleted on every reopen). Now release() only closes handles.
+            val target = closeTarget
+            if (target != null) {
+                ioScope.launch(Dispatchers.IO) {
+                    try {
+                        TdStreamCache.clearFile(context, target.first, target.second)
                     } catch (e: Exception) { /* never break close */ }
                 }
             }
