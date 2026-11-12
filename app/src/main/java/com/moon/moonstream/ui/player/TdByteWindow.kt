@@ -69,6 +69,14 @@ internal class TdByteWindow(
     /** Only one prefetch run may be alive; a seek cancels the old one. */
     private var prefetchJob: Job? = null
 
+    /** Range the live prefetch job is covering [from, until).
+     *  A normal chunk crossing inside this range does NOT cancel the job —
+     *  cancelling every ~1.5s (1 MB chunks) threw away the in-flight
+     *  download and the prefetch never got ahead (moon's buffer fix
+     *  2026-11-13). Only a jump outside the range (a seek) cancels it. */
+    private var prefetchFrom = -1L
+    private var prefetchUntil = -1L
+
     /**
      * Rate limiting. The backend reports every failure as "no bytes", so a
      * Telegram FLOOD_WAIT is indistinguishable from "not downloaded yet".
@@ -279,12 +287,19 @@ internal class TdByteWindow(
      */
     private fun prefetch(fromIndex: Long, count: Int) {
         if (closed) return
+        // Already covering this range: let the live job run on. Cancelling
+        // it here would throw away its in-flight chunk and the prefetch
+        // would never get ahead of a 1 MB-chunk playhead (moon's buffer
+        // fix 2026-11-13 — the old code cancelled on every chunk crossing).
+        if (prefetchJob?.isActive == true && fromIndex in prefetchFrom until prefetchUntil) return
         val last = LowStorageWindow.chunkCount(fileSize)
         val todo = (0 until count)
             .map { fromIndex + it }
             .filter { it < last && !have(it) }
         if (todo.isEmpty()) return
         prefetchJob?.cancel()
+        prefetchFrom = fromIndex
+        prefetchUntil = fromIndex + count
         prefetchJob = prefetchScope.launch {
             for (idx in todo) {
                 if (closed) return@launch
@@ -426,8 +441,14 @@ internal class TdByteWindow(
         /** Delete Telegram's copy after this much of our window has been deleted. */
         const val PURGE_AFTER_BYTES = 96L * 1024 * 1024
 
-        /** Minimum gap between two network requests, so we never spam TDLib. */
-        const val MIN_FETCH_GAP_MS = 200L
+        /** Minimum gap between two network requests, so we never spam TDLib.
+         *  50ms (moon's buffer fix 2026-11-13): was 200ms, tuned for 8 MB
+         *  chunks where the gap was negligible. With 1 MB chunks the 200ms
+         *  gap capped downloads at ~2.5 MB/s on a fast connection and the
+         *  player starved — play 3s, buffer, play 3s, buffer. 50ms still
+         *  paces requests (max ~20/s, real rate is download-bound at
+         *  1-7/s) and the empty-reply backoff still guards flood waits. */
+        const val MIN_FETCH_GAP_MS = 50L
 
         /** First backoff step; doubles per consecutive empty reply. */
         const val BASE_BACKOFF_MS = 400L
