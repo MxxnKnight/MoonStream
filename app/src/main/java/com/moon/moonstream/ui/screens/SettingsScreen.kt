@@ -164,7 +164,6 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
 
     // --- Streaming & Storage state ---
     var cacheMb by remember { mutableStateOf(AppUiState.cacheMaxMb.toString()) }
-    var bufferMb by remember { mutableStateOf(AppUiState.bufferMb.toString()) }
     var playerBufferS by remember { mutableStateOf(AppUiState.playerBufferS.toString()) }
     var maxSizeMb by remember { mutableStateOf("") }
     var minSearchMb by remember { mutableStateOf("") }
@@ -966,24 +965,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 )
             }
             SettingRow(
-                title = "Buffer MB",
-                info = "How much video the app downloads ahead from Telegram while you watch, in 8 MB chunks (so 20 means two chunks, 16 MB). Bigger means smoother playback on slow connections, but uses more data upfront. Saved, and picked up mid-video.",
-            ) {
-                MsTextField(
-                    value = bufferMb,
-                    onValueChange = {
-                        bufferMb = it
-                        it.toIntOrNull()?.let { mb ->
-                            if (mb >= 0) AppUiState.setBufferMb(mb, context)
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(100.dp),
-                )
-            }
-            SettingRow(
-                title = "Player buffer (seconds)",
-                info = "How many seconds of video the player itself holds ready in memory. This is the safety margin for a slow or jumpy Telegram connection: at 50 a network hiccup under a minute doesn't stop the picture. Higher = smoother but more memory and a longer wait before the first frame; 10–300, applies to the next video you open.",
+                title = "Buffer (seconds)",
+                info = "The one buffer: how many seconds of video the player holds ready, and how far ahead the app downloads from Telegram (one 1 MB chunk per second). At 50 a network hiccup under a minute doesn't stop the picture. Higher = smoother but more memory; 10–300, applies to the next video you open. Playback still starts after about a second of data — a bigger buffer doesn't delay the first frame.",
             ) {
                 MsTextField(
                     value = playerBufferS,

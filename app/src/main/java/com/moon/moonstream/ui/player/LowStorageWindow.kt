@@ -4,17 +4,24 @@ package com.moon.moonstream.ui.player
  * Sliding byte-window policy for the in-app player.
  *
  * Plain words: a 2 GB episode must not cost 2 GB of phone storage. The player
- * asks TDLib for one chunk at a time (8 MB), keeps a couple ahead, and deletes
+ * asks TDLib for one chunk at a time (1 MB), keeps a few ahead, and deletes
  * everything it has already played — keeping only a small margin behind the
  * play position so a quick rewind doesn't have to hit the network.
+ *
+ * Single buffer (moon's 2026-11-12): there is ONE buffer setting now — the
+ * player buffer in seconds. It drives both how much the player holds ready
+ * and how far ahead this window prefetches (see [prefetchChunks]). The old
+ * separate "Buffer MB" setting is gone.
  *
  * Pure numbers + arithmetic only: no Android, no I/O. The downloads and file
  * deletes live in `TdByteWindow.kt`; this file just decides "how much".
  */
 object LowStorageWindow {
 
-    /** One network request = one chunk on disk. 8 MB keeps seeks responsive. */
-    const val CHUNK_BYTES = 8L * 1024 * 1024
+    /** One network request = one chunk on disk. 1 MB keeps seeks responsive
+     * and wastes little when the viewer jumps away (moon's 2026-11-12: was
+     * 8 MB — the NoxMedia/TMPlayer way is small chunks pulled on demand). */
+    const val CHUNK_BYTES = 1L * 1024 * 1024
 
     /** Absolute cap on bytes held for one playing file. */
     const val WINDOW_BYTES = 200L * 1024 * 1024
@@ -28,20 +35,18 @@ object LowStorageWindow {
     /** Extra headroom so container index reads near EOF don't evict the start. */
     const val SLACK_BYTES = 16L * 1024 * 1024
 
-    /** How many chunks ahead of the play position to fetch in the background. */
-    const val PREFETCH_CHUNKS = 2
-
     /** Upper bound for prefetch (the window itself caps held bytes at 200 MB). */
-    const val MAX_PREFETCH_CHUNKS = 25
+    const val MAX_PREFETCH_CHUNKS = 32
 
     /**
-     * Chunks to prefetch for a Buffer MB setting: one chunk is 8 MB, so the
-     * Settings default of 20 MB is exactly today's 2 chunks. Pure arithmetic;
-     * the setting itself is wired in TdByteWindow.
+     * Chunks to prefetch for the single buffer setting: one 1 MB chunk per
+     * second of player buffer, so the download-ahead always matches what
+     * the player wants to hold. The default 50 s buffer prefetches 32
+     * chunks (the cap) = 32 MB ahead; a 20 s buffer prefetches 20.
+     * Pure arithmetic; the setting itself is wired in TdByteWindow.
      */
-    fun prefetchChunks(bufferMb: Int): Int =
-        ((bufferMb.toLong() * 1024 * 1024) / CHUNK_BYTES).toInt()
-            .coerceIn(1, MAX_PREFETCH_CHUNKS)
+    fun prefetchChunks(playerBufferS: Int): Int =
+        playerBufferS.coerceIn(4, MAX_PREFETCH_CHUNKS)
 
     /**
      * Give up (and surface an error) after this many empty backend replies in

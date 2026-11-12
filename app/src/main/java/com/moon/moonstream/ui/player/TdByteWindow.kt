@@ -143,7 +143,7 @@ internal class TdByteWindow(
         if (index == lastAdvanceIndex) return
         lastAdvanceIndex = index
         evictBefore(LowStorageWindow.keepFromChunk(index, fileSize), index)
-        prefetch(index + 1, LowStorageWindow.prefetchChunks(AppUiState.bufferMb))
+        prefetch(index + 1, LowStorageWindow.prefetchChunks(AppUiState.playerBufferS))
         if (deletedSincePurge >= PURGE_AFTER_BYTES) purgeTelegramCopy()
     }
 
