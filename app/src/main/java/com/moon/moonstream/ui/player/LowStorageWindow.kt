@@ -29,8 +29,11 @@ object LowStorageWindow {
     /** Below this, rolling isn't worth the churn (kept for tuning/debug). */
     const val MIN_WINDOW_BYTES = 32L * 1024 * 1024
 
-    /** Keep this much *behind* the play position (small rewinds stay free). */
-    const val BACK_BYTES = 2L * 1024 * 1024
+    /** Keep this much *behind* the play position (small rewinds stay free).
+     *  10 MB (moon's 2026-11-13: was 2 MB, only ~2-3s back — a -10s
+     *  rewind had to re-download). 10 MB covers a 10s rewind at typical
+     *  bitrates (5-8 Mbps); still small next to the 200 MB window cap. */
+    const val BACK_BYTES = 10L * 1024 * 1024
 
     /** Extra headroom so container index reads near EOF don't evict the start. */
     const val SLACK_BYTES = 16L * 1024 * 1024

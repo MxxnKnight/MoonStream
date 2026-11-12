@@ -304,7 +304,19 @@ internal class TdByteWindow(
             for (idx in todo) {
                 if (closed) return@launch
                 try {
-                    while (readerWaiting && !closed) delay(50L)
+                    // Yield to a blocked reader — but not forever. An
+                    // unbounded yield starves the prefetch when the buffer
+                    // is empty and the reader is downloading back-to-back:
+                    // the prefetch never runs, so the buffer never builds
+                    // (moon's "no ahead buffer" 2026-11-13). Wait up to
+                    // ~500ms, then queue on the mutex like everyone else —
+                    // the fair mutex still lets the reader go first when it
+                    // already holds it, but the prefetch gets its turn.
+                    var waitedMs = 0L
+                    while (readerWaiting && !closed && waitedMs < 500L) {
+                        delay(50L)
+                        waitedMs += 50L
+                    }
                     mutex.withLock {
                         if (!closed && !have(idx)) download(idx)
                     }
