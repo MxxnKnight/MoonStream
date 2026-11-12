@@ -113,7 +113,10 @@ fun StatsScreen(onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(MsColors.Bg),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 36.dp),
+        // Bottom 120dp (moon's fix 2026-11-12): the old 36dp let the last
+        // rows slide under the floating bottom pill (~77dp tall), hiding
+        // "Recently finished". 120dp matches the Library screen.
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item(key = "header") { StatsHeader(onBack = onBack, stats = s) }
