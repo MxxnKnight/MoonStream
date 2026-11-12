@@ -677,8 +677,12 @@ fun ChannelsScreen(
                         }
                     },
                     modifier = Modifier.weight(1f),
+                    fontSize = 14,
                 )
-                MsOutlinePill(
+                // Both bulk buttons blue (moon's 2026-11-13), 14sp so
+                // "Custom Content" fits — at 17sp it truncated ("Custom
+                // Conte...") because it's wider in pixels than the Link text.
+                LimePillButton(
                     text = "Custom Content",
                     onClick = {
                         onCreateEntryBulk(
@@ -688,6 +692,7 @@ fun ChannelsScreen(
                         )
                     },
                     modifier = Modifier.weight(1f),
+                    fontSize = 14,
                 )
             }
         }

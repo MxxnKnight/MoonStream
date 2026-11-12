@@ -485,11 +485,14 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
         }
 
         // ---- Bottom multi-select action bar ----
+        // bottom 96dp (moon's 2026-11-13): was 122dp, set for the old big
+        // bottom bar — with the small pill (~77dp footprint) it floated too
+        // high. 96dp matches the Channels bulk bar, just above the pill.
         AnimatedVisibility(
             visible = selectMode,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(start = 20.dp, end = 20.dp, bottom = 122.dp),
+                .padding(start = 20.dp, end = 20.dp, bottom = 96.dp),
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
         ) {
