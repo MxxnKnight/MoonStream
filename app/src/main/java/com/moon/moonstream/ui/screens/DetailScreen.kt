@@ -677,6 +677,7 @@ fun DetailScreen(
                     onCopy = { copyLink(it) },
                     onDelete = { deleteFile(it) },
                     onFixFile = { fixFile = it; fixMode = FixMode.FIX_FILE },
+                    onOpenExternal = { playExternal(it) },
                     onUnlinkSub = { sub ->
                         scope.launch {
                             db.subtitleDao().delete(sub.id)
@@ -708,6 +709,7 @@ fun DetailScreen(
                         onCopy = { copyLink(f) },
                         onDelete = { deleteFile(f) },
                         onFixFile = { fixFile = f; fixMode = FixMode.FIX_FILE },
+                        onOpenExternal = { playExternal(f) },
                         watchedAt = watchedAt[f.id],
                         onSetEpisode = { setEpisodeFile = f },
                     )

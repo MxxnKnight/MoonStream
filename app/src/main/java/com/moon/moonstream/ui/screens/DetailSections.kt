@@ -60,6 +60,7 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.FormatListNumbered
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -123,6 +124,8 @@ fun SeriesSeasons(
     onCopy: (StreamFileEntity) -> Unit,
     onDelete: (StreamFileEntity) -> Unit,
     onFixFile: (StreamFileEntity) -> Unit,
+    /** Open in an external video app (mpvRx, VLC…) via the addon server. */
+    onOpenExternal: (StreamFileEntity) -> Unit,
     onUnlinkSub: (SubtitleFileEntity) -> Unit,
     /** streamFileId -> last playedAt, for "watched X ago" (moon's design 2026-11-02). */
     watchedAt: Map<Long, Long> = emptyMap(),
@@ -194,6 +197,7 @@ fun SeriesSeasons(
             onCopy = onCopy,
             onDelete = onDelete,
             onFixFile = onFixFile,
+            onOpenExternal = onOpenExternal,
             onUnlinkSub = onUnlinkSub,
             watchedAt = watchedAt,
             onSetEpisode = onSetEpisode,
@@ -212,6 +216,8 @@ private fun EpisodeCard(
     onCopy: (StreamFileEntity) -> Unit,
     onDelete: (StreamFileEntity) -> Unit,
     onFixFile: (StreamFileEntity) -> Unit,
+    /** Open in an external video app (mpvRx, VLC…) via the addon server. */
+    onOpenExternal: (StreamFileEntity) -> Unit,
     onUnlinkSub: (SubtitleFileEntity) -> Unit,
     watchedAt: Map<Long, Long> = emptyMap(),
     onSetEpisode: ((StreamFileEntity) -> Unit)? = null,
@@ -285,6 +291,7 @@ private fun EpisodeCard(
                             onCopy = { onCopy(f) },
                             onDelete = { onDelete(f) },
                             onFixFile = { onFixFile(f) },
+                            onOpenExternal = { onOpenExternal(f) },
                             watchedAt = watchedAt[f.id],
                             onSetEpisode = onSetEpisode?.let { fn -> { fn(f) } },
                         )
@@ -310,6 +317,8 @@ fun FileRow(
     onCopy: () -> Unit,
     onDelete: () -> Unit,
     onFixFile: () -> Unit,
+    /** Open in an external video app (mpvRx, VLC…) via the addon server. */
+    onOpenExternal: () -> Unit,
     /** Last playedAt for this file, or null if never watched. */
     watchedAt: Long? = null,
     /** Manual season/episode assignment (moon's pick 2026-11-02). Null = hide. */
@@ -366,6 +375,14 @@ fun FileRow(
                     onClick = onPlay,
                 )
                 BareIconButton(
+                    // Open in an external video app (moon's 2026-11-12):
+                    // Material "open in new" — the standard external-app
+                    // symbol. Moon can draw a custom one later if he wants.
+                    icon = Icons.Outlined.OpenInNew,
+                    contentDescription = "Open in video app",
+                    onClick = onOpenExternal,
+                )
+                BareIconButton(
                     // Lucide icons (moon's 2026-11-10 picks): copy.
                     icon = ImageVector.vectorResource(R.drawable.ic_lucide_copy),
                     contentDescription = "Copy Link",
@@ -410,6 +427,8 @@ fun StreamRow(
     onCopy: () -> Unit,
     onDelete: () -> Unit,
     onFixFile: () -> Unit,
+    /** Open in an external video app (mpvRx, VLC…) via the addon server. */
+    onOpenExternal: () -> Unit,
     /** Last playedAt for this file, or null if never watched. */
     watchedAt: Long? = null,
     /** Manual season/episode assignment (moon's pick 2026-11-02). Null = hide. */
@@ -451,6 +470,14 @@ fun StreamRow(
                     icon = ImageVector.vectorResource(R.drawable.ic_lucide_circle_play),
                     contentDescription = "Play",
                     onClick = onPlay,
+                )
+                BareIconButton(
+                    // Open in an external video app (moon's 2026-11-12):
+                    // Material "open in new" — the standard external-app
+                    // symbol. Moon can draw a custom one later if he wants.
+                    icon = Icons.Outlined.OpenInNew,
+                    contentDescription = "Open in video app",
+                    onClick = onOpenExternal,
                 )
                 BareIconButton(
                     // Lucide icons (moon's 2026-11-10 picks): copy.

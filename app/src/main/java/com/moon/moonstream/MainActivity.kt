@@ -461,6 +461,14 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         )
                     AppScreen.Channels ->
                         ChannelsScreen(
+                            onPlayInApp = { videoUrl, title, mediaTitle, mediaId, streamFileId ->
+                                go(
+                                    AppScreen.Player(
+                                        videoUrl, title,
+                                        mediaId, streamFileId, mediaTitle,
+                                    )
+                                )
+                            },
                             onCreateEntry = { file ->
                                 go(
                                     AppScreen.Create(

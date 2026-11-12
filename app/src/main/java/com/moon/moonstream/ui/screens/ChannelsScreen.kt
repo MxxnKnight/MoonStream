@@ -8,6 +8,7 @@ import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.components.IosBottomSheet
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.components.unfocusOnTapOutside
+import com.moon.moonstream.ui.player.TdStreamUri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -181,6 +183,13 @@ fun ChannelsScreen(
     onCreateEntry: (UnmatchedFileEntity?) -> Unit = {},
     /** Bulk custom entry (moon's 2026-11-10): several selected unmatched files */
     onCreateEntryBulk: (List<UnmatchedFileEntity>) -> Unit = {},
+    /** In-app player (moon's bug fix 2026-11-12): the unmatched Play button
+     *  used to open an external player via the addon — now it plays in-app
+     *  via tdfile://, no server needed. Same signature as DetailScreen's. */
+    onPlayInApp: (
+        videoUrl: String, title: String, mediaTitle: String,
+        mediaId: Long, streamFileId: Long,
+    ) -> Unit = { _, _, _, _, _ -> },
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -599,6 +608,19 @@ fun ChannelsScreen(
                     },
                     onLinkToTitle = { linkFile = f },
                     onPlay = {
+                        // Bug fix (moon's 2026-11-12): Play opens the
+                        // IN-APP player now, straight from Telegram via
+                        // tdfile:// — no server needed. The external-player
+                        // flow moved to onOpenExternal below.
+                        val displayName =
+                            if (manualChannelIds.contains(f.channelId) && f.caption.isNotBlank())
+                                FilenameParser.captionTitle(f.caption) else f.fileName
+                        val url = TdStreamUri.build(
+                            f.channelId, f.messageId, f.fileSize, f.fileName,
+                        ).toString()
+                        onPlayInApp(url, displayName, displayName, 0L, 0L)
+                    },
+                    onOpenExternal = {
                         if (!AppUiState.serverOn) {
                             MsToast.show("Turn the server on first, then play")
                         } else {
@@ -1262,6 +1284,8 @@ private fun UnmatchedFileRow(
     onCopyLink: () -> Unit,
     onLinkToTitle: () -> Unit,
     onPlay: () -> Unit,
+    /** Open in an external video app (mpvRx, VLC…) via the addon server. */
+    onOpenExternal: () -> Unit,
 ) {
     MsCard(
         modifier = Modifier
@@ -1307,6 +1331,14 @@ private fun UnmatchedFileRow(
                     icon = ImageVector.vectorResource(R.drawable.ic_lucide_circle_play),
                     contentDescription = "Play",
                     onClick = onPlay,
+                )
+                BareIconButton(
+                    // Open in an external video app (moon's 2026-11-12):
+                    // Material "open in new" — the standard external-app
+                    // symbol. Moon can draw a custom one later if he wants.
+                    icon = Icons.Outlined.OpenInNew,
+                    contentDescription = "Open in video app",
+                    onClick = onOpenExternal,
                 )
                 BareIconButton(
                     // Lucide icons (moon's 2026-11-10 picks): copy.
