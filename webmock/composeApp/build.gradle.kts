@@ -22,3 +22,13 @@ kotlin {
         }
     }
 }
+
+// Pin the generated Res class package: the default is derived from the
+// Gradle module name (composeapp.generated.resources), not the Kotlin
+// package, so imports of com.moon.webmock.generated.resources.Res would
+// fail without this.
+compose {
+    resources {
+        packageOfResClass = "com.moon.webmock.generated.resources"
+    }
+}
