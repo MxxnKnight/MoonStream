@@ -177,7 +177,7 @@ private object ChannelRowCache {
  * [ScanService] so they survive navigation and backgrounding; this screen
  * only observes the app-level [ScanUiState].
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ChannelsScreen(
     onCreateEntry: (UnmatchedFileEntity?) -> Unit = {},
@@ -534,13 +534,24 @@ fun ChannelsScreen(
                 )
             }
 
-            item(key = "unmatchedSearch") {
-                com.moon.moonstream.ui.components.MsTextField(
-                    value = unmatchedQuery,
-                    onValueChange = { unmatchedQuery = it },
-                    hint = "Search unmatched files…",
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            stickyHeader(key = "unmatchedSearch") {
+                // Sticky (moon's 2026-11-13): stays pinned at the top while
+                // scrolling the unmatched list; slides back down to its
+                // normal spot when scrolling back to the top. Opaque
+                // background so rows don't show through underneath.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MsColors.Bg)
+                        .padding(top = 8.dp, bottom = 8.dp),
+                ) {
+                    com.moon.moonstream.ui.components.MsTextField(
+                        value = unmatchedQuery,
+                        onValueChange = { unmatchedQuery = it },
+                        hint = "Search unmatched files…",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
 
             item(key = "unmatchedHeader") {
