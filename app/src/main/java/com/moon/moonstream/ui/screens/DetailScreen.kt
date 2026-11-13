@@ -89,6 +89,7 @@ import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.FixMode
 import com.moon.moonstream.ui.components.IosDialog
 import com.moon.moonstream.ui.components.IosSheetButton
+import com.moon.moonstream.ui.components.IosSpinner
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
 import com.moon.moonstream.ui.components.MetadataFixSheet
@@ -154,6 +155,7 @@ fun DetailScreen(
     var showAddSubtitle by remember { mutableStateOf(false) }
     var attachSub by remember { mutableStateOf<SubtitleFileEntity?>(null) }
     var seasonIdx by remember { mutableStateOf(0) }
+    var refreshing by remember { mutableStateOf(false) }
 
     val m = media
     if (m == null) {
@@ -392,6 +394,9 @@ fun DetailScreen(
                     full?.imdbId ?: picked.imdbId,
                 ),
                 type = targetType,
+                genres = full?.genres?.takeIf { it.isNotEmpty() }?.joinToString(",") ?: m.genres,
+                originalLanguage = full?.originalLanguage ?: m.originalLanguage,
+                country = full?.country ?: m.country,
                 now = System.currentTimeMillis(),
             )
             withContext(Dispatchers.Main) {
@@ -399,6 +404,57 @@ fun DetailScreen(
                     if (targetType != m.type) "Metadata updated — now listed as ${targetType.replaceFirstChar { it.uppercase() }}"
                     else "Metadata updated"
                 )
+            }
+        }
+    }
+
+    /** Refresh button: re-run the matcher on THIS entry's own title and
+     *  fill in whatever is missing (genre, language, country, fresher
+     *  poster/overview). Files untouched, type untouched. Passing the
+     *  stored IMDb id makes the matcher do a direct lookup when it has one
+     *  (more accurate, fewer calls). A field the lookup has nothing for
+     *  keeps its current value — refresh never wipes data. */
+    fun refreshMetadata() {
+        if (refreshing) return
+        refreshing = true
+        scope.launch(Dispatchers.IO) {
+            val key = ScanPrefs.getTmdbKey(context)
+            val omdbKey = ScanPrefs.getOmdbKey(context)
+            val full = MetadataMatcher.match(
+                m.title, m.year, m.type, isAnime, key,
+                imdbId = m.imdbId, omdbKey = omdbKey,
+            )?.let { MetadataMatcher.enrichFromCinemeta(it, m.type) }
+            if (full == null) {
+                withContext(Dispatchers.Main) {
+                    refreshing = false
+                    MsToast.show("No fresh data found")
+                }
+                return@launch
+            }
+            db.mediaDao().updateMetadata(
+                id = m.id,
+                title = full.title,
+                norm = normalizeTitle(full.title),
+                year = full.year ?: m.year,
+                imdbId = full.imdbId ?: m.imdbId,
+                tmdbId = full.tmdbId ?: m.tmdbId,
+                posterUrl = full.posterUrl ?: m.posterUrl,
+                backdropUrl = full.backdropUrl ?: m.backdropUrl,
+                overview = full.overview ?: m.overview,
+                stremioId = StremioIds.forNewItem(
+                    m.channelId,
+                    normalizeTitle(full.title),
+                    full.imdbId ?: m.imdbId,
+                ),
+                type = m.type,
+                genres = full.genres?.takeIf { it.isNotEmpty() }?.joinToString(",") ?: m.genres,
+                originalLanguage = full.originalLanguage ?: m.originalLanguage,
+                country = full.country ?: m.country,
+                now = System.currentTimeMillis(),
+            )
+            withContext(Dispatchers.Main) {
+                refreshing = false
+                MsToast.show("Metadata refreshed")
             }
         }
     }
@@ -530,15 +586,34 @@ fun DetailScreen(
                     .align(Alignment.TopStart)
                     .padding(8.dp),
             )
-            BareIconButton(
-                icon = if (m.hidden) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
-                contentDescription = if (m.hidden) "Unhide entry" else "Hide entry",
-                tint = Color.White,
-                onClick = { toggleHide() },
+            Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(8.dp),
-            )
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (refreshing) {
+                    Box(
+                        modifier = Modifier.size(48.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        IosSpinner(size = 22.dp)
+                    }
+                } else {
+                    BareIconButton(
+                        icon = Icons.Filled.Refresh,
+                        contentDescription = "Refresh metadata",
+                        tint = Color.White,
+                        onClick = { refreshMetadata() },
+                    )
+                }
+                BareIconButton(
+                    icon = if (m.hidden) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                    contentDescription = if (m.hidden) "Unhide entry" else "Hide entry",
+                    tint = Color.White,
+                    onClick = { toggleHide() },
+                )
+            }
             Text(
                 text = m.title,
                 style = MaterialTheme.typography.headlineSmall,

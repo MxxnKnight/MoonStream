@@ -151,7 +151,8 @@ interface MediaDao {
                imdbId = :imdbId, tmdbId = :tmdbId, posterUrl = :posterUrl,
                backdropUrl = :backdropUrl,
                overview = :overview, stremioId = :stremioId, type = :type,
-               updatedAt = :now
+               genres = :genres, originalLanguage = :originalLanguage,
+               country = :country, updatedAt = :now
            WHERE id = :id""",
     )
     suspend fun updateMetadata(
@@ -166,6 +167,9 @@ interface MediaDao {
         overview: String?,
         stremioId: String?,
         type: String,
+        genres: String?,
+        originalLanguage: String?,
+        country: String?,
         now: Long,
     )
 
