@@ -213,42 +213,29 @@ fun StatsScreen(onBack: () -> Unit) {
                     )
                 }
             }
-            if (s.topChannels.isNotEmpty()) {
-                item(key = "channels") {
-                    SectionTitle("Top channels")
-                    Spacer(Modifier.height(8.dp))
-                    BarListCard(
-                        items = s.topChannels.map { it.label to it.hoursMs },
-                        emptyText = "",
-                        reveal = reveal,
-                        index = 12,
-                        modifier = Modifier.fillMaxWidth().statsReveal(reveal, 12),
-                    )
-                }
-            }
             item(key = "hours") {
                 SectionTitle("When you watch")
                 Spacer(Modifier.height(8.dp))
                 HourChartCard(s, reveal,
-                    Modifier.fillMaxWidth().statsReveal(reveal, 13))
+                    Modifier.fillMaxWidth().statsReveal(reveal, 12))
             }
             item(key = "habits") {
                 SectionTitle("Habits")
                 Spacer(Modifier.height(8.dp))
                 HabitsCard(s, reveal, reduced,
-                    Modifier.fillMaxWidth().statsReveal(reveal, 14))
+                    Modifier.fillMaxWidth().statsReveal(reveal, 13))
             }
             item(key = "library") {
                 SectionTitle("Your library")
                 Spacer(Modifier.height(8.dp))
                 LibraryCard(s, reveal, reduced,
-                    Modifier.fillMaxWidth().statsReveal(reveal, 15))
+                    Modifier.fillMaxWidth().statsReveal(reveal, 14))
             }
             item(key = "recent") {
                 SectionTitle("Recently finished")
                 Spacer(Modifier.height(8.dp))
                 RecentlyFinishedCard(s.recentlyFinished, reveal,
-                    Modifier.fillMaxWidth().statsReveal(reveal, 16))
+                    Modifier.fillMaxWidth().statsReveal(reveal, 15))
             }
         } else if (s == null) {
             item(key = "loading") {

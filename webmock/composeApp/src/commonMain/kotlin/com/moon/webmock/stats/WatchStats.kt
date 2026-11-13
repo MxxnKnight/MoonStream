@@ -38,8 +38,6 @@ data class DecadeCount(val label: String, val hoursMs: Long)
 
 data class QualityCount(val label: String, val hoursMs: Long)
 
-data class ChannelCount(val label: String, val hoursMs: Long)
-
 data class TypeCount(val type: String, val count: Int)
 
 data class WatchStats(
@@ -73,7 +71,6 @@ data class WatchStats(
     val libraryBytes: Long = 0L,
     val watchedTitles: Int = 0,
     val streamedBytes: Long = 0L,
-    val topChannels: List<ChannelCount> = emptyList(),
     val hourBars: List<Pair<String, Float>> = emptyList(),
     val completionRate: Int = 0,
 )

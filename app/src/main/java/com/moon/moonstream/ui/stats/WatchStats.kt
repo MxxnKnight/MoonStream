@@ -65,9 +65,6 @@ data class DecadeCount(val label: String, val hoursMs: Long)
 /** Hours per video quality ("1080p", "720p", …) — the files actually played. */
 data class QualityCount(val label: String, val hoursMs: Long)
 
-/** Hours watched per Telegram channel. */
-data class ChannelCount(val label: String, val hoursMs: Long)
-
 data class TypeCount(val type: String, val count: Int)
 
 data class WatchStats(
@@ -119,8 +116,6 @@ data class WatchStats(
     val watchedTitles: Int = 0,
     /** Bytes actually streamed in range (file size × fraction watched). */
     val streamedBytes: Long = 0L,
-    /** Top channels by hours watched in range. */
-    val topChannels: List<ChannelCount> = emptyList(),
     /** Hours per 4-hour bucket of the day: 12am, 4am, 8am, 12pm, 4pm, 8pm. */
     val hourBars: List<Pair<String, Float>> = emptyList(),
     /** Finished / started titles in range, as a percent (0-100). */
@@ -261,20 +256,6 @@ object WatchStatsLoader {
             }
             (size * frac).toLong()
         }
-
-        // Top channels: hours watched per Telegram channel in range.
-        val channelTitles = db.channelConfigDao().all().associate { it.channelId to it.title }
-        val topChannels = inRange
-            .mapNotNull { r ->
-                val ch = streamById[r.streamFileId]?.channelId ?: return@mapNotNull null
-                ch to r.positionMs
-            }
-            .groupBy({ it.first }, { it.second })
-            .mapValues { (_, ms) -> ms.sum() }
-            .entries
-            .sortedByDescending { it.value }
-            .take(5)
-            .map { ChannelCount(channelTitles[it.key] ?: "Unknown channel", it.value) }
 
         // When you watch: hours per 4-hour bucket of the day.
         val hourLabels = listOf("12am", "4am", "8am", "12pm", "4pm", "8pm")
@@ -437,7 +418,6 @@ object WatchStatsLoader {
             libraryBytes = streams.sumOf { it.fileSize },
             watchedTitles = watchedTitles,
             streamedBytes = streamedBytes,
-            topChannels = topChannels,
             hourBars = hourBars,
             completionRate = completionRate,
         )
