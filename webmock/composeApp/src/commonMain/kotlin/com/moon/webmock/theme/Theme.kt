@@ -9,7 +9,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -25,6 +24,7 @@ import com.moon.webmock.generated.resources.redaction35_bold
 import com.moon.webmock.generated.resources.redaction35_italic
 import com.moon.webmock.generated.resources.redaction35_regular
 import org.jetbrains.compose.resources.ExperimentalResourceApi
+import org.jetbrains.compose.resources.Font
 
 // ---------------------------------------------------------------------------
 // MoonStream design tokens, ported 1:1 from the app's Theme.kt / AppState.kt.
