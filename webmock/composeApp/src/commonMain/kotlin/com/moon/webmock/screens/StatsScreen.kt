@@ -582,12 +582,13 @@ private fun StatTile(
     index: Int,
     reduced: Boolean,
     modifier: Modifier = Modifier,
+    format: (Long) -> String = ::formatNumber,
 ) {
     GlowCard(modifier = modifier) {
         Column(modifier = Modifier.padding(14.dp)) {
             CountUp(
                 value = value,
-                format = ::formatNumber,
+                format = format,
                 style = MaterialTheme.typography.headlineSmall.doto(),
                 color = MsColors.TextPrimary,
                 reduced = reduced,
@@ -939,8 +940,8 @@ private fun HabitsCard(
     GlowCard(modifier = modifier) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatTile("Per active day", perActiveDay, reveal, 12, reduced, Modifier.weight(1f))
-                StatTile("Longest session", s.longestSessionMs, reveal, 12, reduced, Modifier.weight(1f))
+                StatTile("Per active day", perActiveDay, reveal, 12, reduced, Modifier.weight(1f), format = ::formatHours)
+                StatTile("Longest session", s.longestSessionMs, reveal, 12, reduced, Modifier.weight(1f), format = ::formatHours)
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
