@@ -182,8 +182,11 @@ class MoonStreamServer(
 
     private fun buildManifest(): JSONObject {
         val catalogs = JSONArray()
-        catalogs.put(JSONObject().put("type", "movie").put("id", "moonstream_movies").put("name", "MoonStream Movies"))
-        catalogs.put(JSONObject().put("type", "series").put("id", "moonstream_series").put("name", "MoonStream Series & Anime"))
+        catalogs.put(catalogJson("movie", "moonstream_movies", "MoonStream Movies"))
+        catalogs.put(catalogJson("series", "moonstream_series", "MoonStream Series"))
+        catalogs.put(catalogJson("series", "moonstream_anime", "MoonStream Anime"))
+        catalogs.put(catalogJson("movie", "moonstream_custom_movies", "MoonStream Custom Movies"))
+        catalogs.put(catalogJson("series", "moonstream_custom_series", "MoonStream Custom Shows"))
         return JSONObject()
             .put("id", "org.moonstream.addon")
             .put("version", BuildConfig.VERSION_NAME)
@@ -198,19 +201,61 @@ class MoonStreamServer(
             .put("idPrefixes", JSONArray(listOf("tt", "tg", "ms_")))
     }
 
-    /** /catalog/{movie|series}/{id}.json */
+    /** One catalog entry. Every catalog declares the search extra, so
+     *  Stremio/Nuvio can search this library (moon's 2026-11-13). */
+    private fun catalogJson(type: String, id: String, name: String): JSONObject =
+        JSONObject()
+            .put("type", type)
+            .put("id", id)
+            .put("name", name)
+            .put(
+                "extra",
+                JSONArray().put(
+                    JSONObject().put("name", "search").put("isRequired", false),
+                ),
+            )
+
+    /** /catalog/{movie|series}/{id}[/search=QUERY].json */
     private fun handleCatalog(path: String): JSONObject {
         val trimmed = path.removePrefix("/catalog/").removeSuffix(".json")
-        val type = trimmed.split("/").firstOrNull().orEmpty()
-        val wantSeries = type == "series"
+        val segments = trimmed.split("/")
+        val type = segments.getOrNull(0).orEmpty()
+        val id = segments.getOrNull(1).orEmpty()
+        // Stremio search: /catalog/{type}/{id}/search=QUERY.json (path is
+        // already URL-decoded by handleClient).
+        val search = segments.drop(2)
+            .firstOrNull { it.startsWith("search=") }
+            ?.removePrefix("search=")
+            ?.trim()
+            .orEmpty()
         val items = runBlocking {
-            db.mediaDao().listVisible().filter {
-                if (wantSeries) (it.type == "series" || it.type == "anime") else it.type == "movie"
+            db.mediaDao().listVisible().filter { m ->
+                val inCatalog = when (id) {
+                    "moonstream_movies" -> m.type == "movie"
+                    "moonstream_series" -> m.type == "series"
+                    "moonstream_anime" -> m.type == "anime"
+                    "moonstream_custom_movies" -> m.isCustom && m.type == "movie"
+                    "moonstream_custom_series" -> m.isCustom && m.type != "movie"
+                    // Fallback for old clients that request by type only:
+                    else -> if (type == "series") (m.type == "series" || m.type == "anime") else m.type == "movie"
+                }
+                inCatalog && matchesSearch(m.title, search)
             }
         }
         val metas = JSONArray()
         for (m in items) metas.put(metaJson(m))
         return JSONObject().put("metas", metas)
+    }
+
+    /** Title search: plain substring, plus a normalized pass so "biggboss"
+     *  still finds "Bigg Boss" and punctuation/spacing differences don't
+     *  matter. Blank query matches everything. */
+    private fun matchesSearch(title: String, query: String): Boolean {
+        if (query.isBlank()) return true
+        if (title.contains(query, ignoreCase = true)) return true
+        val normTitle = com.moon.moonstream.index.parse.normalizeTitle(title)
+        val normQuery = com.moon.moonstream.index.parse.normalizeTitle(query)
+        return normQuery.isNotBlank() && normTitle.contains(normQuery)
     }
 
     /** /meta/{movie|series}/{id}.json — id is tt... / tg... [:s:e], or legacy ms_<dbId>[:s:e]. */
