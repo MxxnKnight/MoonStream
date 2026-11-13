@@ -20,9 +20,9 @@ fun demoStats(range: StatsRange): WatchStats = when (range) {
             "Tue" to 0.3f, "Wed" to 0f, "Thu" to 0.1f,
         ),
         mostWatched = listOf(
-            MostWatchedItem(1, "Wednesday", null, 1 * HOUR + 12 * MIN, 3),
-            MostWatchedItem(2, "American Gangster", null, 58 * MIN, 1),
-            MostWatchedItem(3, "Reacher", null, 37 * MIN, 2),
+            MostWatchedItem(1, "Wednesday", null, 1 * HOUR + 12 * MIN, 3, "series"),
+            MostWatchedItem(2, "American Gangster", null, 58 * MIN, 1, "movie"),
+            MostWatchedItem(3, "Reacher", null, 37 * MIN, 2, "series"),
         ),
         byType = listOf(
             TypeCount("series", 5), TypeCount("movies", 2),
@@ -78,11 +78,11 @@ fun demoStats(range: StatsRange): WatchStats = when (range) {
             "Fri" to 2.2f, "Sat" to 3.6f, "Sun" to 2.2f,
         ),
         mostWatched = listOf(
-            MostWatchedItem(1, "Wednesday", null, 4 * HOUR + 5 * MIN, 8),
-            MostWatchedItem(3, "Reacher", null, 3 * HOUR + 40 * MIN, 6),
-            MostWatchedItem(4, "One Piece", null, 2 * HOUR + 15 * MIN, 12),
-            MostWatchedItem(2, "American Gangster", null, 1 * HOUR + 58 * MIN, 1),
-            MostWatchedItem(5, "Bigg Boss Malayalam", null, 1 * HOUR + 22 * MIN, 4),
+            MostWatchedItem(1, "Wednesday", null, 4 * HOUR + 5 * MIN, 8, "series"),
+            MostWatchedItem(3, "Reacher", null, 3 * HOUR + 40 * MIN, 6, "series"),
+            MostWatchedItem(4, "One Piece", null, 2 * HOUR + 15 * MIN, 12, "anime"),
+            MostWatchedItem(2, "American Gangster", null, 1 * HOUR + 58 * MIN, 1, "movie"),
+            MostWatchedItem(5, "Bigg Boss Malayalam", null, 1 * HOUR + 22 * MIN, 4, "series"),
         ),
         byType = listOf(
             TypeCount("series", 18), TypeCount("movies", 6),
@@ -145,11 +145,11 @@ fun demoStats(range: StatsRange): WatchStats = when (range) {
             "Sep" to 14.6f, "Oct" to 18.3f, "Nov" to 17.1f,
         ),
         mostWatched = listOf(
-            MostWatchedItem(4, "One Piece", null, 18 * HOUR + 30 * MIN, 96),
-            MostWatchedItem(3, "Reacher", null, 12 * HOUR + 10 * MIN, 24),
-            MostWatchedItem(1, "Wednesday", null, 8 * HOUR + 45 * MIN, 16),
-            MostWatchedItem(8, "Breaking Bad", null, 7 * HOUR + 20 * MIN, 14),
-            MostWatchedItem(5, "Bigg Boss Malayalam", null, 6 * HOUR + 40 * MIN, 22),
+            MostWatchedItem(4, "One Piece", null, 18 * HOUR + 30 * MIN, 96, "anime"),
+            MostWatchedItem(3, "Reacher", null, 12 * HOUR + 10 * MIN, 24, "series"),
+            MostWatchedItem(1, "Wednesday", null, 8 * HOUR + 45 * MIN, 16, "series"),
+            MostWatchedItem(8, "Breaking Bad", null, 7 * HOUR + 20 * MIN, 14, "series"),
+            MostWatchedItem(5, "Bigg Boss Malayalam", null, 6 * HOUR + 40 * MIN, 22, "series"),
         ),
         byType = listOf(
             TypeCount("series", 96), TypeCount("movies", 34),

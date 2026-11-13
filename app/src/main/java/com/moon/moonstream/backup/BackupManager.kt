@@ -214,6 +214,7 @@ object BackupManager {
                     .put("playedAt", w.playedAt)
                     .put("positionMs", w.positionMs)
                     .put("durationMs", w.durationMs)
+                    .put("finishedAt", w.finishedAt)
             }))
             .put("unmatched_files", arr(db.unmatchedDao().getAll().map { u ->
                 JSONObject()
@@ -398,6 +399,7 @@ object BackupManager {
                         playedAt = playedAt,
                         positionMs = o.optLong("positionMs", 0),
                         durationMs = o.optLong("durationMs", 0),
+                        finishedAt = o.optLong("finishedAt", 0).takeIf { it > 0 },
                     ),
                 )
                 progress++

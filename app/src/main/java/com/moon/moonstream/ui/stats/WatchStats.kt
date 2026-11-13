@@ -41,6 +41,10 @@ data class MostWatchedItem(
     val posterUrl: String?,
     val hoursMs: Long,
     val episodes: Int,
+    /** Raw media type ("movie"/"series"/"anime") — the card shows "N ep"
+     *  only for series/anime; a movie shows just the time. Null when the
+     *  media row is gone (orphan watch row). */
+    val type: String? = null,
 )
 
 data class FinishedItem(
@@ -147,8 +151,6 @@ private fun displayType(media: com.moon.moonstream.index.db.MediaItemEntity): St
     }
 
 object WatchStatsLoader {
-    private const val FINISHED_FRAC = 0.9
-
     suspend fun load(db: MsDatabase, range: StatsRange): WatchStats {
         val now = System.currentTimeMillis()
         val since = range.sinceMs(now)
@@ -165,19 +167,17 @@ object WatchStatsLoader {
         val moviesWatched = inRange
             .filter { mediaById[it.mediaId]?.type == "movie" }
             .map { it.mediaId }.distinct().size
-        // Finished: distinct mediaIds whose best position is >= 90% of duration.
+        // Finished: titles with a finishedAt stamp (the player sets it when
+        // a file is watched to >=90% — the resume position itself is
+        // cleared to 0 on a finish, so position can never prove it).
         val finishedIds = rows
-            .groupBy { it.mediaId }
-            .filter { (_, rs) ->
-                rs.any { r ->
-                    r.durationMs > 0L && r.positionMs >= (r.durationMs * FINISHED_FRAC).toLong()
-                }
-            }
-            .keys
+            .filter { it.finishedAt != null }
+            .map { it.mediaId }
+            .toSet()
         // "Titles finished" counts finishes that happened in range; for ALL
         // it is every finished title.
         val finishedInRange = if (since == null) finishedIds else finishedIds.filter { id ->
-            rows.any { it.mediaId == id && it.playedAt >= since }
+            rows.any { it.mediaId == id && it.finishedAt != null && it.finishedAt >= since }
         }
         val titlesFinished = finishedInRange.size
 
@@ -216,7 +216,16 @@ object WatchStatsLoader {
             .mapValues { (_, rs) -> rs.sumOf { it.positionMs } }
             .filterValues { it > 0L }
             .entries
-            .groupBy { qualityByFile[it.key]?.takeIf { q -> q.isNotBlank() } ?: "Unknown" }
+            // Collapse "1080p • Mal" / "1080p • Tam" into plain "1080p" —
+            // the badge's language suffix split one resolution into many
+            // rows (moon's 2026-11-13).
+            .groupBy {
+                qualityByFile[it.key]
+                    ?.takeIf { q -> q.isNotBlank() }
+                    ?.substringBefore("•")?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "Unknown"
+            }
             .map { (label, entries) -> QualityCount(label, entries.sumOf { it.value }) }
             .sortedByDescending { it.hoursMs }
             .take(5)
@@ -232,6 +241,7 @@ object WatchStatsLoader {
                     posterUrl = mediaById[id]?.posterUrl ?: first.posterUrl,
                     hoursMs = rs.sumOf { it.positionMs },
                     episodes = rs.size,
+                    type = mediaById[id]?.type,
                 )
             }
             .sortedByDescending { it.hoursMs }
@@ -321,7 +331,7 @@ object WatchStatsLoader {
         // Recently finished: finished titles ordered by latest playedAt.
         val recentlyFinished = finishedIds
             .mapNotNull { id ->
-                val last = rows.filter { it.mediaId == id }.maxOfOrNull { it.playedAt }
+                val last = rows.filter { it.mediaId == id }.mapNotNull { it.finishedAt }.maxOrNull()
                     ?: return@mapNotNull null
                 val m = mediaById[id]
                 FinishedItem(

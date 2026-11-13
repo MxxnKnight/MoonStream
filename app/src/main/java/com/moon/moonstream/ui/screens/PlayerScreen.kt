@@ -1027,6 +1027,16 @@ fun PlayerScreen(
                     } catch (e: Exception) {
                         AppLog.e("PLAYER", "updatePosition FAILED: ${e.message}")
                     }
+                    // Record the finish for stats: updatePosition clears the
+                    // resume position to 0 on a finished watch, so without
+                    // this the stats can never see it (moon's 2026-11-13).
+                    if (finished) {
+                        try {
+                            db.watchProgressDao().markFinished(streamFileId, System.currentTimeMillis())
+                        } catch (e: Exception) {
+                            AppLog.e("PLAYER", "markFinished FAILED: ${e.message}")
+                        }
+                    }
                     // Auto-delete the downloaded bytes on every close
                     // (moon's call 2026-11-02: no 90% rule — always clear).
                     try {

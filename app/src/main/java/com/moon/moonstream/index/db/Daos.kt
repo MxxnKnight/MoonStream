@@ -488,6 +488,12 @@ interface WatchProgressDao {
     @Query("UPDATE watch_progress SET positionMs = :positionMs, durationMs = :durationMs, playedAt = :playedAt WHERE streamFileId = :streamFileId")
     suspend fun updatePosition(streamFileId: Long, positionMs: Long, durationMs: Long, playedAt: Long): Int
 
+    /** Mark a file watched to the end (player close at >=90%). Separate
+     *  from updatePosition, which clears the resume position to 0 on a
+     *  finish — this is the record the stats read. */
+    @Query("UPDATE watch_progress SET finishedAt = :finishedAt WHERE streamFileId = :streamFileId")
+    suspend fun markFinished(streamFileId: Long, finishedAt: Long): Int
+
     /**
      * "This file is being opened" — refresh the row's metadata but KEEP the
      * saved position (resume fix 2026-11-09).

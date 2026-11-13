@@ -106,6 +106,12 @@ data class WatchProgressEntity(
     val positionMs: Long = 0,
     /** Total duration in ms for progress bar (0 = unknown). */
     val durationMs: Long = 0,
+    /** When this file was watched to the end (>=90%), or null if never.
+     *  The player clears positionMs to 0 on a finished watch (Kodi rule),
+     *  so without this the stats can never see a finish (moon's 2026-11-13:
+     *  fully-watched movies never showed as Finished). Set by the player
+     *  close handler; sticky once set. */
+    val finishedAt: Long? = null,
 )
 
 /**

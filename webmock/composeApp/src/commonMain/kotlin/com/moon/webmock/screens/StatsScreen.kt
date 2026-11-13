@@ -741,7 +741,8 @@ private fun MostWatchedCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            "${formatHours(item.hoursMs)} · ${item.episodes} ep",
+                            formatHours(item.hoursMs) +
+                                if (item.type != "movie") " · ${item.episodes} ep" else "",
                             style = MaterialTheme.typography.labelSmall,
                             color = MsColors.TextSecondary,
                         )

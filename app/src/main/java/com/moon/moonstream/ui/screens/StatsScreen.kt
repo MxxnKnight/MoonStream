@@ -604,12 +604,13 @@ private fun StatTile(
     index: Int,
     reduced: Boolean,
     modifier: Modifier = Modifier,
+    format: (Long) -> String = { "%,d".format(it) },
 ) {
     GlowCard(modifier = modifier) {
         Column(modifier = Modifier.padding(14.dp)) {
             CountUp(
                 value = value,
-                format = { "%,d".format(it) },
+                format = format,
                 style = MaterialTheme.typography.headlineSmall.doto(),
                 color = MsColors.TextPrimary,
                 reduced = reduced,
@@ -767,7 +768,8 @@ private fun MostWatchedCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            "${formatHours(item.hoursMs)} · ${item.episodes} ep",
+                            formatHours(item.hoursMs) +
+                                if (item.type != "movie") " · ${item.episodes} ep" else "",
                             style = MaterialTheme.typography.labelSmall,
                             color = MsColors.TextSecondary,
                         )
@@ -966,8 +968,8 @@ private fun HabitsCard(
     GlowCard(modifier = modifier) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatTile("Per active day", perActiveDay, reveal, 12, reduced, Modifier.weight(1f))
-                StatTile("Longest session", s.longestSessionMs, reveal, 12, reduced, Modifier.weight(1f))
+                StatTile("Per active day", perActiveDay, reveal, 12, reduced, Modifier.weight(1f), format = ::formatHours)
+                StatTile("Longest session", s.longestSessionMs, reveal, 12, reduced, Modifier.weight(1f), format = ::formatHours)
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

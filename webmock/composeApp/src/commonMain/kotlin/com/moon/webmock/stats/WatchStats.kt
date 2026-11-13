@@ -18,6 +18,7 @@ data class MostWatchedItem(
     val posterUrl: String?,
     val hoursMs: Long,
     val episodes: Int,
+    val type: String? = null,
 )
 
 data class FinishedItem(
