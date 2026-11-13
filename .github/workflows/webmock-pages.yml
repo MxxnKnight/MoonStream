@@ -1,0 +1,57 @@
+name: Webmock site
+
+# Builds the Compose Multiplatform web mockup (webmock/) and publishes it
+# to GitHub Pages, so the mockup link always shows the latest design.
+# Path-filtered: app code changes do NOT trigger this, and mockup changes
+# do NOT trigger the APK build. Auto-deploy on push is the point here —
+# this is a preview page, not a release (the app's "say Build first" rule
+# still applies to the APK workflow).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'webmock/**'
+      - '.github/workflows/webmock-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webmock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.2
+      - name: Build web distribution
+        run: gradle :composeApp:wasmJsBrowserDistribution --console=plain
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: webmock/composeApp/build/dist/wasmJs/productionExecutable
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
