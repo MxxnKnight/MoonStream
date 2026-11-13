@@ -185,6 +185,7 @@ class MoonStreamServer(
         catalogs.put(catalogJson("movie", "moonstream_movies", "MoonStream Movies"))
         catalogs.put(catalogJson("series", "moonstream_series", "MoonStream Series"))
         catalogs.put(catalogJson("series", "moonstream_anime", "MoonStream Anime"))
+        catalogs.put(catalogJson("series", "moonstream_dramas", "MoonStream Dramas"))
         catalogs.put(catalogJson("movie", "moonstream_custom_movies", "MoonStream Custom Movies"))
         catalogs.put(catalogJson("series", "moonstream_custom_series", "MoonStream Custom Shows"))
         return JSONObject()
@@ -232,8 +233,9 @@ class MoonStreamServer(
             db.mediaDao().listVisible().filter { m ->
                 val inCatalog = when (id) {
                     "moonstream_movies" -> m.type == "movie"
-                    "moonstream_series" -> m.type == "series"
+                    "moonstream_series" -> m.type == "series" && !isDrama(m)
                     "moonstream_anime" -> m.type == "anime"
+                    "moonstream_dramas" -> isDrama(m)
                     "moonstream_custom_movies" -> m.isCustom && m.type == "movie"
                     "moonstream_custom_series" -> m.isCustom && m.type != "movie"
                     // Fallback for old clients that request by type only:
@@ -246,6 +248,13 @@ class MoonStreamServer(
         for (m in items) metas.put(metaJson(m))
         return JSONObject().put("metas", metas)
     }
+
+    /** Drama = a series in Korean, Chinese, Japanese or Thai — the same rule
+     *  the stats screen's By-type split uses (WatchStatsLoader). Only
+     *  entries with a saved language qualify, so this catalog looks thin
+     *  until older entries are refreshed or rescanned. */
+    private fun isDrama(m: MediaItemEntity): Boolean =
+        m.type == "series" && m.originalLanguage in DRAMA_LANGS
 
     /** Title search: plain substring, plus a normalized pass so "biggboss"
      *  still finds "Bigg Boss" and punctuation/spacing differences don't
@@ -835,6 +844,8 @@ class MoonStreamServer(
         private const val STREAM_MAX_RETRIES = 3 // empty-chunk retries before giving up
         private const val STREAM_RETRY_DELAY_MS = 1_000L // wait between retries
         private const val MAX_SUB_BYTES = 8 * 1_048_576 // sanity cap for subtitle files
+        // Languages that make a series a "drama" (same set as WatchStatsLoader).
+        private val DRAMA_LANGS = setOf("ko", "zh", "ja", "th")
 
         fun getLocalIpAddress(): String {
             try {
