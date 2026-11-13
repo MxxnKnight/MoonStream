@@ -15,6 +15,15 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.moon.webmock.generated.resources.Res
+import com.moon.webmock.generated.resources.doto_bold
+import com.moon.webmock.generated.resources.doto_regular
+import com.moon.webmock.generated.resources.inter_bold
+import com.moon.webmock.generated.resources.inter_medium
+import com.moon.webmock.generated.resources.inter_regular
+import com.moon.webmock.generated.resources.inter_semibold
+import com.moon.webmock.generated.resources.redaction35_bold
+import com.moon.webmock.generated.resources.redaction35_italic
+import com.moon.webmock.generated.resources.redaction35_regular
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 
 // ---------------------------------------------------------------------------
