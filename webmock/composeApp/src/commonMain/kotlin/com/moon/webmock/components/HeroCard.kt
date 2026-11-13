@@ -26,7 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.moon.webmock.theme.MsColors
-import com.moon.webmock.theme.Redaction35
+import com.moon.webmock.theme.RedactionFamily
 import com.moon.webmock.theme.doto
 
 // ---------------------------------------------------------------------------
@@ -122,7 +122,7 @@ fun LibraryHeroCard(
                         Text(
                             text = "streams",
                             style = MaterialTheme.typography.bodySmall.copy(
-                                fontFamily = Redaction35,
+                                fontFamily = RedactionFamily(),
                             ),
                             color = MsColors.TextSecondary,
                         )
@@ -137,7 +137,7 @@ fun LibraryHeroCard(
                         Text(
                             text = "indexed",
                             style = MaterialTheme.typography.bodySmall.copy(
-                                fontFamily = Redaction35,
+                                fontFamily = RedactionFamily(),
                             ),
                             color = MsColors.TextSecondary,
                         )

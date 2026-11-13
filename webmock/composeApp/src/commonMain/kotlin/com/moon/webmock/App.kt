@@ -30,7 +30,7 @@ import com.moon.webmock.components.MsOutlinePill
 import com.moon.webmock.components.MsToggle
 import com.moon.webmock.theme.MoonStreamTheme
 import com.moon.webmock.theme.MsColors
-import com.moon.webmock.theme.Redaction35
+import com.moon.webmock.theme.RedactionFamily
 import com.moon.webmock.theme.doto
 
 /**
@@ -65,7 +65,7 @@ fun App() {
                 Text(
                     text = "3,135 titles · 19,312 streams indexed",
                     style = MaterialTheme.typography.bodyMedium.copy(
-                        fontFamily = Redaction35,
+                        fontFamily = RedactionFamily(),
                     ),
                     color = MsColors.TextSecondary,
                 )

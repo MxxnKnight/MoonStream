@@ -112,38 +112,53 @@ object MsRadii {
 }
 
 // Bundled fonts — the same .ttf files as the app's res/font.
+// NOTE: org.jetbrains.compose.resources.Font is @Composable (font loading
+// is async), so the families are @Composable loaders, not top-level vals
+// like the app's. Call them from inside a composable.
+@Composable
 @OptIn(ExperimentalResourceApi::class)
-val Inter = FontFamily(
-    Font(Res.font.inter_regular, FontWeight.Normal),
-    Font(Res.font.inter_medium, FontWeight.Medium),
-    Font(Res.font.inter_semibold, FontWeight.SemiBold),
-    Font(Res.font.inter_bold, FontWeight.Bold),
-)
+fun InterFamily(): FontFamily {
+    return FontFamily(
+        Font(Res.font.inter_regular, FontWeight.Normal),
+        Font(Res.font.inter_medium, FontWeight.Medium),
+        Font(Res.font.inter_semibold, FontWeight.SemiBold),
+        Font(Res.font.inter_bold, FontWeight.Bold),
+    )
+}
 
+@Composable
 @OptIn(ExperimentalResourceApi::class)
-val Doto = FontFamily(
-    Font(Res.font.doto_regular, FontWeight.Normal),
-    Font(Res.font.doto_bold, FontWeight.Bold),
-)
+fun DotoFamily(): FontFamily {
+    return FontFamily(
+        Font(Res.font.doto_regular, FontWeight.Normal),
+        Font(Res.font.doto_bold, FontWeight.Bold),
+    )
+}
 
+@Composable
 @OptIn(ExperimentalResourceApi::class)
-val Redaction35 = FontFamily(
-    Font(Res.font.redaction35_regular, FontWeight.Normal),
-    Font(Res.font.redaction35_italic, FontWeight.Normal, FontStyle.Italic),
-    Font(Res.font.redaction35_bold, FontWeight.Bold),
-)
+fun RedactionFamily(): FontFamily {
+    return FontFamily(
+        Font(Res.font.redaction35_regular, FontWeight.Normal),
+        Font(Res.font.redaction35_italic, FontWeight.Normal, FontStyle.Italic),
+        Font(Res.font.redaction35_bold, FontWeight.Bold),
+    )
+}
 
-fun TextStyle.doto() = copy(fontFamily = Doto)
+/** Public extension: apply Doto display font to any TextStyle. */
+@Composable
+fun TextStyle.doto() = copy(fontFamily = DotoFamily())
 
-private fun Typography.withBrandFonts(): Typography {
-    fun TextStyle.inter() = copy(fontFamily = Inter)
+private fun Typography.withBrandFonts(inter: FontFamily, doto: FontFamily): Typography {
+    fun TextStyle.inter() = copy(fontFamily = inter)
+    fun TextStyle.dotoStyle() = copy(fontFamily = doto)
     return copy(
-        displayLarge = displayLarge.doto(),
-        displayMedium = displayMedium.doto(),
-        displaySmall = displaySmall.doto(),
-        headlineLarge = headlineLarge.doto(),
-        headlineMedium = headlineMedium.doto(),
-        headlineSmall = headlineSmall.doto(),
+        displayLarge = displayLarge.dotoStyle(),
+        displayMedium = displayMedium.dotoStyle(),
+        displaySmall = displaySmall.dotoStyle(),
+        headlineLarge = headlineLarge.dotoStyle(),
+        headlineMedium = headlineMedium.dotoStyle(),
+        headlineSmall = headlineSmall.dotoStyle(),
         titleLarge = titleLarge.inter(),
         titleMedium = titleMedium.inter(),
         titleSmall = titleSmall.inter(),
@@ -172,7 +187,7 @@ fun MoonStreamTheme(content: @Composable () -> Unit) {
     )
     MaterialTheme(
         colorScheme = scheme,
-        typography = Typography().withBrandFonts(),
+        typography = Typography().withBrandFonts(InterFamily(), DotoFamily()),
         content = content,
     )
 }
