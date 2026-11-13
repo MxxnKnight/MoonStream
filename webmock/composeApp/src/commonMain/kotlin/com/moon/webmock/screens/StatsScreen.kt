@@ -213,23 +213,42 @@ fun StatsScreen(onBack: () -> Unit) {
                     )
                 }
             }
+            if (s.topChannels.isNotEmpty()) {
+                item(key = "channels") {
+                    SectionTitle("Top channels")
+                    Spacer(Modifier.height(8.dp))
+                    BarListCard(
+                        items = s.topChannels.map { it.label to it.hoursMs },
+                        emptyText = "",
+                        reveal = reveal,
+                        index = 12,
+                        modifier = Modifier.fillMaxWidth().statsReveal(reveal, 12),
+                    )
+                }
+            }
+            item(key = "hours") {
+                SectionTitle("When you watch")
+                Spacer(Modifier.height(8.dp))
+                HourChartCard(s, reveal,
+                    Modifier.fillMaxWidth().statsReveal(reveal, 13))
+            }
             item(key = "habits") {
                 SectionTitle("Habits")
                 Spacer(Modifier.height(8.dp))
                 HabitsCard(s, reveal, reduced,
-                    Modifier.fillMaxWidth().statsReveal(reveal, 12))
+                    Modifier.fillMaxWidth().statsReveal(reveal, 14))
             }
             item(key = "library") {
                 SectionTitle("Your library")
                 Spacer(Modifier.height(8.dp))
                 LibraryCard(s, reveal, reduced,
-                    Modifier.fillMaxWidth().statsReveal(reveal, 13))
+                    Modifier.fillMaxWidth().statsReveal(reveal, 15))
             }
             item(key = "recent") {
                 SectionTitle("Recently finished")
                 Spacer(Modifier.height(8.dp))
                 RecentlyFinishedCard(s.recentlyFinished, reveal,
-                    Modifier.fillMaxWidth().statsReveal(reveal, 14))
+                    Modifier.fillMaxWidth().statsReveal(reveal, 16))
             }
         } else if (s == null) {
             item(key = "loading") {
@@ -571,6 +590,10 @@ private fun QuickGrid(
             StatTile("Finished", s.titlesFinished.toLong(), reveal, 4, reduced, Modifier.weight(1f))
             StatTile("Active days", s.activeDays.toLong(), reveal, 4, reduced, Modifier.weight(1f))
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatTile("Streamed", s.streamedBytes, reveal, 5, reduced, Modifier.weight(1f), format = ::formatBytes)
+            StatTile("Completion", s.completionRate.toLong(), reveal, 5, reduced, Modifier.weight(1f), format = { "$it%" })
+        }
     }
 }
 
@@ -698,6 +721,80 @@ private fun ChartCard(
                     color = MsColors.TextSecondary,
                 )
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// When you watch — hours per 4-hour bucket of the day. Same bar language
+// as the main chart, no tap-to-select (the main chart owns that).
+// ---------------------------------------------------------------------------
+@Composable
+private fun HourChartCard(
+    s: WatchStats,
+    reveal: Animatable<Float, AnimationVector1D>,
+    modifier: Modifier = Modifier,
+) {
+    GlowCard(modifier = modifier) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            val max = (s.hourBars.maxOfOrNull { it.second } ?: 0f).coerceAtLeast(0.001f)
+            Row(
+                modifier = Modifier.fillMaxWidth().height(96.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                s.hourBars.forEachIndexed { idx, (label, hours) ->
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Bottom,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(
+                                    (hours / max * 64f)
+                                        .coerceAtLeast(if (hours > 0f) 5f else 3f).dp,
+                                )
+                                .graphicsLayer {
+                                    val start = 0.45f + idx * 0.02f
+                                    val f = ((reveal.value - start) / 0.45f).coerceIn(0f, 1f)
+                                    scaleY = f
+                                    transformOrigin = TransformOrigin(0.5f, 1f)
+                                }
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            MsColors.Accent.copy(alpha = 0.85f),
+                                            MsColors.Accent.copy(alpha = 0.35f),
+                                        ),
+                                    ),
+                                ),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MsColors.TextSecondary,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            val best = s.hourBars.maxByOrNull { it.second }
+            Text(
+                if (best != null && best.second > 0f) {
+                    "You watch most around ${best.first} · ${formatHours((best.second * 3_600_000f).toLong())}."
+                } else {
+                    "Nothing watched in this period yet."
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MsColors.TextSecondary,
+            )
         }
     }
 }
@@ -972,24 +1069,57 @@ private fun LibraryCard(
     modifier: Modifier = Modifier,
 ) {
     GlowCard(modifier = modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            LibFact("Titles", s.libraryTitles.toLong(), reduced, Modifier.weight(1f))
-            LibFact("Files", s.libraryFiles.toLong(), reduced, Modifier.weight(1f))
-            Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LibFact("Titles", s.libraryTitles.toLong(), reduced, Modifier.weight(1f))
+                LibFact("Files", s.libraryFiles.toLong(), reduced, Modifier.weight(1f))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        formatBytes(s.libraryBytes),
+                        style = MaterialTheme.typography.titleMedium.doto(),
+                        fontWeight = FontWeight.SemiBold,
+                        color = MsColors.TextPrimary,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "On Telegram",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MsColors.TextSecondary,
+                    )
+                }
+            }
+            if (s.libraryTitles > 0) {
+                Spacer(Modifier.height(12.dp))
+                val frac = (s.watchedTitles.toFloat() / s.libraryTitles).coerceIn(0f, 1f)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color.White.copy(alpha = 0.10f)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(frac.coerceAtLeast(0.02f))
+                            .fillMaxHeight()
+                            .graphicsLayer {
+                                val f = ((reveal.value - 0.4f) / 0.5f).coerceIn(0f, 1f)
+                                scaleX = f
+                                transformOrigin = TransformOrigin(0f, 0.5f)
+                            }
+                            .background(MsColors.Accent),
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
                 Text(
-                    formatBytes(s.libraryBytes),
-                    style = MaterialTheme.typography.titleMedium.doto(),
-                    fontWeight = FontWeight.SemiBold,
-                    color = MsColors.TextPrimary,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    "On Telegram",
+                    formatNumber(s.watchedTitles.toLong()) + " of " +
+                        formatNumber(s.libraryTitles.toLong()) +
+                        " titles watched · ${(frac * 100).toInt()}%",
                     style = MaterialTheme.typography.labelSmall,
                     color = MsColors.TextSecondary,
                 )

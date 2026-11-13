@@ -65,6 +65,9 @@ data class DecadeCount(val label: String, val hoursMs: Long)
 /** Hours per video quality ("1080p", "720p", …) — the files actually played. */
 data class QualityCount(val label: String, val hoursMs: Long)
 
+/** Hours watched per Telegram channel. */
+data class ChannelCount(val label: String, val hoursMs: Long)
+
 data class TypeCount(val type: String, val count: Int)
 
 data class WatchStats(
@@ -110,6 +113,18 @@ data class WatchStats(
     val libraryTitles: Int = 0,
     val libraryFiles: Int = 0,
     val libraryBytes: Long = 0L,
+
+    // ---- 2026-11-13: coverage, streamed data, channels, hours, completion ----
+    /** Distinct titles with any watch row, all time (library coverage). */
+    val watchedTitles: Int = 0,
+    /** Bytes actually streamed in range (file size × fraction watched). */
+    val streamedBytes: Long = 0L,
+    /** Top channels by hours watched in range. */
+    val topChannels: List<ChannelCount> = emptyList(),
+    /** Hours per 4-hour bucket of the day: 12am, 4am, 8am, 12pm, 4pm, 8pm. */
+    val hourBars: List<Pair<String, Float>> = emptyList(),
+    /** Finished / started titles in range, as a percent (0-100). */
+    val completionRate: Int = 0,
 )
 
 /** Languages that mark a series as an Asian drama (K/C/J/Thai). */
@@ -229,6 +244,53 @@ object WatchStatsLoader {
             .map { (label, entries) -> QualityCount(label, entries.sumOf { it.value }) }
             .sortedByDescending { it.hoursMs }
             .take(5)
+
+        // Library coverage: distinct titles with any watch row, all time.
+        val watchedTitles = rows.map { it.mediaId }.distinct().size
+
+        // Data streamed in range: each played file contributes its size ×
+        // the fraction watched (a finished file counts whole — its saved
+        // position is 0, so finishedAt is the signal).
+        val streamById = streams.associateBy { it.id }
+        val streamedBytes = inRange.sumOf { r ->
+            val size = streamById[r.streamFileId]?.fileSize ?: return@sumOf 0L
+            val frac = when {
+                r.finishedAt != null -> 1f
+                r.durationMs > 0L -> (r.positionMs.toFloat() / r.durationMs).coerceIn(0f, 1f)
+                else -> 0f
+            }
+            (size * frac).toLong()
+        }
+
+        // Top channels: hours watched per Telegram channel in range.
+        val channelTitles = db.channelConfigDao().all().associate { it.channelId to it.title }
+        val topChannels = inRange
+            .mapNotNull { r ->
+                val ch = streamById[r.streamFileId]?.channelId ?: return@mapNotNull null
+                ch to r.positionMs
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, ms) -> ms.sum() }
+            .entries
+            .sortedByDescending { it.value }
+            .take(5)
+            .map { ChannelCount(channelTitles[it.key] ?: "Unknown channel", it.value) }
+
+        // When you watch: hours per 4-hour bucket of the day.
+        val hourLabels = listOf("12am", "4am", "8am", "12pm", "4pm", "8pm")
+        val hourSums = LongArray(6)
+        for (r in inRange) {
+            val cal = Calendar.getInstance()
+            cal.timeInMillis = r.playedAt
+            hourSums[cal.get(Calendar.HOUR_OF_DAY) / 4] += r.positionMs
+        }
+        val hourBars = hourLabels.mapIndexed { i, label ->
+            label to hourSums[i] / 3_600_000f
+        }
+
+        // Completion rate: finished / started titles in range, as a percent.
+        val startedTitles = inRange.map { it.mediaId }.distinct().size
+        val completionRate = if (startedTitles > 0) finishedInRange.size * 100 / startedTitles else 0
 
         // Most watched: top 5 mediaIds by summed positionMs in range.
         val mostWatched = inRange
@@ -373,6 +435,11 @@ object WatchStatsLoader {
             libraryTitles = media.size,
             libraryFiles = streams.size,
             libraryBytes = streams.sumOf { it.fileSize },
+            watchedTitles = watchedTitles,
+            streamedBytes = streamedBytes,
+            topChannels = topChannels,
+            hourBars = hourBars,
+            completionRate = completionRate,
         )
     }
 

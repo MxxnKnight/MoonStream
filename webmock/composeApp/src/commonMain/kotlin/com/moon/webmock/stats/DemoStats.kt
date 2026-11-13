@@ -7,6 +7,7 @@ package com.moon.webmock.stats
 private const val MIN = 60_000L
 private const val HOUR = 3_600_000L
 private const val TB_BYTES = 1_099_511_627_776L
+private const val GB_BYTES = 1_073_741_824L
 
 fun demoStats(range: StatsRange): WatchStats = when (range) {
     StatsRange.WEEK -> WatchStats(
@@ -66,6 +67,17 @@ fun demoStats(range: StatsRange): WatchStats = when (range) {
         libraryTitles = 3135,
         libraryFiles = 19312,
         libraryBytes = (18.3 * TB_BYTES).toLong(),
+        watchedTitles = 47,
+        streamedBytes = (2.9 * GB_BYTES).toLong(),
+        topChannels = listOf(
+            ChannelCount("TgStr Movies", 1 * HOUR + 50 * MIN),
+            ChannelCount("TgStr Series", 57 * MIN),
+        ),
+        hourBars = listOf(
+            "12am" to 0.1f, "4am" to 0f, "8am" to 0.1f,
+            "12pm" to 0.3f, "4pm" to 0.4f, "8pm" to 1.9f,
+        ),
+        completionRate = 20,
     )
     StatsRange.MONTH -> WatchStats(
         range = range,
@@ -133,6 +145,18 @@ fun demoStats(range: StatsRange): WatchStats = when (range) {
         libraryTitles = 3135,
         libraryFiles = 19312,
         libraryBytes = (18.3 * TB_BYTES).toLong(),
+        watchedTitles = 47,
+        streamedBytes = (14.6 * GB_BYTES).toLong(),
+        topChannels = listOf(
+            ChannelCount("TgStr Movies", 8 * HOUR + 20 * MIN),
+            ChannelCount("TgStr Series", 4 * HOUR + 10 * MIN),
+            ChannelCount("Anime Hub", 1 * HOUR + 50 * MIN),
+        ),
+        hourBars = listOf(
+            "12am" to 0.8f, "4am" to 0.1f, "8am" to 0.6f,
+            "12pm" to 1.9f, "4pm" to 2.8f, "8pm" to 8.0f,
+        ),
+        completionRate = 13,
     )
     StatsRange.ALL -> WatchStats(
         range = range,
@@ -205,5 +229,18 @@ fun demoStats(range: StatsRange): WatchStats = when (range) {
         libraryTitles = 3135,
         libraryFiles = 19312,
         libraryBytes = (18.3 * TB_BYTES).toLong(),
+        watchedTitles = 47,
+        streamedBytes = (89.2 * GB_BYTES).toLong(),
+        topChannels = listOf(
+            ChannelCount("TgStr Movies", 41 * HOUR),
+            ChannelCount("TgStr Series", 28 * HOUR + 30 * MIN),
+            ChannelCount("Anime Hub", 12 * HOUR + 15 * MIN),
+            ChannelCount("K-Drama", 4 * HOUR + 30 * MIN),
+        ),
+        hourBars = listOf(
+            "12am" to 6.5f, "4am" to 0.8f, "8am" to 4.2f,
+            "12pm" to 11.0f, "4pm" to 16.5f, "8pm" to 47.2f,
+        ),
+        completionRate = 13,
     )
 }
