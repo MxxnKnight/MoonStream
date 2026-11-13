@@ -34,6 +34,21 @@ networking there is intercepted (Maven Central times out, dl.google.com
 fails TLS), so Gradle cannot download the Kotlin/Compose plugins. CI is
 the only build path — same as the app’s APK builds.
 
+## Gotchas (learned setting this up, 2026-11-13)
+
+- **Res package:** the generated `Res` class defaults to a package derived
+  from the Gradle module name (`composeapp.generated.resources`), NOT the
+  Kotlin package. `compose.resources { packageOfResClass = ... }` pins it.
+- **Font accessors are extension properties** (`Res.font.x`) — each font
+  must be imported by name or the reference won’t resolve.
+- **`org.jetbrains.compose.resources.Font` is @Composable** — font
+  families must be loaded inside composables, not top-level vals like
+  the app’s. (And `androidx.compose.ui.text.font.Font` only takes an
+  Android res id — wrong import for resource fonts.)
+- **wasmJs needs its own index.html** in `wasmJsMain/resources/` — the
+  distribution has no entry page without it (site 404s even though the
+  build succeeds).
+
 ## Known fidelity limits
 
 - Fonts render slightly differently on web (Skia) vs Android — same files,
