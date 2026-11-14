@@ -229,6 +229,7 @@ fun ChannelsScreen(
     val scanMap by ScanUiState.channels.collectAsState()
     val totals by ScanUiState.totals.collectAsState()
     val scanning by ScanUiState.scanning.collectAsState()
+    val recheck by ScanUiState.recheck.collectAsState()
     val panelVisible by ScanUiState.panelVisible.collectAsState()
     val panelFinished by ScanUiState.panelFinished.collectAsState()
 
@@ -464,8 +465,9 @@ fun ChannelsScreen(
                 item(key = "scanning") {
                     ScanAllButton(
                         scanning = true,
-                        doneCount = doneCount,
-                        total = scanMap.size.coerceAtLeast(channels.size),
+                        doneCount = recheck?.done ?: doneCount,
+                        total = recheck?.total ?: scanMap.size.coerceAtLeast(channels.size),
+                        statusText = recheck?.let { "Re-checking ${it.done}/${it.total}…" },
                         onClick = ::scanAll,
                         onStop = { ScanService.stop(context) },
                     )
@@ -582,6 +584,19 @@ fun ChannelsScreen(
                             },
                         )
                     } else {
+                        // Re-check (moon's 2026-11-14): runs the unmatched
+                        // list through the current parser + matcher. Sits
+                        // next to Select — the files are right here, so the
+                        // button is too (not buried in Library Tools).
+                        if (unmatched.isNotEmpty() && !scanning) {
+                            LimeTextButton(
+                                text = "Re-check",
+                                onClick = {
+                                    MsToast.show("Re-checking unmatched files…")
+                                    ScanService.startRecheck(context)
+                                },
+                            )
+                        }
                         LimeTextButton(
                             text = "Select",
                             onClick = { unmatchedSelectMode = true },
@@ -659,6 +674,7 @@ fun ChannelsScreen(
             visible = panelVisible,
             finished = panelFinished,
             stats = ScanStats(totals.indexed, totals.existing, totals.unmatched, totals.checked),
+            isRecheck = recheck != null,
             onClose = { ScanUiState.dismissPanel() },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -909,6 +925,7 @@ private fun ScanResultsPanel(
     stats: ScanStats,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    isRecheck: Boolean = false,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -940,7 +957,7 @@ private fun ScanResultsPanel(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "SCAN",
+                        if (isRecheck) "RE-CHECK" else "SCAN",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = MsColors.TextSecondary,
@@ -971,7 +988,12 @@ private fun ScanResultsPanel(
                         Spacer(Modifier.width(8.dp))
                     }
                     Text(
-                        if (finished) "Last scan finished" else "Scanning…",
+                        when {
+                            isRecheck && finished -> "Re-check finished"
+                            isRecheck -> "Re-checking…"
+                            finished -> "Last scan finished"
+                            else -> "Scanning…"
+                        },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MsColors.TextPrimary,
@@ -988,7 +1010,7 @@ private fun ScanResultsPanel(
                     )
                     ScanStatCell(
                         value = stats.existing,
-                        label = "Existing",
+                        label = if (isRecheck) "Skipped" else "Existing",
                         modifier = Modifier.weight(1f),
                     )
                     ScanStatCell(
@@ -1039,6 +1061,8 @@ private fun ScanAllButton(
     total: Int,
     onClick: () -> Unit,
     onStop: () -> Unit = {},
+    /** Re-check runs pass their own status line ("Re-checking 120/1838…"). */
+    statusText: String? = null,
 ) {
     when {
         scanning -> {
@@ -1061,7 +1085,7 @@ private fun ScanAllButton(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    text = "Scanning $doneCount/$total…",
+                    text = statusText ?: "Scanning $doneCount/$total…",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MsColors.TextPrimary,

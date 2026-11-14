@@ -35,6 +35,7 @@ class ScanService : Service() {
         private const val TAG = "ScanService"
         private const val ACTION_START = "com.moon.moonstream.index.scan.START"
         private const val ACTION_STOP = "com.moon.moonstream.index.scan.STOP"
+        private const val ACTION_RECHECK = "com.moon.moonstream.index.scan.RECHECK"
         private const val NOTIF_ID = 42
         private const val CHANNEL_ID = "moonstream_scan"
 
@@ -61,6 +62,14 @@ class ScanService : Service() {
         fun stop(context: Context) {
             context.stopService(Intent(context, ScanService::class.java))
         }
+
+        /** Starts a re-check of the unmatched list (moon's 2026-11-14). */
+        fun startRecheck(context: Context) {
+            val intent = Intent(context, ScanService::class.java).apply {
+                action = ACTION_RECHECK
+            }
+            ContextCompat.startForegroundService(context, intent)
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -81,12 +90,34 @@ class ScanService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (intent?.action != ACTION_START) return START_NOT_STICKY
+        val isRecheck = intent?.action == ACTION_RECHECK
+        if (intent?.action != ACTION_START && !isRecheck) return START_NOT_STICKY
         if (running) {
             Log.i(TAG, "scan already running — ignoring duplicate start")
             return START_NOT_STICKY
         }
         running = true
+
+        // Re-check (moon's 2026-11-14): same foreground service, same Stop
+        // handling — but it re-runs the unmatched list instead of scanning
+        // channels, then shares the post-run backup.
+        if (isRecheck) {
+            ensureChannel()
+            startForegroundCompat(buildNotification("Re-checking unmatched files…", "MoonStream re-check"))
+            scope.launch {
+                try {
+                    ScanManager.recheckUnmatched(this@ScanService)
+                    runAutoBackupIfChanged()
+                } catch (e: Exception) {
+                    Log.e(TAG, "re-check run failed: ${e.message}")
+                } finally {
+                    running = false
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }
+            return START_NOT_STICKY
+        }
 
         val ids = intent.getLongArrayExtra(EXTRA_IDS) ?: longArrayOf()
         val titles = intent.getStringArrayExtra(EXTRA_TITLES) ?: emptyArray()
@@ -118,69 +149,7 @@ class ScanService : Service() {
             try {
                 updateNotification("Scanning ${targets.size} channel(s)…")
                 ScanManager.scanAll(this@ScanService, BackendProvider.backend, targets, mode)
-                try {
-                    val prefs = getSharedPreferences("moonstream_prefs", Context.MODE_PRIVATE)
-                    val autoBackup = prefs.getBoolean("auto_backup_sync", true)
-                    if (autoBackup) {
-                        // Changed-only (moon's 2026-11-06): a scan that finds
-                        // nothing new must not push another copy. The content
-                        // hash ignores the timestamp, so an unchanged library
-                        // hashes identically. Telegram and Gist keep SEPARATE
-                        // hashes, so a failed push on one side retries on the
-                        // next scan even when the other side succeeded.
-                        val json = com.moon.moonstream.backup.BackupManager.buildBackupJson(this@ScanService)
-                        val hash = com.moon.moonstream.backup.BackupManager.contentHash(json)
-                        val lastHash = prefs.getString(
-                            com.moon.moonstream.backup.BackupManager.PREF_LAST_BACKUP_HASH, null,
-                        )
-                        if (hash == lastHash) {
-                            Log.i(TAG, "Library unchanged since last backup — skipping auto backup")
-                        } else {
-                            Log.i(TAG, "Library changed — pushing post-scan automatic cloud backup")
-                            val gz = com.moon.moonstream.backup.BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
-                            val name = com.moon.moonstream.backup.BackupManager.backupFileName()
-                            val result = com.moon.moonstream.backup.BackupManager.uploadBackupReplacingOld(
-                                BackendProvider.backend, gz, name,
-                            )
-                            if (result.messageId != null && result.verified) {
-                                prefs.edit()
-                                    .putLong("last_backup_at", System.currentTimeMillis())
-                                    .putString(com.moon.moonstream.backup.BackupManager.PREF_LAST_BACKUP_HASH, hash)
-                                    .apply()
-                                Log.i(TAG, "Post-scan auto backup pushed (msg ${result.messageId})")
-                            } else if (result.messageId != null) {
-                                // Uploaded but unverified — old backups kept by
-                                // the helper; do NOT stamp last_backup_at/hash,
-                                // so the next scan retries the push.
-                                Log.w(TAG, "Post-scan auto backup uploaded msg ${result.messageId} but unverified")
-                            }
-                        }
-                        // Second backup (moon's 2026-11-06): GitHub Gist, same
-                        // changed-only rule, independent of Telegram's result.
-                        val gistToken = com.moon.moonstream.index.scan.ScanPrefs.getGistToken(this@ScanService)
-                        if (gistToken.isNotBlank()) {
-                            val lastGistHash = prefs.getString(
-                                com.moon.moonstream.backup.GistBackup.PREF_LAST_GIST_HASH, null,
-                            )
-                            if (hash == lastGistHash) {
-                                Log.i(TAG, "Gist backup unchanged — skipping")
-                            } else {
-                                val gistGz = com.moon.moonstream.backup.BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
-                                if (com.moon.moonstream.backup.GistBackup.push(this@ScanService, gistGz)) {
-                                    prefs.edit()
-                                        .putLong(com.moon.moonstream.backup.GistBackup.PREF_LAST_GIST_BACKUP_AT, System.currentTimeMillis())
-                                        .putString(com.moon.moonstream.backup.GistBackup.PREF_LAST_GIST_HASH, hash)
-                                        .apply()
-                                    Log.i(TAG, "Post-scan Gist backup pushed")
-                                } else {
-                                    Log.w(TAG, "Post-scan Gist backup failed — will retry next scan")
-                                }
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Post-scan auto backup failed", e)
-                }
+                runAutoBackupIfChanged()
             } catch (e: Exception) {
                 Log.e(TAG, "scan run failed: ${e.message}")
             } finally {
@@ -198,6 +167,76 @@ class ScanService : Service() {
         super.onDestroy()
     }
 
+    /**
+     * Post-run cloud backup (shared by scans and re-checks): pushes to
+     * Telegram + Gist only when the library actually changed.
+     */
+    private suspend fun runAutoBackupIfChanged() {
+        try {
+            val prefs = getSharedPreferences("moonstream_prefs", Context.MODE_PRIVATE)
+            val autoBackup = prefs.getBoolean("auto_backup_sync", true)
+            if (autoBackup) {
+                // Changed-only (moon's 2026-11-06): a scan that finds
+                // nothing new must not push another copy. The content
+                // hash ignores the timestamp, so an unchanged library
+                // hashes identically. Telegram and Gist keep SEPARATE
+                // hashes, so a failed push on one side retries on the
+                // next scan even when the other side succeeded.
+                val json = com.moon.moonstream.backup.BackupManager.buildBackupJson(this@ScanService)
+                val hash = com.moon.moonstream.backup.BackupManager.contentHash(json)
+                val lastHash = prefs.getString(
+                    com.moon.moonstream.backup.BackupManager.PREF_LAST_BACKUP_HASH, null,
+                )
+                if (hash == lastHash) {
+                    Log.i(TAG, "Library unchanged since last backup — skipping auto backup")
+                } else {
+                    Log.i(TAG, "Library changed — pushing post-scan automatic cloud backup")
+                    val gz = com.moon.moonstream.backup.BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
+                    val name = com.moon.moonstream.backup.BackupManager.backupFileName()
+                    val result = com.moon.moonstream.backup.BackupManager.uploadBackupReplacingOld(
+                        BackendProvider.backend, gz, name,
+                    )
+                    if (result.messageId != null && result.verified) {
+                        prefs.edit()
+                            .putLong("last_backup_at", System.currentTimeMillis())
+                            .putString(com.moon.moonstream.backup.BackupManager.PREF_LAST_BACKUP_HASH, hash)
+                            .apply()
+                        Log.i(TAG, "Post-scan auto backup pushed (msg ${result.messageId})")
+                    } else if (result.messageId != null) {
+                        // Uploaded but unverified — old backups kept by
+                        // the helper; do NOT stamp last_backup_at/hash,
+                        // so the next scan retries the push.
+                        Log.w(TAG, "Post-scan auto backup uploaded msg ${result.messageId} but unverified")
+                    }
+                }
+                // Second backup (moon's 2026-11-06): GitHub Gist, same
+                // changed-only rule, independent of Telegram's result.
+                val gistToken = com.moon.moonstream.index.scan.ScanPrefs.getGistToken(this@ScanService)
+                if (gistToken.isNotBlank()) {
+                    val lastGistHash = prefs.getString(
+                        com.moon.moonstream.backup.GistBackup.PREF_LAST_GIST_HASH, null,
+                    )
+                    if (hash == lastGistHash) {
+                        Log.i(TAG, "Gist backup unchanged — skipping")
+                    } else {
+                        val gistGz = com.moon.moonstream.backup.BackupManager.gzip(json.toString().toByteArray(Charsets.UTF_8))
+                        if (com.moon.moonstream.backup.GistBackup.push(this@ScanService, gistGz)) {
+                            prefs.edit()
+                                .putLong(com.moon.moonstream.backup.GistBackup.PREF_LAST_GIST_BACKUP_AT, System.currentTimeMillis())
+                                .putString(com.moon.moonstream.backup.GistBackup.PREF_LAST_GIST_HASH, hash)
+                                .apply()
+                            Log.i(TAG, "Post-scan Gist backup pushed")
+                        } else {
+                            Log.w(TAG, "Post-scan Gist backup failed — will retry next scan")
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Post-scan auto backup failed", e)
+        }
+    }
+
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -212,9 +251,9 @@ class ScanService : Service() {
         }
     }
 
-    private fun buildNotification(text: String): Notification =
+    private fun buildNotification(text: String, title: String = "MoonStream scan"): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("MoonStream scan")
+            .setContentTitle(title)
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_stat_scan)
             .setOngoing(true)

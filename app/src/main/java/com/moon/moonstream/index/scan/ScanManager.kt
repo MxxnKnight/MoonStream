@@ -52,6 +52,9 @@ object ScanManager {
     private const val PAGE_SIZE = 100
     private const val PAGE_DELAY_MS = 350L
     private const val CHANNEL_DELAY_MS = 1_500L
+    /** Pause after each FRESH provider lookup in a re-check (moon's API
+     *  care) — cache hits are free and unpaced. */
+    private const val RECHECK_PROVIDER_DELAY_MS = 300L
 
     /**
      * How many pages (× [PAGE_SIZE]) past the cursor a quick scan keeps
@@ -162,6 +165,199 @@ object ScanManager {
             ScanUiState.finishRun()
             com.moon.moonstream.util.AppLog.i("SCAN", "Scan complete")
         }
+    }
+
+    /**
+     * Re-check unmatched files with the current parser + matcher (moon's
+     * 2026-11-14): files that failed to match under an older parser get
+     * another chance. Two phases per file — a free local lookup first
+     * (exact title match against the library, same type, same year when
+     * both are known; no API calls), then the normal provider match with
+     * the same 0.75 confidence gate as a scan, so a re-check can never
+     * file something a scan wouldn't. Manual-channel files are skipped
+     * (manual means manual). Runs in the foreground ScanService, so it
+     * survives the app going to the background; Stop cancels it like a
+     * scan, and the results panel reports what it linked.
+     */
+    suspend fun recheckUnmatched(context: Context) {
+        val db = MsDatabase.get(context)
+        val rows = db.unmatchedDao().getAll()
+        if (rows.isEmpty()) return
+        val configs = db.channelConfigDao().all().associateBy { it.channelId }
+        val tmdbKey = ScanPrefs.getTmdbKey(context)
+        val omdbKey = ScanPrefs.getOmdbKey(context)
+        val absoluteAnime = ScanPrefs.isAnimeAbsolute(context)
+        val posterStyle = ScanPrefs.getPosterStyle(context)
+        val fanartKey = ScanPrefs.getFanartKey(context)
+        val fanartCache = mutableMapOf<Int, String?>()
+        val metaCache = mutableMapOf<String, EnrichedMeta?>()
+        val animeCache = mutableMapOf<String, Boolean>()
+
+        com.moon.moonstream.util.AppLog.i("SCAN", "Re-checking ${rows.size} unmatched file(s)")
+        ScanUiState.beginRecheck(rows.size)
+        var linked = 0
+        var skipped = 0
+        var still = 0
+        var checked = 0
+        // Last values already pushed to the UI — deltas only, like a scan.
+        var repLinked = 0
+        var repSkipped = 0
+        var repStill = 0
+        var repChecked = 0
+        try {
+            for ((i, row) in rows.withIndex()) {
+                val cfg = configs[row.channelId]
+                // Manual channel: its files are unmatched by design.
+                if (cfg?.manualOnly == true) {
+                    skipped++
+                    checked++
+                } else if (db.streamDao().exists(row.channelId, row.messageId)) {
+                    // Stale row: the file is already in the library
+                    // (linked by hand while this row lingered).
+                    db.unmatchedDao().deleteByMessage(row.channelId, row.messageId)
+                    linked++
+                    checked++
+                } else {
+                    val target = ScanTarget(
+                        row.channelId,
+                        cfg?.title ?: "Channel",
+                        cfg?.isAnime ?: false,
+                        false,
+                    )
+                    val parsed = FilenameParser.parse(
+                        row.fileName, target.isAnime, row.caption, absoluteAnime,
+                    )
+                    checked++
+                    if (parsed.title.isBlank()) {
+                        skipped++
+                    } else {
+                        // Phase 1: local exact-title lookup — free, no API
+                        // calls. Type must agree (anime counts as series);
+                        // when both years are known they must agree too, so
+                        // a remake can't land on the original's entry.
+                        val norm = normalizeTitle(parsed.title)
+                        val localHit = db.mediaDao().findByNormAnyChannel(norm)
+                            ?.takeIf {
+                                (it.type == parsed.type ||
+                                    (parsed.type == "series" && it.type == "anime")) &&
+                                    (parsed.year == null || it.year == null ||
+                                        it.year.take(4) == parsed.year.take(4))
+                            }
+                        val done = if (localHit != null) {
+                            attachToEntry(
+                                db, localHit.id, target, row.messageId,
+                                row.fileName, row.fileSize, parsed,
+                            )
+                            true
+                        } else {
+                            // Phase 2: provider match, same 0.75 gate as a
+                            // scan. Pace fresh lookups (moon's API care);
+                            // cache hits are free and unpaced.
+                            val cacheBefore = metaCache.size
+                            val ok = indexFile(
+                                db, target, row.messageId, row.fileName,
+                                row.fileSize, row.caption, parsed, tmdbKey,
+                                omdbKey, metaCache, animeCache, posterStyle,
+                                fanartKey, fanartCache,
+                            )
+                            if (metaCache.size > cacheBefore) delay(RECHECK_PROVIDER_DELAY_MS)
+                            ok
+                        }
+                        if (done) {
+                            db.streamDao().setEditDate(
+                                row.channelId, row.messageId, row.editDate,
+                            )
+                            db.unmatchedDao().deleteByMessage(row.channelId, row.messageId)
+                            linked++
+                        } else {
+                            still++
+                        }
+                    }
+                }
+                // Live counters every 10 files so the panel isn't stuck at 0.
+                if (i % 10 == 9 || i == rows.lastIndex) {
+                    ScanUiState.updateRecheck(i + 1)
+                    ScanUiState.addTotals(
+                        linked - repLinked,
+                        skipped - repSkipped,
+                        still - repStill,
+                        checked - repChecked,
+                    )
+                    repLinked = linked
+                    repSkipped = skipped
+                    repStill = still
+                    repChecked = checked
+                }
+            }
+        } finally {
+            // Remainder not yet pushed (avoids double-counting).
+            ScanUiState.addTotals(
+                linked - repLinked,
+                skipped - repSkipped,
+                still - repStill,
+                checked - repChecked,
+            )
+            // New entries may duplicate an older spelling — same merge a
+            // scan runs at the end.
+            if (linked > 0) {
+                try {
+                    mergeDuplicateTitles(db)
+                } catch (e: Exception) {
+                    Log.e(TAG, "re-check merge duplicates failed: ${e.message}")
+                }
+            }
+            ScanUiState.finishRun()
+            com.moon.moonstream.util.AppLog.i(
+                "SCAN",
+                "Re-check complete: $linked linked, $still still unmatched, $skipped skipped",
+            )
+        }
+    }
+
+    /**
+     * Attaches one parsed file to an entry: packs land in the Other bucket
+     * (null S/E), single episodes keep their slot. Shared by the provider
+     * match path in [indexFile] and the re-check's local lookup.
+     */
+    private suspend fun attachToEntry(
+        db: MsDatabase,
+        mediaId: Long,
+        target: ScanTarget,
+        messageId: Long,
+        fileName: String,
+        fileSize: Long,
+        parsed: ParsedMedia,
+    ) {
+        // Packs are not episodes (moon's 2026-11-09): "Complete S01",
+        // "Season 1", "S01 EP 1-5" describe a batch, so they must not be
+        // filed as episode 1 of that season. Dropping BOTH numbers puts the
+        // file in the entry's "Other" bucket, where it is still playable and
+        // the filename still says what it is. A season number without an
+        // episode, or an episode range, is the signal; single episodes keep
+        // their slot.
+        val isPack = parsed.isPack || parsed.episodeEnd != null ||
+            (parsed.season != null && parsed.episode == null)
+        if (isPack) {
+            com.moon.moonstream.util.AppLog.i(
+                "SCAN",
+                "pack '$fileName' (S${parsed.season ?: "?"}E${parsed.episode ?: "?"}" +
+                    "-${parsed.episodeEnd ?: "?"}) → Other bucket",
+            )
+        }
+        db.streamDao().insert(
+            StreamFileEntity(
+                mediaId = mediaId,
+                channelId = target.channelId,
+                messageId = messageId,
+                fileName = fileName,
+                fileSize = fileSize,
+                season = if (isPack) null else parsed.season,
+                episode = if (isPack) null else parsed.episode,
+                episodeEnd = if (isPack) null else parsed.episodeEnd,
+                quality = parsed.qualityBadge,
+            ),
+        )
+        db.mediaDao().refreshAggregates(mediaId, System.currentTimeMillis())
     }
 
     private suspend fun scanOneChannel(
@@ -585,38 +781,10 @@ object ScanManager {
             media.id
         }
 
-        // Packs are not episodes (moon's 2026-11-09): "Complete S01",
-        // "Season 1", "S01 EP 1-5" describe a batch, so they must not be
-        // filed as episode 1 of that season. Dropping BOTH numbers puts the
-        // file in the entry's "Other" bucket, where it is still playable and
-        // the filename still says what it is. A season number without an
-        // episode, or an episode range, is the signal; single episodes keep
-        // their slot. This only runs for files whose metadata matched with
-        // confidence ≥ 0.75 (the gate above) — low-confidence files never
-        // reach an entry at all.
-        val isPack = parsed.isPack || parsed.episodeEnd != null ||
-            (parsed.season != null && parsed.episode == null)
-        if (isPack) {
-            com.moon.moonstream.util.AppLog.i(
-                "SCAN",
-                "pack '$fileName' (S${parsed.season ?: "?"}E${parsed.episode ?: "?"}" +
-                    "-${parsed.episodeEnd ?: "?"}) → Other bucket",
-            )
-        }
-        db.streamDao().insert(
-            StreamFileEntity(
-                mediaId = mediaId,
-                channelId = target.channelId,
-                messageId = messageId,
-                fileName = fileName,
-                fileSize = fileSize,
-                season = if (isPack) null else parsed.season,
-                episode = if (isPack) null else parsed.episode,
-                episodeEnd = if (isPack) null else parsed.episodeEnd,
-                quality = parsed.qualityBadge,
-            ),
-        )
-        db.mediaDao().refreshAggregates(mediaId, now)
+        // Only reached for files whose metadata matched with confidence
+        // ≥ 0.75 (the gate above) — low-confidence files never reach an
+        // entry at all.
+        attachToEntry(db, mediaId, target, messageId, fileName, fileSize, parsed)
         return true
     }
 

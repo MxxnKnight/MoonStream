@@ -45,6 +45,15 @@ object ScanUiState {
     private val _panelFinished = MutableStateFlow(false)
     val panelFinished: StateFlow<Boolean> = _panelFinished.asStateFlow()
 
+    /** Re-check run progress (moon's 2026-11-14): done/total files. Null
+     *  when no re-check is running. Survives finishRun on purpose — the
+     *  results panel reads it to say "Re-check finished" instead of
+     *  "Last scan finished"; cleared by the next run or a dismiss. */
+    data class RecheckState(val done: Int, val total: Int)
+
+    private val _recheck = MutableStateFlow<RecheckState?>(null)
+    val recheck: StateFlow<RecheckState?> = _recheck.asStateFlow()
+
     /** Called by ScanService when a run starts. */
     fun beginRun(targets: List<Pair<Long, String>>) {
         _totals.value = Totals(0, 0, 0, 0)
@@ -54,6 +63,21 @@ object ScanUiState {
         _scanning.value = true
         _panelFinished.value = false
         _panelVisible.value = true
+        _recheck.value = null
+    }
+
+    /** Called by ScanService when a re-check run starts. */
+    fun beginRecheck(total: Int) {
+        _totals.value = Totals(0, 0, 0, 0)
+        _channels.value = emptyMap()
+        _scanning.value = true
+        _panelFinished.value = false
+        _panelVisible.value = true
+        _recheck.value = RecheckState(0, total)
+    }
+
+    fun updateRecheck(done: Int) {
+        _recheck.update { it?.copy(done = done) }
     }
 
     fun updateProgress(channelId: Long, progress: Float) {
@@ -108,6 +132,7 @@ object ScanUiState {
     /** User dismissed the results panel. */
     fun dismissPanel() {
         _panelVisible.value = false
+        _recheck.value = null
         _panelFinished.value = false
         _channels.value = emptyMap()
     }
