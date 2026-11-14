@@ -52,9 +52,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -88,6 +90,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
+import coil.compose.AsyncImage
 import com.moon.moonstream.cache.TdStreamCache
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
@@ -108,6 +111,7 @@ import com.moon.moonstream.ui.player.TdDataSource
 import com.moon.moonstream.ui.player.TdStreamUri
 import com.moon.moonstream.ui.player.TdSubUri
 import com.moon.moonstream.ui.state.LanguagePrefs
+import com.moon.moonstream.ui.theme.Inter
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.index.scan.ScanPrefs
 import com.moon.moonstream.util.AnimeSkip
@@ -131,6 +135,15 @@ private data class TrackOpt(val group: TrackGroup, val index: Int, val label: St
 /** One skippable segment (intro, ending/outro, recap, preview) — the single
  * Skip button shows the label of whichever segment the playhead is inside. */
 private data class SkipSegment(val startMs: Long, val endMs: Long, val label: String)
+
+/** Seekbar marker color for a skip segment (2026-11-14 redesign): intro
+ * amber, ending/outro violet, recap light blue, preview light green. */
+private fun skipSegmentColor(label: String): Color = when {
+    label.contains("Intro") -> Color(0xFFFFAA33)
+    label.contains("Ending") || label.contains("Outro") -> Color(0xFFB388FF)
+    label.contains("Recap") -> Color(0xFF4FC3F7)
+    else -> Color(0xFF81C784)
+}
 
 /** Brightness/volume gesture HUD state. */
 private sealed class GestureHud(val fraction: Float) {
@@ -1073,8 +1086,9 @@ fun PlayerScreen(
         }
     }
 
-    // Double-tap seek feedback (moon's pick 2026-11-02): shows +10s/-10s
-    // with animation; consecutive double-taps accumulate (+20s, +30s...).
+    // Double-tap seek feedback (moon's pick 2026-11-02): shows 10> / <10
+    // with animation; consecutive double-taps accumulate (20>, 30>...).
+    // Arrows, not +10s/-10s (moon's 2026-11-14).
     var seekFeedback by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
     var lastSeekTapTime by remember { mutableStateOf(0L) }
     var seekTapCount by remember { mutableStateOf(0) }
@@ -1394,6 +1408,139 @@ fun PlayerScreen(
         }
     }
 
+    // Show poster for the NextUp card (2026-11-14 redesign): the next
+    // episode is the same show, so the show poster is the right thumb.
+    var posterUrl by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(mediaId) {
+        if (mediaId == 0L) return@LaunchedEffect
+        posterUrl = try {
+            withContext(Dispatchers.IO) { db.mediaDao().getById(mediaId)?.posterUrl }
+        } catch (e: Exception) { null }
+    }
+
+    // Skip-segment data (moon's request 2026-11-02): fetched once per
+    // episode — Anime -> AniSkip, then Anime Skip (both need the
+    // AniList id; Anime Skip also needs its client id in Settings ->
+    // Metadata). Series/movies -> IntroDB, then SkipDB (both need the
+    // IMDb id; SkipDB needs no key). No manual fallback — no API data
+    // = no button. Lives up here (not next to the Skip button) so the
+    // seekbar can draw the segment markers too (2026-11-14 redesign).
+    var skipTimes by remember { mutableStateOf<AniSkip.SkipTimes?>(null) }
+    var introSegs by remember { mutableStateOf<IntroDb.Segments?>(null) }
+    var skipSource by remember { mutableStateOf<String?>(null) }
+    var skipFetched by remember { mutableStateOf(false) }
+
+    // Fetch skip data once per episode.
+    // Race fix (moon's bug 2026-11-09, Alice in Borderland S1E1): the file
+    // list loads from the DB a moment AFTER the player opens (it starts
+    // empty), so the first run saw season/episode null and skipped the
+    // fetch — and skipFetched then blocked the retry once the list
+    // arrived. So wait for the list: return WITHOUT marking fetched, and
+    // the effect re-runs when filesLoaded flips true.
+    LaunchedEffect(mediaId, currentGroup?.episode, filesLoaded) {
+        if (skipFetched) return@LaunchedEffect
+        if (!filesLoaded) return@LaunchedEffect
+        skipFetched = true
+        // Season/episode fallback chain (moon's fix 2026-11-04): currentGroup
+        // can be null (e.g. movies have no season/episode), so fall back to
+        // the stream file's own values from the DB.
+        val season = currentGroup?.season ?: currentFile?.season
+        val ep = currentGroup?.episode ?: currentFile?.episode
+        val media = try {
+            withContext(Dispatchers.IO) { db.mediaDao().getById(mediaId) }
+        } catch (e: Exception) { null }
+        val isAnime = media?.type == "anime"
+        val isMovie = media?.type == "movie"
+        // Anime → AniSkip via AniList ID (mapped from Kitsu at index),
+        // then Anime Skip when AniSkip has no opening. A provider wins
+        // when it has ANY skippable segment (intro, ending, recap,
+        // preview) — not just an intro (moon's 2026-11-10: an episode
+        // with only an ending must not be discarded).
+        if (isAnime && ep != null && !media?.anilistId.isNullOrBlank()) {
+            val durSecs = duration.coerceAtLeast(1L) / 1000
+            val aniskip = AniSkip.getSkipTimes(media!!.anilistId!!, ep, durSecs)
+            if (aniskip != null && (aniskip.opEnd != null || aniskip.edEnd != null || aniskip.recapEnd != null)) {
+                skipTimes = aniskip
+                skipSource = "AniSkip"
+            } else {
+                val clientId = ScanPrefs.getAnimeSkipClientId(context)
+                val animeskip = AnimeSkip.getSkipTimes(media.anilistId!!, season, ep, clientId)
+                if (animeskip != null && (animeskip.opEnd != null || animeskip.edEnd != null || animeskip.recapEnd != null || animeskip.previewEnd != null)) {
+                    skipTimes = AniSkip.SkipTimes(animeskip.opStart, animeskip.opEnd, animeskip.edStart, animeskip.edEnd, animeskip.recapStart, animeskip.recapEnd, animeskip.previewStart, animeskip.previewEnd)
+                    skipSource = "AnimeSkip"
+                }
+            }
+            return@LaunchedEffect
+        }
+        // Series/movies → IntroDB via IMDb ID, then SkipDB when IntroDB
+        // has no segment at all. Same "any segment wins" rule: an
+        // IntroDB answer with only an outro must not fall through and
+        // lose it.
+        val imdb = media?.imdbId
+        if (!imdb.isNullOrBlank()) {
+            if (!isMovie && (season == null || ep == null)) {
+                // Can't query IntroDB for TV without season+episode —
+                // it would 400. Log why instead of a silent failure.
+                AppLog.i("PLAYER", "Skip: no season/episode for series, IntroDB skipped (S=$season E=$ep)")
+            } else {
+                val introdb = IntroDb.getSegments(
+                    imdbId = imdb,
+                    season = if (isMovie) null else season,
+                    episode = if (isMovie) null else ep,
+                    isMovie = isMovie,
+                )
+                if (introdb != null && (introdb.introEndSec != null || introdb.outroEndSec != null)) {
+                    introSegs = introdb
+                    skipSource = "IntroDB"
+                } else {
+                    val skipdb = SkipDb.getSegments(
+                        imdbId = imdb,
+                        season = if (isMovie) null else season,
+                        episode = if (isMovie) null else ep,
+                        isMovie = isMovie,
+                    )
+                    if (skipdb != null && (skipdb.introEndSec != null || skipdb.outroEndSec != null || skipdb.recapEndSec != null || skipdb.previewEndSec != null)) {
+                        introSegs = IntroDb.Segments(skipdb.introStartSec, skipdb.introEndSec, skipdb.outroStartSec, skipdb.outroEndSec, skipdb.recapStartSec, skipdb.recapEndSec, skipdb.previewStartSec, skipdb.previewEndSec)
+                        skipSource = "SkipDB"
+                    }
+                }
+            }
+        } else {
+            AppLog.i("PLAYER", "Skip: no anilistId/imdbId, no button")
+        }
+    }
+
+    // One Skip button for EVERY skippable segment (moon's 2026-11-10):
+    // intro, ending/outro, recap, preview — the label follows whichever
+    // segment the playhead is inside. The data already came from the
+    // APIs above; this just turns it into one list in play order.
+    // A segment is kept only when it has a real end after its start.
+    val skipSegments = remember(skipTimes, introSegs) {
+        fun seg(startSec: Double?, endSec: Double?, label: String): SkipSegment? {
+            val s = startSec?.let { (it * 1000).toLong() } ?: return null
+            val e = endSec?.let { (it * 1000).toLong() } ?: return null
+            if (e <= s) return null
+            return SkipSegment(s, e, label)
+        }
+        buildList {
+            skipTimes?.let { t ->
+                seg(t.opStart, t.opEnd, "Skip Intro")?.let { add(it) }
+                seg(t.edStart, t.edEnd, "Skip Ending")?.let { add(it) }
+                seg(t.recapStart, t.recapEnd, "Skip Recap")?.let { add(it) }
+                seg(t.previewStart, t.previewEnd, "Skip Preview")?.let { add(it) }
+            }
+            introSegs?.let { g ->
+                seg(g.introStartSec, g.introEndSec, "Skip Intro")?.let { add(it) }
+                seg(g.outroStartSec, g.outroEndSec, "Skip Outro")?.let { add(it) }
+                seg(g.recapStartSec, g.recapEndSec, "Skip Recap")?.let { add(it) }
+                seg(g.previewStartSec, g.previewEndSec, "Skip Preview")?.let { add(it) }
+            }
+        }.sortedBy { it.startMs }
+    }
+    // Show ONLY while the playhead is inside a segment. No data = no button.
+    val currentSegment = skipSegments.firstOrNull { currentPosition in it.startMs until it.endMs }
+    val showSkip = currentSegment != null && !controlsLocked
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1412,7 +1559,7 @@ fun PlayerScreen(
                     },
                     onDoubleTap = { offset ->
                         // Double-tap left/right: ∓10s with animated feedback.
-                        // Consecutive double-taps accumulate (+20s, +30s...).
+                        // Consecutive double-taps accumulate (20>, 30>...).
                         // Disabled while locked or trimming.
                         if (!controlsLocked && !showTrimPanel) {
                             val forward = offset.x > size.width / 2
@@ -1537,21 +1684,23 @@ fun PlayerScreen(
                     onClick = onClose,
                 )
                 Spacer(Modifier.width(12.dp))
-                // Title pill: tappable → playlist/episodes sheet when available.
+                // Title pill (2026-11-14 redesign): Inter SemiBold, borderless,
+                // tappable → playlist/episodes sheet when available.
                 Surface(
                     onClick = {
                         if (showEpisodesBtn) sheet = PlayerSheet.EPISODES
                         else if (showPlaylistBtn) sheet = PlayerSheet.PLAYLIST
                     },
                     shape = RoundedCornerShape(50),
-                    color = Color.Black.copy(alpha = 0.45f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                    color = Color.White.copy(alpha = 0.12f),
+                    modifier = Modifier.playerPressScale(),
                 ) {
                     Text(
                         text = title,
                         color = Color.White,
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            fontFamily = FontFamily.Monospace
+                            fontFamily = Inter,
+                            fontWeight = FontWeight.SemiBold,
                         ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -1634,7 +1783,7 @@ fun PlayerScreen(
                     onClick = { if (isPlaying) player.pause() else player.play() },
                     shape = CircleShape,
                     color = Color.White.copy(alpha = 0.14f),
-                    modifier = Modifier.size(76.dp),
+                    modifier = Modifier.size(76.dp).playerPressScale(),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -1711,18 +1860,6 @@ fun PlayerScreen(
                                 enabled = !showTrimPanel,
                             )
                         }
-                        // Resume from saved position (moon's pick 2026-11-02):
-                        // shown when there's a saved spot and we're far from it.
-                        if (savedResumePos > 10_000L &&
-                            kotlin.math.abs(currentPosition - savedResumePos) > 10_000L
-                        ) {
-                            PlayerIconButton(
-                                icon = Icons.Filled.History,
-                                contentDescription = "Resume from saved position",
-                                onClick = { player.seekTo(savedResumePos) },
-                                enabled = !showTrimPanel,
-                            )
-                        }
                         // Aspect button shows the current mode as its label
                         // (mpvex-style stateful button).
                         Surface(
@@ -1731,7 +1868,7 @@ fun PlayerScreen(
                             shape = RoundedCornerShape(50),
                             color = Color.White.copy(alpha = 0.12f),
                             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-                            modifier = Modifier.height(45.dp),
+                            modifier = Modifier.height(45.dp).playerPressScale(),
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1794,6 +1931,7 @@ fun PlayerScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 trimStartMs = trimStartMs,
                                 trimEndMs = trimEndMs,
+                                segments = skipSegments,
                             )
                         }
                         Text(
@@ -1853,24 +1991,19 @@ fun PlayerScreen(
             )
         }
 
-        // Brightness/volume gesture HUD (mpvex-style): slim vertical slider
-        // at the screen edge — left edge for brightness, right for volume.
+        // Gesture HUD (2026-11-14 redesign): slim pill under the top bar,
+        // not the big vertical edge bar.
         gestureHud?.let { hud ->
-            val edge = if (hud is GestureHud.Brightness) Alignment.CenterStart
-            else Alignment.CenterEnd
             Box(
                 modifier = Modifier.fillMaxSize(),
-                contentAlignment = edge,
+                contentAlignment = Alignment.TopCenter,
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                Row(
                     modifier = Modifier
-                        .padding(horizontal = 20.dp)
-                        .background(
-                            Color.Black.copy(alpha = 0.55f),
-                            RoundedCornerShape(18.dp),
-                        )
-                        .padding(horizontal = 14.dp, vertical = 14.dp),
+                        .padding(top = if (controlsVisible) 76.dp else 16.dp)
+                        .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
                         when (hud) {
@@ -1879,33 +2012,33 @@ fun PlayerScreen(
                         },
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(18.dp),
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.width(10.dp))
                     Box(
                         modifier = Modifier
-                            .width(6.dp)
-                            .height(120.dp)
+                            .width(120.dp)
+                            .height(4.dp)
                             .background(
                                 Color.White.copy(alpha = 0.25f),
-                                RoundedCornerShape(3.dp),
+                                RoundedCornerShape(50),
                             ),
                     ) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .fillMaxHeight(hud.fraction.coerceIn(0f, 1f))
-                                .align(Alignment.BottomCenter)
-                                .background(MsColors.Accent, RoundedCornerShape(3.dp)),
+                                .fillMaxWidth(hud.fraction.coerceIn(0f, 1f))
+                                .fillMaxHeight()
+                                .background(MsColors.Accent, RoundedCornerShape(50)),
                         )
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.width(10.dp))
                     Text(
                         "${(hud.fraction * 100).toInt()}%",
                         color = Color.White,
                         style = MaterialTheme.typography.labelMedium.copy(
                             fontFamily = FontFamily.Monospace
                         ),
+                        modifier = Modifier.width(36.dp),
                     )
                 }
             }
@@ -1929,7 +2062,7 @@ fun PlayerScreen(
             }
         }
 
-        // Double-tap seek feedback: animated +10s/-10s pill on the tapped side.
+        // Double-tap seek feedback: animated 10> / <10 text on the tapped side.
         AnimatedVisibility(
             visible = seekFeedback != null,
             enter = fadeIn(animationSpec = tween(150)) +
@@ -1944,7 +2077,7 @@ fun PlayerScreen(
                 ) {
                     // Text only, no background or outline (moon's request 2026-11-04).
                     Text(
-                        "${if (forward) "+" else "-"}${secs}s",
+                        if (forward) "${secs}>" else "<${secs}",
                         color = Color.White.copy(alpha = 0.7f),
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontFamily = FontFamily.Monospace,
@@ -1978,218 +2111,139 @@ fun PlayerScreen(
         }
 
         // Next-up card (TMPlayer pattern): last 30s of an episode.
-        // Hidden while controls are locked.
+        // Hidden while controls are locked. Redesign (2026-11-14): poster
+        // thumb + accent "Play now" pill, stacked above the Skip pill.
         if (showNextUp && nextUpFile != null && nextGroup != null && !controlsLocked) {
-            Card(
+            Surface(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 150.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MsColors.Surface),
+                    .width(320.dp)
+                    .padding(end = 16.dp, bottom = if (controlsVisible) 168.dp else 88.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = MsColors.Surface,
+                border = BorderStroke(1.dp, MsColors.CardBorder),
             ) {
-                Column(Modifier.padding(14.dp)) {
-                    Text(
-                        "Up next",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MsColors.TextSecondary,
-                    )
-                    Text(
-                        nextGroup.label(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MsColors.TextPrimary,
-                    )
-                    Text(
-                        "Starting in ${nextUpSecs}s",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MsColors.TextSecondary,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { nextUpDismissed = true }) {
-                            Text("Hide", color = MsColors.TextSecondary)
-                        }
-                        Button(
-                            onClick = { switchEpisode(nextUpFile) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MsColors.Accent,
-                                contentColor = Color.Black,
-                            ),
-                        ) {
-                            Text("Play now")
-                        }
-                    }
-                }
-            }
-        }
-
-        // Skip Intro button (moon's request 2026-11-02): Netflix-style pill
-        // at bottom-right. Anime → AniSkip, then Anime Skip (both need the
-        // AniList id; Anime Skip also needs its client id in Settings →
-        // Metadata). Series/movies → IntroDB, then SkipDB (both need the
-        // IMDb id; SkipDB needs no key). No manual fallback — no API data
-        // = no button.
-        var skipTimes by remember { mutableStateOf<AniSkip.SkipTimes?>(null) }
-        var introSegs by remember { mutableStateOf<IntroDb.Segments?>(null) }
-        var skipSource by remember { mutableStateOf<String?>(null) }
-        var skipFetched by remember { mutableStateOf(false) }
-
-        // Fetch skip data once per episode.
-        // Race fix (moon's bug 2026-11-09, Alice in Borderland S1E1): the file
-        // list loads from the DB a moment AFTER the player opens (it starts
-        // empty), so the first run saw season/episode null and skipped the
-        // fetch — and skipFetched then blocked the retry once the list
-        // arrived. So wait for the list: return WITHOUT marking fetched, and
-        // the effect re-runs when filesLoaded flips true.
-        LaunchedEffect(mediaId, currentGroup?.episode, filesLoaded) {
-            if (skipFetched) return@LaunchedEffect
-            if (!filesLoaded) return@LaunchedEffect
-            skipFetched = true
-            // Season/episode fallback chain (moon's fix 2026-11-04): currentGroup
-            // can be null (e.g. movies have no season/episode), so fall back to
-            // the stream file's own values from the DB.
-            val season = currentGroup?.season ?: currentFile?.season
-            val ep = currentGroup?.episode ?: currentFile?.episode
-            val media = try {
-                withContext(Dispatchers.IO) { db.mediaDao().getById(mediaId) }
-            } catch (e: Exception) { null }
-            val isAnime = media?.type == "anime"
-            val isMovie = media?.type == "movie"
-            // Anime → AniSkip via AniList ID (mapped from Kitsu at index),
-            // then Anime Skip when AniSkip has no opening. A provider wins
-            // when it has ANY skippable segment (intro, ending, recap,
-            // preview) — not just an intro (moon's 2026-11-10: an episode
-            // with only an ending must not be discarded).
-            if (isAnime && ep != null && !media?.anilistId.isNullOrBlank()) {
-                val durSecs = duration.coerceAtLeast(1L) / 1000
-                val aniskip = AniSkip.getSkipTimes(media!!.anilistId!!, ep, durSecs)
-                if (aniskip != null && (aniskip.opEnd != null || aniskip.edEnd != null || aniskip.recapEnd != null)) {
-                    skipTimes = aniskip
-                    skipSource = "AniSkip"
-                } else {
-                    val clientId = ScanPrefs.getAnimeSkipClientId(context)
-                    val animeskip = AnimeSkip.getSkipTimes(media.anilistId!!, season, ep, clientId)
-                    if (animeskip != null && (animeskip.opEnd != null || animeskip.edEnd != null || animeskip.recapEnd != null || animeskip.previewEnd != null)) {
-                        skipTimes = AniSkip.SkipTimes(animeskip.opStart, animeskip.opEnd, animeskip.edStart, animeskip.edEnd, animeskip.recapStart, animeskip.recapEnd, animeskip.previewStart, animeskip.previewEnd)
-                        skipSource = "AnimeSkip"
-                    }
-                }
-                return@LaunchedEffect
-            }
-            // Series/movies → IntroDB via IMDb ID, then SkipDB when IntroDB
-            // has no segment at all. Same "any segment wins" rule: an
-            // IntroDB answer with only an outro must not fall through and
-            // lose it.
-            val imdb = media?.imdbId
-            if (!imdb.isNullOrBlank()) {
-                if (!isMovie && (season == null || ep == null)) {
-                    // Can't query IntroDB for TV without season+episode —
-                    // it would 400. Log why instead of a silent failure.
-                    AppLog.i("PLAYER", "Skip: no season/episode for series, IntroDB skipped (S=$season E=$ep)")
-                } else {
-                    val introdb = IntroDb.getSegments(
-                        imdbId = imdb,
-                        season = if (isMovie) null else season,
-                        episode = if (isMovie) null else ep,
-                        isMovie = isMovie,
-                    )
-                    if (introdb != null && (introdb.introEndSec != null || introdb.outroEndSec != null)) {
-                        introSegs = introdb
-                        skipSource = "IntroDB"
-                    } else {
-                        val skipdb = SkipDb.getSegments(
-                            imdbId = imdb,
-                            season = if (isMovie) null else season,
-                            episode = if (isMovie) null else ep,
-                            isMovie = isMovie,
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Local val: a delegated var can't be smart-cast.
+                    val poster = posterUrl
+                    if (poster != null) {
+                        AsyncImage(
+                            model = poster,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(48.dp, 72.dp)
+                                .clip(RoundedCornerShape(8.dp)),
                         )
-                        if (skipdb != null && (skipdb.introEndSec != null || skipdb.outroEndSec != null || skipdb.recapEndSec != null || skipdb.previewEndSec != null)) {
-                            introSegs = IntroDb.Segments(skipdb.introStartSec, skipdb.introEndSec, skipdb.outroStartSec, skipdb.outroEndSec, skipdb.recapStartSec, skipdb.recapEndSec, skipdb.previewStartSec, skipdb.previewEndSec)
-                            skipSource = "SkipDB"
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp, 72.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xFF1B2A4A), Color(0xFF05070D)),
+                                    ),
+                                    RoundedCornerShape(8.dp),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                mediaTitle.firstOrNull()?.toString() ?: "?",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Up next",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MsColors.TextSecondary,
+                        )
+                        Text(
+                            nextGroup.label(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MsColors.TextPrimary,
+                            maxLines = 1,
+                        )
+                        Text(
+                            "Starting in ${nextUpSecs}s",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MsColors.TextSecondary,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                onClick = { switchEpisode(nextUpFile) },
+                                shape = RoundedCornerShape(50),
+                                color = MsColors.Accent,
+                                modifier = Modifier.playerPressScale(),
+                            ) {
+                                Text(
+                                    "Play now",
+                                    color = MsColors.OnAccent,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                "Hide",
+                                color = MsColors.TextSecondary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.clickable { nextUpDismissed = true },
+                            )
                         }
                     }
                 }
-            } else {
-                AppLog.i("PLAYER", "Skip: no anilistId/imdbId, no button")
             }
         }
 
-        // One Skip button for EVERY skippable segment (moon's 2026-11-10):
-        // intro, ending/outro, recap, preview — the label follows whichever
-        // segment the playhead is inside. The data already came from the
-        // APIs above; this just turns it into one list in play order.
-        // A segment is kept only when it has a real end after its start.
-        val skipSegments = remember(skipTimes, introSegs) {
-            fun seg(startSec: Double?, endSec: Double?, label: String): SkipSegment? {
-                val s = startSec?.let { (it * 1000).toLong() } ?: return null
-                val e = endSec?.let { (it * 1000).toLong() } ?: return null
-                if (e <= s) return null
-                return SkipSegment(s, e, label)
-            }
-            buildList {
-                skipTimes?.let { t ->
-                    seg(t.opStart, t.opEnd, "Skip Intro")?.let { add(it) }
-                    seg(t.edStart, t.edEnd, "Skip Ending")?.let { add(it) }
-                    seg(t.recapStart, t.recapEnd, "Skip Recap")?.let { add(it) }
-                    seg(t.previewStart, t.previewEnd, "Skip Preview")?.let { add(it) }
-                }
-                introSegs?.let { g ->
-                    seg(g.introStartSec, g.introEndSec, "Skip Intro")?.let { add(it) }
-                    seg(g.outroStartSec, g.outroEndSec, "Skip Outro")?.let { add(it) }
-                    seg(g.recapStartSec, g.recapEndSec, "Skip Recap")?.let { add(it) }
-                    seg(g.previewStartSec, g.previewEndSec, "Skip Preview")?.let { add(it) }
-                }
-            }.sortedBy { it.startMs }
-        }
-        // Show ONLY while the playhead is inside a segment. No data = no button.
-        val currentSegment = skipSegments.firstOrNull { currentPosition in it.startMs until it.endMs }
-        val showSkip = currentSegment != null && !controlsLocked
+        // Skip pill (2026-11-14 redesign): soft translucent capsule.
         if (showSkip) {
             // currentSegment is non-null here (showSkip requires it).
             val seg = currentSegment!!
-            Button(
+            SkipPill(
+                label = seg.label,
+                icon = Icons.Filled.SkipNext,
                 onClick = {
                     player.seekTo(seg.endMs)
                     AppLog.i("PLAYER", "Skip ${seg.label}: ${currentPosition/1000}s → ${seg.endMs/1000}s ($skipSource)")
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 100.dp),
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MsColors.Accent,
-                    contentColor = MsColors.OnAccent,
-                ),
-            ) {
-                Text(seg.label, fontWeight = FontWeight.Bold)
-            }
+                    .padding(end = 16.dp, bottom = if (controlsVisible) 104.dp else 28.dp),
+            )
         }
 
-        // Resume button (moon's request 2026-11-09): bottom-left, above the
-        // seekbar, mirroring Skip Intro on the right. Shows when there's a
+        // Resume pill (moon's request 2026-11-09): bottom-left, above the
+        // seekbar, mirroring Skip on the right. Shows when there's a
         // saved spot and we're still near the start — so even if auto-resume
         // didn't jump, one tap takes him to where he left off. Hides once
-        // he's at/past the spot (or taps it).
+        // he's at/past the spot (or taps it). Soft capsule since the
+        // 2026-11-14 redesign.
         if (savedResumePos > 10_000L &&
             currentPosition < savedResumePos - 10_000L &&
             !controlsLocked
         ) {
-            Button(
+            SkipPill(
+                label = "Resume ${formatTime(savedResumePos)}",
+                icon = Icons.Filled.History,
                 onClick = {
                     player.seekTo(savedResumePos)
                     AppLog.i("PLAYER", "Resume button: ${currentPosition / 1000}s → ${savedResumePos / 1000}s")
                 },
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 16.dp, bottom = 100.dp),
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MsColors.Accent,
-                    contentColor = MsColors.OnAccent,
-                ),
-            ) {
-                Text("Resume ${formatTime(savedResumePos)}", fontWeight = FontWeight.Bold)
-            }
+                    .padding(start = 16.dp, bottom = if (controlsVisible) 104.dp else 28.dp),
+            )
         }
 
         // Bottom sheets: subs / audio / playlist / episodes.
@@ -2888,7 +2942,7 @@ private fun PlayerIconButton(
         enabled = enabled,
         shape = CircleShape,
         color = Color.White.copy(alpha = 0.12f),
-        modifier = modifier.size(size),
+        modifier = modifier.size(size).playerPressScale(),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -2898,6 +2952,79 @@ private fun PlayerIconButton(
                 tint = if (active) MsColors.Accent
                     else Color.White.copy(alpha = if (enabled) 1f else 0.35f),
                 modifier = Modifier.size(iconSize),
+            )
+        }
+    }
+}
+
+/**
+ * iOS-style press feedback (2026-11-14 redesign): the button shrinks to
+ * 0.9 while pressed. The tracker never consumes the down event, so the
+ * button's own onClick still fires.
+ */
+@Composable
+private fun Modifier.playerPressScale(): Modifier {
+    var pressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.9f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "pressScale",
+    )
+    return this
+        .graphicsLayer { scaleX = scale; scaleY = scale }
+        .pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    pressed = true
+                    var up = false
+                    while (!up) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id }
+                            ?: continue
+                        if (!change.pressed) up = true
+                    }
+                    pressed = false
+                }
+            }
+        }
+}
+
+/**
+ * Soft translucent capsule for the floating Skip / Resume pills
+ * (2026-11-14 redesign): white 14% fill, white 20% border, 50dp corners,
+ * icon + SemiBold label, press-scale.
+ */
+@Composable
+private fun SkipPill(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = Color.White.copy(alpha = 0.14f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+        modifier = modifier.playerPressScale(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                label,
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
             )
         }
     }
@@ -2930,6 +3057,9 @@ private fun MoonSeekBar(
      * drawn as an Accent band so the cut is visible on the bar. */
     trimStartMs: Long? = null,
     trimEndMs: Long? = null,
+    /** Skip segments (2026-11-14 redesign): drawn as colored markers on
+     * the bar, and named in the scrub bubble while the finger is inside. */
+    segments: List<SkipSegment> = emptyList(),
 ) {
     var isScrubbing by remember { mutableStateOf(false) }
     var scrubMs by remember { mutableStateOf<Long?>(null) }
@@ -3023,6 +3153,29 @@ private fun MoonSeekBar(
                     .background(MsColors.Accent),
             )
         }
+        // Segment markers (2026-11-14 redesign): drawn above the played
+        // fill so they stay visible even after the segment has played.
+        segments.forEach { seg ->
+            if (durationMs > 0L && seg.endMs > seg.startMs) {
+                val startFrac = (seg.startMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                val endFrac = (seg.endMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                if (endFrac > startFrac) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .fillMaxWidth(endFrac - startFrac)
+                            .offset {
+                                IntOffset(
+                                    (startFrac * constraints.maxWidth).roundToInt(), 0
+                                )
+                            }
+                            .height(barHeight + 2.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(skipSegmentColor(seg.label).copy(alpha = 0.9f)),
+                    )
+                }
+            }
+        }
         // Trimmer range band (moon's pick 2026-11-10): the marked clip,
         // drawn above the base track so it's visible even before any
         // playback. Only when both ends are set and in order.
@@ -3040,6 +3193,45 @@ private fun MoonSeekBar(
                         .background(MsColors.Accent.copy(alpha = 0.85f))
                         .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(50)),
                 )
+            }
+        }
+        // Scrub bubble (2026-11-14 redesign): target time above the thumb,
+        // with the segment name when the finger is inside one.
+        if (isScrubbing && scrubMs != null && durationMs > 0L) {
+            val frac = (scrubMs!!.toFloat() / durationMs).coerceIn(0f, 1f)
+            val scrubSeg = segments.firstOrNull { scrubMs!! in it.startMs..it.endMs }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .offset {
+                        val maxW = constraints.maxWidth
+                        val bw = 76.dp.toPx()
+                        val x = (frac * maxW - bw / 2)
+                            .coerceIn(0f, (maxW - bw).coerceAtLeast(0f))
+                        IntOffset(x.roundToInt(), (-54.dp).toPx().roundToInt())
+                    }
+                    .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        formatTime(scrubMs!!),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontFamily = FontFamily.Monospace,
+                        ),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (scrubSeg != null) {
+                        Text(
+                            scrubSeg.label.removePrefix("Skip "),
+                            color = skipSegmentColor(scrubSeg.label),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
             }
         }
     }
