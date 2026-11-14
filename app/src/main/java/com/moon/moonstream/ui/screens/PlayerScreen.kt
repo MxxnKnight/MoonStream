@@ -2715,12 +2715,16 @@ fun PlayerScreen(
 
         // Loading spinner while the stream buffers (moon's bug 2026-11-02:
         // Full-screen buffering loader (moon's request 2026-11-03):
-        // shows during initial load AND when seeks take time. Uses a small
-        // delay (400ms) so quick seeks don't flicker the loader.
+        // shows during initial load AND when seeks take time. Uses a delay
+        // so quick seeks don't flicker the loader — 800ms, not 400ms:
+        // the G96's decoder restart after an in-buffer seek runs past
+        // 400ms (moon's 2026-11-13 video still flashed the spinner), while
+        // a real network stall lasts seconds, so the extra wait costs
+        // nothing there (moon's pick 2026-11-14).
         var showBufferLoader by remember { mutableStateOf(false) }
         LaunchedEffect(isBuffering) {
             if (isBuffering) {
-                kotlinx.coroutines.delay(400)
+                kotlinx.coroutines.delay(800)
                 // Re-check: still buffering after the delay?
                 if (isBuffering) showBufferLoader = true
             } else {
