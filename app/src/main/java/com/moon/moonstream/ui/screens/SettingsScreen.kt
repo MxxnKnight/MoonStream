@@ -1556,8 +1556,11 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             CreditSectionHeader("Inspired by")
             IosGroup {
                 CreditRow("mpvEx", "The player UI reference")
+                CreditRow("TMPlayer", "The in-app player model")
                 CreditRow("Nuvio", "The bottom pill and library look")
                 CreditRow("Stremio", "The streaming-app idea")
+                CreditRow("TeleStremio", "The Telegram streaming idea")
+                CreditRow("Nox Media", "Design inspiration")
                 CreditRow("iOS / Cupertino", "The design language")
                 CreditRow("Lucide", "The icons", showDivider = false)
             }
