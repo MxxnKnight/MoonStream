@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,22 +28,20 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.ContentCut
-import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistPlay
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.SkipNext
@@ -59,7 +58,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -86,7 +84,7 @@ import kotlin.math.abs
 // so portrait shows what changed + how to try it; rotate to play.
 // ---------------------------------------------------------------------------
 
-private enum class MockSheet { SUBS, AUDIO, EPISODES }
+private enum class MockSheet { SUBS, AUDIO, EPISODES, SUBLINES, PLAYLIST }
 
 private sealed interface MockHud {
     val fraction: Float
@@ -111,6 +109,14 @@ private val mockChanges = listOf(
         "Thumb + title + countdown + Play now, in the app's card style.",
     "Press feedback" to
         "Buttons shrink slightly while pressed, iOS-style.",
+    "Trimmer drawer" to
+        "Scissors button: mark Start/End, drag the range slider, Preview loops the clip, Save Clip fakes a save.",
+    "Full subtitle sheet" to
+        "Tracks, All lines, ±250ms delay, and Appearance — size, stroke, colors, position — all live on the subtitle line.",
+    "Subtitle lines" to
+        "All lines… lists the dialogue — tap a line to jump there.",
+    "Playlist drawer" to
+        "The List button shows the episode's streams by quality.",
 )
 
 @Composable
@@ -201,7 +207,9 @@ private fun PlayerPortraitNotes() {
                 "Try: play/pause, drag the seekbar, double-tap the left/right " +
                     "half for -10s/+10s, swipe up/down on the left half for " +
                     "brightness and the right half for volume, swipe sideways " +
-                    "to seek, and open Subtitles, Audio and Episodes.",
+                    "to seek, open Subtitles (appearance controls work live), " +
+                    "Audio, Episodes and Playlist, and the scissors button " +
+                    "for the trimmer.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MsColors.TextSecondary,
             )
@@ -225,6 +233,25 @@ private fun PlayerLandscapeMock() {
     val audioTracks = listOf("Japanese · AAC 5.1", "Japanese · EAC3 5.1", "English · AAC 2.0")
     val episodes = (1..8).map { "Episode $it" }
     val aspects = listOf("FIT", "FILL", "STRETCH")
+    val subLines = listOf(
+        MockSubLine(12_000L, "Arisu: Another day, another game."),
+        MockSubLine(47_000L, "Arisu: This world... it's not the one we knew."),
+        MockSubLine(125_000L, "Usagi: We have to keep moving. The lasers don't wait."),
+        MockSubLine(221_000L, "Chishiya: Every game has a rule. Find it."),
+        MockSubLine(312_000L, "Arisu: The beach... it has to mean something."),
+        MockSubLine(453_000L, "Kuina: Trust me. I've done this before."),
+        MockSubLine(598_000L, "Arisu: If we stop, we die. That's the game."),
+        MockSubLine(754_000L, "Usagi: Then we don't stop. Not ever."),
+        MockSubLine(920_000L, "Chishiya: The answer was in front of us all along."),
+        MockSubLine(1_082_000L, "Arisu: One more game. Just one more."),
+        MockSubLine(1_245_000L, "Usagi: Look — the gate is open."),
+        MockSubLine(1_371_000L, "Arisu: This isn't over. It's just the start."),
+    )
+    val playlistEntries = listOf(
+        MockPlaylistEntry("1080p HEVC 10-bit", "4.2 GB"),
+        MockPlaylistEntry("1080p AVC", "3.1 GB"),
+        MockPlaylistEntry("720p", "1.8 GB"),
+    )
 
     var episode by remember { mutableStateOf(1) }
     var isPlaying by remember { mutableStateOf(true) }
@@ -247,6 +274,21 @@ private fun PlayerLandscapeMock() {
     var showRemaining by remember { mutableStateOf(false) }
     var aspectIndex by remember { mutableStateOf(0) }
     var nextUpDismissed by remember { mutableStateOf(false) }
+    // Trimmer state (port of the app's).
+    var showTrim by remember { mutableStateOf(false) }
+    var trimStartMs by remember { mutableStateOf<Long?>(null) }
+    var trimEndMs by remember { mutableStateOf<Long?>(null) }
+    var trimStepFrame by remember { mutableStateOf(false) }
+    var trimLoop by remember { mutableStateOf(false) }
+    var trimSaving by remember { mutableStateOf(false) }
+    var trimProgress by remember { mutableStateOf(0f) }
+    // Subtitle appearance (drives the mock subtitle line live).
+    var subSize by remember { mutableStateOf(0.06f) }
+    var subStrokeOn by remember { mutableStateOf(true) }
+    var subTextColor by remember { mutableStateOf(Color.White) }
+    var subStrokeColor by remember { mutableStateOf(Color.Black) }
+    var subPosition by remember { mutableStateOf(0f) }
+    var qualityIndex by remember { mutableStateOf(0) }
     val bufferFrac = 0.35f // demo: buffered to ~8:24
 
     fun poke() {
@@ -266,13 +308,63 @@ private fun PlayerLandscapeMock() {
             poke()
         }
     }
+    fun nudgeTrimMark(isStart: Boolean, dir: Int) {
+        val step = if (trimStepFrame) 41L else 1000L
+        if (isStart) {
+            val cur = trimStartMs ?: return
+            val end = trimEndMs ?: durationMs
+            val newStart = (cur + dir * step).coerceIn(0L, (end - 1000L).coerceAtLeast(0L))
+            trimStartMs = newStart
+            positionMs = newStart
+        } else {
+            val cur = trimEndMs ?: return
+            val start = trimStartMs ?: 0L
+            val newEnd = (cur + dir * step).coerceIn(start + 1000L, durationMs)
+            trimEndMs = newEnd
+            positionMs = newEnd
+        }
+    }
+    fun applyTrimRange(range: ClosedFloatingPointRange<Float>) {
+        trimStartMs = range.start.toLong()
+        trimEndMs = range.endInclusive.toLong()
+    }
+    fun toggleTrimLoop() {
+        if (!trimLoop) {
+            trimStartMs?.let { positionMs = it }
+            isPlaying = true
+        }
+        trimLoop = !trimLoop
+    }
 
     // Fake playback clock.
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
             delay(250)
             positionMs = (positionMs + 250).coerceAtMost(durationMs)
+            // Loop preview: wrap back to the trim start at the trim end.
+            if (trimLoop && trimStartMs != null && trimEndMs != null &&
+                positionMs >= trimEndMs!!
+            ) {
+                positionMs = trimStartMs!!
+            }
             if (positionMs >= durationMs) isPlaying = false
+        }
+    }
+    // Fake clip save: progress bar, then done.
+    LaunchedEffect(trimSaving) {
+        if (trimSaving) {
+            trimProgress = 0f
+            while (trimProgress < 1f) {
+                delay(100)
+                trimProgress = (trimProgress + 0.05f).coerceAtMost(1f)
+            }
+            delay(200)
+            trimSaving = false
+            showTrim = false
+            trimLoop = false
+            trimStartMs = null
+            trimEndMs = null
+            toast = "Clip saved (mock)"
         }
     }
     // Auto-play next at the end (unless he hid the NextUp card).
@@ -282,8 +374,9 @@ private fun PlayerLandscapeMock() {
         }
     }
     // Controls auto-hide 3s after the last interaction (while playing).
-    LaunchedEffect(interactNonce, isPlaying, scrubMs) {
-        if (isPlaying && controlsVisible && scrubMs == null) {
+    // Not while trimming (the app keeps them up for the trimmer).
+    LaunchedEffect(interactNonce, isPlaying, scrubMs, showTrim) {
+        if (isPlaying && controlsVisible && scrubMs == null && !showTrim) {
             delay(3000)
             controlsVisible = false
         }
@@ -327,17 +420,17 @@ private fun PlayerLandscapeMock() {
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(locked, sheet) {
+            .pointerInput(locked, sheet, showTrim) {
                 detectTapGestures(
                     onTap = {
                         if (locked) {
                             showUnlock = true
-                        } else if (sheet == null) {
+                        } else if (sheet == null && !showTrim) {
                             if (controlsVisible) controlsVisible = false else poke()
                         }
                     },
                     onDoubleTap = { offset ->
-                        if (!locked && sheet == null) {
+                        if (!locked && sheet == null && !showTrim) {
                             val forward = offset.x > size.width / 2
                             seekBy(if (forward) 10_000L else -10_000L)
                             seekFeedback = forward to 10
@@ -345,10 +438,10 @@ private fun PlayerLandscapeMock() {
                     },
                 )
             }
-            .pointerInput(locked, sheet) {
+            .pointerInput(locked, sheet, showTrim) {
                 // Vertical swipes: left half = brightness, right = volume.
                 detectVerticalDragGestures { change, dragAmount ->
-                    if (sheet == null && !locked) {
+                    if (sheet == null && !locked && !showTrim) {
                         change.consume()
                         val delta = -dragAmount / 800f
                         if (change.position.x < size.width / 2f) {
@@ -361,7 +454,7 @@ private fun PlayerLandscapeMock() {
                     }
                 }
             }
-            .pointerInput(locked, sheet) {
+            .pointerInput(locked, sheet, showTrim) {
                 // Horizontal swipes: seek. Preview live, seek once on release.
                 var accPx = 0f
                 var startMs = 0L
@@ -374,14 +467,14 @@ private fun PlayerLandscapeMock() {
                     onDragEnd = {
                         val target = swipePreview?.first
                         swipePreview = null
-                        if (target != null && sheet == null && !locked) {
+                        if (target != null && sheet == null && !locked && !showTrim) {
                             positionMs = target
                             poke()
                         }
                     },
                     onDragCancel = { swipePreview = null },
                 ) { change, dragAmount ->
-                    if (sheet == null && !locked) {
+                    if (sheet == null && !locked && !showTrim) {
                         change.consume()
                         accPx += dragAmount
                         val widthPx = size.width.toFloat().coerceAtLeast(1f)
@@ -395,17 +488,24 @@ private fun PlayerLandscapeMock() {
         MockVideoScene()
 
         // Subtitle line (mock text; Malayalam when that track is picked).
+        // Appearance comes from the subtitle sheet, live: size, stroke,
+        // colors, position.
         if (subTrack != 0) {
             Text(
                 subLine,
-                color = Color.White,
-                fontSize = 16.sp,
+                color = subTextColor,
+                fontSize = (8 + subSize * 160).sp,
                 fontWeight = FontWeight.SemiBold,
-                style = TextStyle(shadow = Shadow(Color.Black, Offset(0f, 2f), 4f)),
+                style = if (subStrokeOn) {
+                    TextStyle(shadow = Shadow(subStrokeColor, Offset(0f, 2f), 4f))
+                } else {
+                    TextStyle.Default
+                },
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = if (controlsVisible) 132.dp else 36.dp)
+                    .padding(bottom = (subPosition * 300).dp)
                     .padding(horizontal = 48.dp),
             )
         }
@@ -455,16 +555,28 @@ private fun PlayerLandscapeMock() {
                         icon = Icons.Filled.PlaylistPlay,
                         contentDescription = "Episodes",
                         onClick = { sheet = MockSheet.EPISODES },
+                        enabled = !showTrim,
+                    )
+                    MockPlayerIconButton(
+                        icon = Icons.Filled.List,
+                        contentDescription = "Playlist",
+                        onClick = { sheet = MockSheet.PLAYLIST },
+                        enabled = !showTrim,
                     )
                     MockPlayerIconButton(
                         icon = Icons.Filled.PhotoCamera,
                         contentDescription = "Screenshot",
                         onClick = { toast = "Screenshot saved (mock)" },
+                        enabled = !showTrim,
                     )
                     MockPlayerIconButton(
                         icon = Icons.Filled.ContentCut,
                         contentDescription = "Trim clip",
-                        onClick = { toast = "Trimmer opens here — coming to the mockup next" },
+                        onClick = {
+                            showTrim = !showTrim
+                            if (!showTrim) trimLoop = false
+                        },
+                        active = showTrim,
                     )
                     MockPlayerIconButton(
                         icon = Icons.Filled.Lock,
@@ -474,6 +586,7 @@ private fun PlayerLandscapeMock() {
                             controlsVisible = false
                             showUnlock = true
                         },
+                        enabled = !showTrim,
                     )
                 }
             }
@@ -585,11 +698,13 @@ private fun PlayerLandscapeMock() {
                             contentDescription = "Subtitles",
                             onClick = { sheet = MockSheet.SUBS },
                             active = subTrack != 0,
+                            enabled = !showTrim,
                         )
                         MockPlayerIconButton(
                             icon = Icons.Filled.Audiotrack,
                             contentDescription = "Audio",
                             onClick = { sheet = MockSheet.AUDIO },
+                            enabled = !showTrim,
                         )
                     }
                     Spacer(Modifier.weight(1f))
@@ -599,10 +714,12 @@ private fun PlayerLandscapeMock() {
                                 icon = Icons.Filled.SkipNext,
                                 contentDescription = "Next episode",
                                 onClick = { nextEpisode() },
+                                enabled = !showTrim,
                             )
                         }
                         Surface(
                             onClick = { aspectIndex = (aspectIndex + 1) % aspects.size },
+                            enabled = !showTrim,
                             shape = RoundedCornerShape(50),
                             color = Color.White.copy(alpha = 0.12f),
                             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
@@ -657,6 +774,8 @@ private fun PlayerLandscapeMock() {
                             onSeek = { positionMs = it; poke() },
                             onScrubChange = { scrubMs = it },
                             modifier = Modifier.fillMaxWidth(),
+                            trimStartMs = trimStartMs,
+                            trimEndMs = trimEndMs,
                         )
                     }
                     Text(
@@ -758,69 +877,47 @@ private fun PlayerLandscapeMock() {
             }
         }
 
-        // Sheets + drawer.
+        // Sheets + drawers + trimmer.
         AnimatedVisibility(
             visible = sheet == MockSheet.SUBS,
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
-            MockTrackSheet(
-                title = "Subtitles",
+            MockSubtitleSheet(
                 options = subTracks,
                 selected = subTrack,
                 onSelect = { subTrack = it; sheet = null },
                 onDismiss = { sheet = null },
-            ) {
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Delay",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MsColors.TextPrimary,
-                        modifier = Modifier.weight(1f),
-                    )
-                    MockSmallRoundIcon(
-                        Icons.Filled.Remove, "Delay -100ms",
-                    ) { subDelayMs = (subDelayMs - 100).coerceAtLeast(-5000) }
-                    Text(
-                        "${if (subDelayMs >= 0) "+" else ""}${subDelayMs}ms",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontFamily = FontFamily.Monospace,
-                        ),
-                        color = MsColors.TextPrimary,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.width(72.dp),
-                    )
-                    MockSmallRoundIcon(
-                        Icons.Filled.Add, "Delay +100ms",
-                    ) { subDelayMs = (subDelayMs + 100).coerceAtMost(5000) }
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { toast = "Load subtitle from phone (mock)" }
-                        .padding(vertical = 12.dp, horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Filled.FolderOpen,
-                        contentDescription = null,
-                        tint = MsColors.Accent,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        "Load subtitle from phone",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MsColors.TextPrimary,
-                    )
-                }
-            }
+                onLoadFromPhone = { toast = "Load subtitle from phone (mock)" },
+                onAllLines = { sheet = MockSheet.SUBLINES },
+                delayMs = subDelayMs,
+                onAdjustDelay = { subDelayMs = (subDelayMs + it).coerceIn(-5000, 5000) },
+                textSize = subSize,
+                onTextSize = { subSize = it },
+                strokeOn = subStrokeOn,
+                onStrokeOn = { subStrokeOn = it },
+                textColor = subTextColor,
+                onTextColor = { subTextColor = it },
+                strokeColor = subStrokeColor,
+                onStrokeColor = { subStrokeColor = it },
+                position = subPosition,
+                onPosition = { subPosition = it },
+            )
+        }
+        AnimatedVisibility(
+            visible = sheet == MockSheet.SUBLINES,
+            enter = fadeIn(),
+            exit = fadeOut(),
+        ) {
+            MockSubLinesSheet(
+                lines = subLines,
+                onJump = {
+                    positionMs = it
+                    sheet = null
+                    poke()
+                },
+                onDismiss = { sheet = null },
+            )
         }
         AnimatedVisibility(
             visible = sheet == MockSheet.AUDIO,
@@ -852,6 +949,54 @@ private fun PlayerLandscapeMock() {
                     poke()
                 },
                 onDismiss = { sheet = null },
+            )
+        }
+        AnimatedVisibility(
+            visible = sheet == MockSheet.PLAYLIST,
+            enter = fadeIn(),
+            exit = fadeOut(),
+        ) {
+            MockPlaylistDrawer(
+                entries = playlistEntries,
+                current = qualityIndex,
+                onSelect = {
+                    qualityIndex = it
+                    sheet = null
+                    toast = "Switched to ${playlistEntries[it].label} (mock)"
+                },
+                onDismiss = { sheet = null },
+            )
+        }
+
+        // Trimmer side drawer (the app's TrimDrawer, full height right).
+        if (showTrim) {
+            MockTrimDrawer(
+                startMs = trimStartMs,
+                endMs = trimEndMs,
+                currentMs = positionMs,
+                durationMs = durationMs,
+                saving = trimSaving,
+                progress = trimProgress,
+                looping = trimLoop,
+                stepIsFrame = trimStepFrame,
+                onToggleStep = { trimStepFrame = !trimStepFrame },
+                onNudgeStart = { dir -> nudgeTrimMark(true, dir) },
+                onNudgeEnd = { dir -> nudgeTrimMark(false, dir) },
+                onSetStart = { trimStartMs = positionMs },
+                onSetEnd = { trimEndMs = positionMs },
+                onJumpToStart = { trimStartMs?.let { positionMs = it } },
+                onJumpToEnd = { trimEndMs?.let { positionMs = it } },
+                onRangeChange = { range -> applyTrimRange(range) },
+                onRangeChangeFinished = { trimStartMs?.let { positionMs = it } },
+                onClear = { trimStartMs = null; trimEndMs = null; trimLoop = false },
+                onClose = { showTrim = false; trimLoop = false },
+                onToggleLoop = { toggleTrimLoop() },
+                onSave = { trimSaving = true },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 8.dp, end = 8.dp, bottom = 8.dp)
+                    .fillMaxHeight()
+                    .width(300.dp),
             )
         }
 

@@ -10,9 +10,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -24,16 +26,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RangeSlider
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,10 +65,13 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.moon.webmock.components.LimePillButton
+import com.moon.webmock.components.MsOutlinePill
 import com.moon.webmock.theme.MsColors
 import com.moon.webmock.theme.doto
 import kotlin.math.roundToInt
@@ -170,6 +185,9 @@ fun MockSeekBar(
     onSeek: (Long) -> Unit,
     onScrubChange: (Long?) -> Unit,
     modifier: Modifier = Modifier,
+    /** Trimmer selection: the marked clip, drawn as an Accent band. */
+    trimStartMs: Long? = null,
+    trimEndMs: Long? = null,
 ) {
     var isScrubbing by remember { mutableStateOf(false) }
     var scrubMs by remember { mutableStateOf<Long?>(null) }
@@ -279,6 +297,28 @@ fun MockSeekBar(
                             .background(seg.color.copy(alpha = 0.9f)),
                     )
                 }
+            }
+        }
+        // Trimmer range band (port of the app's): the marked clip, drawn
+        // above everything so the cut is visible even before playback.
+        if (durationMs > 0L && trimStartMs != null && trimEndMs != null && trimEndMs > trimStartMs) {
+            val startFrac = (trimStartMs.toFloat() / durationMs).coerceIn(0f, 1f)
+            val endFrac = (trimEndMs.toFloat() / durationMs).coerceIn(0f, 1f)
+            if (endFrac > startFrac) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .fillMaxWidth(endFrac - startFrac)
+                        .offset {
+                            IntOffset(
+                                (startFrac * constraints.maxWidth).roundToInt(), 0
+                            )
+                        }
+                        .height(barHeight + 4.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(MsColors.Accent.copy(alpha = 0.85f))
+                        .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(50)),
+                )
             }
         }
         // Scrub bubble (NEW): target time above the thumb.
@@ -796,6 +836,799 @@ fun MockUnlockSlider(
                 tint = Color.Black,
                 modifier = Modifier.size(22.dp),
             )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Trimmer drawer (moon's 2026-11-14: the missing piece). Port of the app's
+// TrimDrawer: Start/End steppers, Set start/end, dual-handle range slider,
+// loop preview, Reset, Save Clip. Sits full-height on the right.
+// ---------------------------------------------------------------------------
+
+@Composable
+fun MockTrimDrawer(
+    startMs: Long?,
+    endMs: Long?,
+    currentMs: Long,
+    durationMs: Long,
+    saving: Boolean,
+    progress: Float,
+    looping: Boolean,
+    stepIsFrame: Boolean,
+    onToggleStep: () -> Unit,
+    onNudgeStart: (Int) -> Unit,
+    onNudgeEnd: (Int) -> Unit,
+    onSetStart: () -> Unit,
+    onSetEnd: () -> Unit,
+    onJumpToStart: () -> Unit,
+    onJumpToEnd: () -> Unit,
+    onRangeChange: (ClosedFloatingPointRange<Float>) -> Unit,
+    onRangeChangeFinished: () -> Unit,
+    onClear: () -> Unit,
+    onClose: () -> Unit,
+    onToggleLoop: () -> Unit,
+    onSave: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val valid = startMs != null && endMs != null && endMs > startMs
+    val lengthMs = if (valid) endMs!! - startMs!! else 0L
+    val durF = durationMs.coerceAtLeast(1L).toFloat()
+    val sliderValue: ClosedFloatingPointRange<Float> =
+        (startMs?.toFloat() ?: 0f).coerceIn(0f, durF)..(endMs?.toFloat() ?: durF).coerceIn(0f, durF)
+    val scrollState = rememberScrollState()
+    Column(
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(20.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+            .verticalScroll(scrollState)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        // Header: scissors + title + step toggle + close.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.ContentCut,
+                contentDescription = null,
+                tint = MsColors.Accent,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "Trim Video",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MsColors.TextPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            MsOutlinePill(
+                text = if (stepIsFrame) "Step: 1f" else "Step: 1s",
+                onClick = onToggleStep,
+                fontSize = 12,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            MockSmallRoundIcon(Icons.Filled.Close, "Close trim") { onClose() }
+        }
+        Spacer(Modifier.height(10.dp))
+        // Start / End steppers: < time > each; the < > nudge by the
+        // header step (1s or 1 frame) and jump the video there.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            MockTrimMarkBox(
+                label = "Start",
+                timeMs = startMs,
+                onNudge = onNudgeStart,
+                onJump = onJumpToStart,
+                modifier = Modifier.weight(1f),
+            )
+            MockTrimMarkBox(
+                label = "End",
+                timeMs = endMs,
+                onNudge = onNudgeEnd,
+                onJump = onJumpToEnd,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        // Set start / Set end: capture the playhead into each mark.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            MsOutlinePill(
+                text = "Set start",
+                onClick = onSetStart,
+                fontSize = 13,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier.weight(1f),
+            )
+            MsOutlinePill(
+                text = "Set end",
+                onClick = onSetEnd,
+                fontSize = 13,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        // Dual-handle range slider: drag either handle to move that mark.
+        RangeSlider(
+            value = sliderValue,
+            onValueChange = onRangeChange,
+            onValueChangeFinished = onRangeChangeFinished,
+            valueRange = 0f..durF,
+            enabled = durationMs > 0L,
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = MsColors.Accent,
+                inactiveTrackColor = Color.White.copy(alpha = 0.12f),
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            if (valid) "Duration: ${mockFormatTime(lengthMs)}  ·  Now: ${mockFormatTime(currentMs)}"
+            else "Mark a start and an end  ·  Now: ${mockFormatTime(currentMs)}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MsColors.TextSecondary,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(10.dp))
+        if (saving) {
+            LinearProgressIndicator(
+                progress = { progress.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+                color = MsColors.Accent,
+                trackColor = Color.White.copy(alpha = 0.2f),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Saving clip… ${(progress * 100).toInt()}%",
+                style = MaterialTheme.typography.labelMedium,
+                color = MsColors.TextSecondary,
+            )
+        } else {
+            if (looping) {
+                LimePillButton(
+                    text = "Stop preview",
+                    onClick = onToggleLoop,
+                    fontSize = 14,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                MsOutlinePill(
+                    text = "Preview",
+                    onClick = onToggleLoop,
+                    fontSize = 14,
+                    enabled = valid,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                MsOutlinePill(
+                    text = "Reset",
+                    onClick = onClear,
+                    fontSize = 14,
+                    modifier = Modifier.weight(1f),
+                )
+                LimePillButton(
+                    text = "Save Clip",
+                    onClick = onSave,
+                    fontSize = 14,
+                    enabled = valid,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+/** One Start/End stepper box: < time > with the label above the time. */
+@Composable
+private fun MockTrimMarkBox(
+    label: String,
+    timeMs: Long?,
+    onNudge: (Int) -> Unit,
+    onJump: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFF1C1C1E),
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            MockTrimNudgeButton(
+                icon = Icons.Filled.ChevronLeft,
+                contentDescription = "Move $label earlier",
+                enabled = timeMs != null,
+                onClick = { onNudge(-1) },
+            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(enabled = timeMs != null) { onJump() },
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MsColors.TextSecondary,
+                )
+                Text(
+                    timeMs?.let { mockFormatTime(it) } ?: "--:--",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    color = if (timeMs != null) MsColors.Accent else MsColors.TextSecondary,
+                )
+            }
+            MockTrimNudgeButton(
+                icon = Icons.Filled.ChevronRight,
+                contentDescription = "Move $label later",
+                enabled = timeMs != null,
+                onClick = { onNudge(1) },
+            )
+        }
+    }
+}
+
+/** Small round nudge button: dimmed and inert until its mark is set. */
+@Composable
+private fun MockTrimNudgeButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = CircleShape,
+        color = Color.White.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+        modifier = Modifier.size(32.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = contentDescription,
+                tint = Color.White.copy(alpha = if (enabled) 1f else 0.35f),
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Full subtitle sheet (moon's 2026-11-14): tracks + Load from phone + All
+// lines + Delay (±250ms pills) + Appearance (Size slider, Stroke On/Off,
+// Text/Stroke color dots, Position slider). Port of the app's SUBS drawer
+// content, kept as a bottom sheet — it scrolls, since landscape is short.
+// The appearance controls drive the mock subtitle line live.
+// ---------------------------------------------------------------------------
+
+/** One color dot in the Text/Stroke color rows. */
+@Composable
+private fun MockColorDot(
+    color: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = color,
+        border = BorderStroke(
+            2.dp,
+            if (selected) MsColors.Accent else Color.White.copy(alpha = 0.25f),
+        ),
+        modifier = Modifier.size(28.dp).mockPressScale(),
+    ) {}
+}
+
+/** Small On/Off option pill (Stroke row). */
+@Composable
+private fun MockSheetOptionBtn(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = if (selected) MsColors.Accent else Color.White.copy(alpha = 0.10f),
+        modifier = Modifier.mockPressScale(),
+    ) {
+        Text(
+            label,
+            color = if (selected) MsColors.OnAccent else MsColors.TextPrimary,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+    }
+}
+
+/** iOS slider (the app's MsSlider): white thumb, Accent track. */
+@Composable
+private fun MockMsSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier,
+) {
+    Slider(
+        value = value,
+        onValueChange = onValueChange,
+        valueRange = valueRange,
+        colors = SliderDefaults.colors(
+            thumbColor = Color.White,
+            activeTrackColor = MsColors.Accent,
+            inactiveTrackColor = Color.White.copy(alpha = 0.12f),
+        ),
+        modifier = modifier,
+    )
+}
+
+@Composable
+fun MockSubtitleSheet(
+    options: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+    onLoadFromPhone: () -> Unit,
+    onAllLines: () -> Unit,
+    delayMs: Int,
+    onAdjustDelay: (Int) -> Unit,
+    textSize: Float,
+    onTextSize: (Float) -> Unit,
+    strokeOn: Boolean,
+    onStrokeOn: (Boolean) -> Unit,
+    textColor: Color,
+    onTextColor: (Color) -> Unit,
+    strokeColor: Color,
+    onStrokeColor: (Color) -> Unit,
+    position: Float,
+    onPosition: (Float) -> Unit,
+) {
+    fun formatDelay(ms: Int): String {
+        if (ms == 0) return "0ms"
+        val sign = if (ms > 0) "+" else "−"
+        return "$sign${kotlin.math.abs(ms)}ms"
+    }
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { onDismiss() },
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .background(
+                    MsColors.Surface,
+                    RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                )
+                .padding(horizontal = 20.dp)
+                .padding(top = 8.dp, bottom = 24.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .width(36.dp)
+                    .height(4.dp)
+                    .background(Color.White.copy(alpha = 0.25f), RoundedCornerShape(50)),
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Subtitles",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MsColors.TextPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                MockSmallRoundIcon(Icons.Filled.Close, "Close") { onDismiss() }
+            }
+            Spacer(Modifier.height(8.dp))
+            LazyColumn(Modifier.weight(1f)) {
+                items(options.size) { i ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onSelect(i) }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            options[i],
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (i == selected) MsColors.Accent else MsColors.TextPrimary,
+                            fontWeight = if (i == selected) FontWeight.SemiBold else FontWeight.Normal,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (i == selected) {
+                            Icon(
+                                Icons.Filled.Check,
+                                contentDescription = null,
+                                tint = MsColors.Accent,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                }
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onLoadFromPhone() }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Load from phone…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onAllLines() }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "All lines…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                // Delay: ±250ms pills (app parity).
+                item {
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Delay",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        MsOutlinePill(
+                            text = "−250ms",
+                            onClick = { onAdjustDelay(-250) },
+                            fontSize = 13,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        )
+                        Text(
+                            formatDelay(delayMs),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.width(80.dp),
+                        )
+                        MsOutlinePill(
+                            text = "+250ms",
+                            onClick = { onAdjustDelay(250) },
+                            fontSize = 13,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        )
+                    }
+                }
+                item {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Appearance",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MsColors.TextSecondary,
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    )
+                }
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Size",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        MockMsSlider(
+                            value = textSize.coerceIn(0.03f, 0.10f),
+                            onValueChange = onTextSize,
+                            valueRange = 0.03f..0.10f,
+                            modifier = Modifier.weight(1.6f),
+                        )
+                    }
+                }
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Stroke",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        MockSheetOptionBtn("On", strokeOn) { onStrokeOn(true) }
+                        Spacer(Modifier.width(8.dp))
+                        MockSheetOptionBtn("Off", !strokeOn) { onStrokeOn(false) }
+                    }
+                }
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Text color",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        MockColorDot(Color.White, textColor == Color.White) {
+                            onTextColor(Color.White)
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        MockColorDot(Color.Yellow, textColor == Color.Yellow) {
+                            onTextColor(Color.Yellow)
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        MockColorDot(Color(0xFF00E5FF), textColor == Color(0xFF00E5FF)) {
+                            onTextColor(Color(0xFF00E5FF))
+                        }
+                    }
+                }
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Stroke color",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        MockColorDot(Color.Black, strokeColor == Color.Black) {
+                            onStrokeColor(Color.Black)
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        MockColorDot(Color.White, strokeColor == Color.White) {
+                            onStrokeColor(Color.White)
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        MockColorDot(Color.Yellow, strokeColor == Color.Yellow) {
+                            onStrokeColor(Color.Yellow)
+                        }
+                    }
+                }
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Position",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        MockMsSlider(
+                            value = position,
+                            onValueChange = onPosition,
+                            valueRange = 0f..0.4f,
+                            modifier = Modifier.weight(1.6f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subtitle lines (the app's SUBLINES view): jump to a moment by dialogue.
+// ---------------------------------------------------------------------------
+
+data class MockSubLine(val timeMs: Long, val text: String)
+
+@Composable
+fun MockSubLinesSheet(
+    lines: List<MockSubLine>,
+    onJump: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { onDismiss() },
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .background(
+                    MsColors.Surface,
+                    RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                )
+                .padding(horizontal = 20.dp)
+                .padding(top = 8.dp, bottom = 24.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .width(36.dp)
+                    .height(4.dp)
+                    .background(Color.White.copy(alpha = 0.25f), RoundedCornerShape(50)),
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Subtitle lines",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MsColors.TextPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                MockSmallRoundIcon(Icons.Filled.Close, "Close") { onDismiss() }
+            }
+            Spacer(Modifier.height(8.dp))
+            LazyColumn(Modifier.weight(1f)) {
+                items(lines) { line ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onJump(line.timeMs) }
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            mockFormatTime(line.timeMs),
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                            ),
+                            color = MsColors.Accent,
+                            modifier = Modifier.width(64.dp),
+                        )
+                        Text(
+                            line.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.TextPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Playlist drawer (the app's PLAYLIST drawer): all streams of the episode.
+// ---------------------------------------------------------------------------
+
+data class MockPlaylistEntry(val label: String, val size: String)
+
+@Composable
+fun MockPlaylistDrawer(
+    entries: List<MockPlaylistEntry>,
+    current: Int,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { onDismiss() },
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .width(320.dp)
+                .background(MsColors.Surface)
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Playlist",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MsColors.TextPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                MockSmallRoundIcon(Icons.Filled.Close, "Close") { onDismiss() }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Streams of this episode",
+                style = MaterialTheme.typography.bodySmall,
+                color = MsColors.TextSecondary,
+            )
+            Spacer(Modifier.height(12.dp))
+            LazyColumn {
+                itemsIndexed(entries) { i, entry ->
+                    val isCurrent = i == current
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onSelect(i) }
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                entry.label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isCurrent) MsColors.Accent else MsColors.TextPrimary,
+                                fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                            Text(
+                                entry.size,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MsColors.TextSecondary,
+                            )
+                        }
+                        if (isCurrent) {
+                            Text(
+                                "Playing",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MsColors.Accent,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
