@@ -57,15 +57,26 @@ object FilenameParser {
     private val urlRe = Regex("""https?://\S+|t\.me/\S+|tg://\S+|www\.\S+""")
     /** Explicit IMDb id typed into a name/caption. */
     private val imdbRe = Regex("""(?i)(?<![a-z0-9])tt\d{7,10}(?![a-z0-9])""")
-    /** Bare site names with unambiguous TLDs: "Movies4u.com", "1TamilMV.cc". */
+    /** Bare site names with unambiguous TLDs: "Movies4u.com", "1TamilMV.cc".
+     *  The label MUST contain a digit (moon's 2026-11-14): without it the
+     *  pattern ate title words — "The.Mosquito.Net" lost "Mosquito.Net",
+     *  and "The.Net" / "Fight.Club" lost their whole titles (verified with
+     *  the parser harness). Real spam sites almost always carry a digit; a
+     *  digit-less site that recurs gets added to spamTagRe instead. */
     private val domainRe = Regex(
-        """(?i)(?<![a-z0-9])[a-z0-9\-]+\.(?:com|net|org|xyz|cc|info|club|site|ws|lol|vip|cyou|sbs|click|biz|cfd|buzz|icu|ink)(?![a-z0-9])""",
+        """(?i)(?<![a-z0-9])[a-z0-9\-]*\d[a-z0-9\-]*\.(?:com|net|org|xyz|cc|info|club|site|ws|lol|vip|cyou|sbs|click|biz|cfd|buzz|icu|ink)(?![a-z0-9])""",
     )
-    /** Language / audio words left dangling after the title ("Kalki 2898 AD Hindi"). */
+    /** Language / audio words left dangling after the title ("Kalki 2898 AD Hindi").
+     *  Covers full names, 3-letter codes and audio tags — but NOT "ben"
+     *  (would eat "Big Ben") or "chi" (would eat "Tai Chi"). */
     private val trailingLangRe = Regex(
-        """(?i)(?:\s+(?:hindi|tamil|telugu|malayalam|kannada|bengali|punjabi|marathi|gujarati|urdu|odia|oriya|assamese|english|korean|japanese|dubbed|dual\s+audio|multi\s+audio|dual|multi|audio|org))+$""",
+        """(?i)(?:\s+(?:hindi|tamil|telugu|malayalam|kannada|bengali|punjabi|marathi|gujarati|urdu|odia|oriya|assamese|english|korean|japanese|spanish|dutch|french|german|italian|portuguese|russian|arabic|turkish|chinese|thai|hin|eng|tam|tel|mal|kan|pun|mar|guj|urd|ori|asm|jap|jpn|kor|spa|dut|fre|ger|ita|por|rus|ara|tur|tha|dubbed|dual\s+audio|multi\s+audio|dual|multi|audio|org|subs?))+$""",
     )
     private val mentionRe = Regex("""(?:^|[\s._\-])@[\w_]+""")
+    /** "{...}" group — uploader tags ("{@UCParadiso}"), notes ("{Extended}").
+     *  mentionRe can't see a @handle inside braces (the @ isn't preceded
+     *  by a separator), so the whole group goes (moon's 2026-11-14). */
+    private val braceGroupRe = Regex("""\s*\{[^}]*\}""")
     /**
      * Popular spam/uploader tags (moon's 2026-11-10, big-channel export).
      * These sit at the very start of the filename and must be stripped as a
@@ -82,7 +93,13 @@ object FilenameParser {
         """(?i)^(?:@(?:central_links|smile_upload|dvdwoall_scam_1|dvdwoall|dvdwo|tamil_genz_linkzz|tamil_genz|tr_web|moviesnowlinks|trending_movies|movieztamizha|scifimovies4u|starkmv|hdmlinx|cinewod|swm_links|m4mhd|ucparadiso|cc)|(?:MTR|CS|MCU|ONR|MP|MSF|MF))[\s._\-]*""",
     )
     private val emojiRe = Regex(
-        "[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF\u2300-\u23FF\u2B50\u2B55\u200D\uFE0F]",
+        // \x{...} ranges, NOT surrogate-pair classes: Java's Pattern never
+        // matches a surrogate pair through a [\uD800-\uDBFF][\uDC00-\uDFFF]
+        // class (verified 2026-11-14) — that is why flag letters ("🇦 🇧")
+        // and astral emoji survived clean(). \x{1F000}-\x{1FAFF} covers
+        // emoticons, symbols and regional-indicator flags; the fullwidth
+        // block covers decorative fullwidth letters ("Ａ Ｂ").
+        """[\x{1F000}-\x{1FAFF}]|[\u2600-\u27BF\u2300-\u23FF\u2B50\u2B55\u200D\uFE0F]|[\x{FF21}-\x{FF3A}\x{FF41}-\x{FF5A}\x{FF10}-\x{FF19}]""",
     )
     private val yearRe = Regex("""(?:^|[\s._\-(\[])(19\d{2}|20\d{2})(?:[\s._\-)\]]|$)""")
     private val crcRe = Regex("""\[[0-9A-Fa-f]{8}\]""")
@@ -170,7 +187,7 @@ object FilenameParser {
      *  1080p x264" -> "One Piece 1012"). Used by the title cleanup AND by
      *  the absolute-episode probe, so both agree on where quality starts. */
     private val qualityCutRe = Regex(
-        """(?i)\b(2160p|1080p|720p|480p|4k|uhd|hdr|hevc|x264|x265|aac|dts|bluray|web-?dl|web-?rip|hd-?rip|hdtv|hdtc|hdcam|dvd-?rip|br-?rip|bd-?rip|cam-?rip|amzn|dsnp|hmax|atvp|zee5|hotstar|sonyliv|10bit|esubs?|msubs?|dd[p+]?\d|atmos|remux|proper|repack|hq)\b.*$""",
+        """(?i)\b(2160p|1080p|720p|480p|4k|uhd|hdr|hevc|x264|x265|aac|dts|bluray|web[ -]?dl|web[ -]?rip|hd[ -]?rip|hdtv|hdtc|hdcam|dvd[ -]?rip|br[ -]?rip|bd[ -]?rip|cam[ -]?rip|amzn|dsnp|hmax|atvp|zee5|hotstar|sonyliv|10bit|esubs?|msubs?|dd[p+]?\d|atmos|remux|proper|repack|hq)\b.*$""",
     )
 
     /** File-size token ("450MB", "1.2 GB") — stripped by the absolute probe
@@ -206,13 +223,24 @@ object FilenameParser {
         "ori" to "Ori", "odia" to "Ori", "oriya" to "Ori",
         "asm" to "Asm", "assamese" to "Asm",
         "multi" to "Multi", "dual" to "Dual",
+        "spa" to "Spa", "spanish" to "Spa",
+        "dut" to "Dut", "dutch" to "Dut",
+        "fre" to "Fre", "french" to "Fre",
+        "ger" to "Ger", "german" to "Ger",
+        "ita" to "Ita", "italian" to "Ita",
+        "por" to "Por", "portuguese" to "Por",
+        "rus" to "Rus", "russian" to "Rus",
+        "ara" to "Ara", "arabic" to "Ara",
+        "tur" to "Tur", "turkish" to "Tur",
+        "chi" to "Chi", "chinese" to "Chi",
+        "tha" to "Tha", "thai" to "Tha",
     )
 
     /** A year fused to a language word ("2020Malayalam") — split it so the
      *  year is found and the language is tagged (moon's 2026-11-09).
      *  Longest language words first, so "malayalam" wins over "mal". */
     private val fusedYearLangRe = Regex(
-        """(?i)(?<![0-9])(19\d{2}|20\d{2})(malayalam|assamese|gujarati|japanese|bengali|punjabi|marathi|telugu|kannada|english|korean|oriya|hindi|tamil|multi|dual|odia|mal|tam|tel|kan|eng|jap|jpn|kor|ben|pun|mar|guj|urd|ori|asm|hin|ml)(?![a-zA-Z])""",
+        """(?i)(?<![0-9])(19\d{2}|20\d{2})(portuguese|malayalam|assamese|gujarati|japanese|bengali|punjabi|marathi|spanish|italian|arabic|turkish|chinese|russian|telugu|kannada|english|korean|french|german|oriya|hindi|tamil|dutch|multi|dual|odia|thai|mal|tam|tel|kan|eng|jap|jpn|kor|ben|pun|mar|guj|urd|ori|asm|hin|spa|dut|fre|ger|ita|por|rus|ara|tur|chi|tha|ml)(?![a-zA-Z])""",
     )
 
     /** "2020Malayalam" -> "2020 Malayalam". */
@@ -241,6 +269,7 @@ object FilenameParser {
             text = spamTagRe.replace(text, "")
         } while (text != prev)
         text = mentionRe.replace(text, " ")
+        text = braceGroupRe.replace(text, " ")
         text = emojiRe.replace(text, " ")
         // Drop promo lines, keep the rest.
         val lines = text.split("\n", "\r")
@@ -311,6 +340,7 @@ object FilenameParser {
         var cap = urlRe.replace(caption, " ")
         cap = domainRe.replace(cap, " ")
         cap = mentionRe.replace(cap, " ")
+        cap = braceGroupRe.replace(cap, " ")
         val lines = cap.split("\n", "\r")
             .map { emojiRe.replace(it, " ").trim().trimStart('-', '*', '#', '\u2022', ' ') }
             .filter { it.isNotEmpty() && !dividerRe.matches(it) && !promoLineRe.containsMatchIn(it) }
@@ -628,7 +658,9 @@ object FilenameParser {
         // Strip year, quality words and leftover delimiters from the title.
         year?.let { y -> title = title.replace(y, "") }
         title = qualityCutRe.replace(title, "")
-        title = title.replace(Regex("""[._()\[\]\-]+"""), " ").trim()
+        // File-size token ("800mb") — never part of a title (moon's 2026-11-14).
+        title = sizeTokenRe.replace(title, "")
+        title = title.replace(Regex("""[._()\[\]\{\}\-]+"""), " ").trim()
         title = title.replace(Regex("""^[:\s._\-~·•]+"""), "")
         title = title.replace(Regex("""[:\s._\-~·•]+$"""), "")
         title = title.replace(Regex("""\s+"""), " ").trim()

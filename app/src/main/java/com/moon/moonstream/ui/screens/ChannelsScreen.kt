@@ -734,6 +734,10 @@ fun ChannelsScreen(
             mode = FixMode.LINK,
             currentTitle = f.fileName,
             isAnime = false,
+            // Toggle follows the file itself (moon's 2026-11-14): the sheet
+            // defaults to Series, so every movie opened on Series and the
+            // provider search found nothing.
+            mediaType = FilenameParser.parse(f.fileName, false, "").type,
             initialQuery = f.fileName,
             onDismiss = { linkFile = null },
             onApply = { picked ->
@@ -808,6 +812,7 @@ fun ChannelsScreen(
             mode = FixMode.LINK,
             currentTitle = first.fileName,
             isAnime = false,
+            mediaType = FilenameParser.parse(first.fileName, false, "").type,
             initialQuery = first.fileName,
             onDismiss = { linkFileBulk = emptyList() },
             onApply = { picked ->
