@@ -106,6 +106,12 @@ interface MediaDao {
     @Query("SELECT * FROM media_items WHERE normalizedTitle = :norm LIMIT 1")
     suspend fun findByNormAnyChannel(norm: String): MediaItemEntity?
 
+    /** Substring title search for the LINK sheet (moon's 2026-11-14): finds
+     *  local entries — including custom ones no provider knows — by normalized
+     *  title. Capped at 10 so the sheet never loads the whole library. */
+    @Query("SELECT * FROM media_items WHERE normalizedTitle LIKE '%' || :norm || '%' ORDER BY updatedAt DESC LIMIT 10")
+    suspend fun searchByNorm(norm: String): List<MediaItemEntity>
+
     @Query("SELECT * FROM media_items WHERE id = :id")
     fun observeById(id: Long): Flow<MediaItemEntity?>
 

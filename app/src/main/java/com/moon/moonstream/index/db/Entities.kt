@@ -44,7 +44,8 @@ data class MediaItemEntity(
     val episodeCount: Int,
     val fileCount: Int,
     val updatedAt: Long,
-    /** User-hidden via Library multi-select / Detail. Shown in the HIDDEN tab. */
+    /** Unused since 2026-11-14 (Hide feature removed — moon never used it).
+     *  Column retained so no migration is needed. */
     val hidden: Boolean = false,
     /** User-created via the Create screen (never auto-matched / re-matched). */
     val isCustom: Boolean = false,

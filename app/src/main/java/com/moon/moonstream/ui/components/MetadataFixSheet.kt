@@ -156,7 +156,7 @@ fun MetadataFixSheet(
             // Network must run on IO dispatcher, not Main (moon's bug
             // 2026-11-01: search returned empty due to NetworkOnMainThread).
             results = withContext(Dispatchers.IO) {
-                MetadataMatcher.searchTitles(
+                val provider = MetadataMatcher.searchTitles(
                     query = query,
                     // Anime goes through Kitsu; otherwise use the toggle —
                     // movies were wrongly searching TV shows.
@@ -164,6 +164,40 @@ fun MetadataFixSheet(
                     isAnime = isAnime,
                     tmdbKey = key,
                 )
+                if (mode != FixMode.LINK) {
+                    provider
+                } else {
+                    // Local first (moon's 2026-11-14): entries the providers
+                    // can't know about — custom content — show up when the
+                    // typed name matches. Same type toggle as the provider
+                    // search (anime counts as series); a provider row wins
+                    // over a local row with the same title, so linking via
+                    // it still fills the entry's IMDb id.
+                    val norm = normalizeTitle(query)
+                    val local = if (norm.isBlank()) emptyList()
+                    else MsDatabase.get(context).mediaDao().searchByNorm(norm)
+                    val localType = if (isAnime) "series" else searchType
+                    val providerNorms =
+                        provider.map { normalizeTitle(it.title) }.toSet()
+                    val localOnly = local.filter {
+                        (it.type == localType ||
+                            (localType == "series" && it.type == "anime")) &&
+                            normalizeTitle(it.title) !in providerNorms
+                    }
+                    localOnly.map {
+                        EnrichedMeta(
+                            title = it.title,
+                            year = it.year,
+                            overview = it.overview,
+                            posterUrl = it.posterUrl,
+                            backdropUrl = it.backdropUrl,
+                            imdbId = it.imdbId,
+                            tmdbId = it.tmdbId,
+                            kitsuId = it.kitsuId,
+                            anilistId = it.anilistId,
+                        )
+                    } + provider
+                }
             }
             searching = false
         }
@@ -196,7 +230,8 @@ fun MetadataFixSheet(
                     selected = null
                     searched = false
                 },
-                hint = "Search title or IMDb ID (e.g. tt0320661)",
+                hint = if (mode == FixMode.LINK) "Search your library or online"
+                else "Search title or IMDb ID (e.g. tt0320661)",
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(
