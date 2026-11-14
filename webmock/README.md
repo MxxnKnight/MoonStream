@@ -34,14 +34,18 @@ Live site: https://mxxnknight.github.io/MoonStream/
   column (420dp), like the app on a phone.
 - **Player** (`screens/PlayerScreen.kt` + `screens/PlayerComponents.kt`,
   2026-11-14) — the in-app player redesign mockup. Interactive: fake
-  playback clock (Alice in Borderland S1, 24:00), seek, double-tap ±10s,
-  swipe brightness/volume/seek, skip segments, subtitles/audio/episodes
-  sheets, lock + slide-to-unlock, NextUp. Redesign deltas vs the app:
-  segment markers on the seekbar, scrub time bubble, borderless Inter
-  title pill, slim top-center gesture HUD, soft Skip/Resume capsules,
-  History icon dropped from the bottom row (Resume pill covers it),
-  NextUp card with poster thumb, press-scale on buttons. Landscape-only:
-  in portrait it shows what changed + how to try it instead.
+  playback clock (Alice in Borderland S1, 24:00), seek, double-tap ±10s
+  (with a ripple at the tap point), swipe brightness/volume/seek, skip
+  segments, subtitles/audio/episodes/playlist sheets, subtitle lines,
+  lock + slide-to-unlock, NextUp, and the trimmer drawer (marks, range
+  slider, loop preview, fake save). The subtitle sheet's appearance
+  controls (size, stroke, colors, position) drive the mock subtitle
+  line live. Redesign deltas vs the app: segment markers on the
+  seekbar, scrub time bubble, borderless Inter title pill, slim
+  top-center gesture HUD, soft Skip/Resume capsules, History icon
+  dropped from the bottom row (Resume pill covers it), NextUp card
+  with poster thumb, press-scale on buttons. Landscape-only: in
+  portrait it shows what changed + how to try it instead.
 
 ## Building
 

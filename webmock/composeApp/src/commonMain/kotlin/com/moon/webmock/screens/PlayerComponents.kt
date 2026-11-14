@@ -1,9 +1,12 @@
 package com.moon.webmock.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -49,6 +52,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -1631,4 +1635,40 @@ fun MockPlaylistDrawer(
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Double-tap seek ripple (moon's 2026-11-14): an expanding ring at the tap
+// point, fading out over ~600ms. One per double-tap; the caller removes it
+// via onDone when the animation finishes.
+// ---------------------------------------------------------------------------
+
+@Composable
+fun MockDoubleTapRipple(
+    x: Float,
+    y: Float,
+    onDone: () -> Unit,
+) {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        progress.animateTo(1f, animationSpec = tween(600, easing = FastOutSlowInEasing))
+        onDone()
+    }
+    val scale = 0.3f + progress.value * 1.4f
+    val alpha = (1f - progress.value) * 0.5f
+    Box(
+        modifier = Modifier
+            .offset {
+                val r = 75.dp.toPx()
+                IntOffset((x - r).roundToInt(), (y - r).roundToInt())
+            }
+            .size(150.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                this.alpha = alpha
+            }
+            .background(Color.White.copy(alpha = 0.10f), CircleShape)
+            .border(2.dp, Color.White.copy(alpha = 0.6f), CircleShape),
+    )
 }
