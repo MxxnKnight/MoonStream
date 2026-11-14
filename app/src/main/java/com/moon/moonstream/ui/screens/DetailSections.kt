@@ -91,6 +91,7 @@ import androidx.compose.ui.unit.sp
 import com.moon.moonstream.index.db.MediaItemEntity
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.index.db.SubtitleFileEntity
+import com.moon.moonstream.index.parse.normalizeTitle
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.LimePillButton
 import com.moon.moonstream.ui.components.LimeTextButton
@@ -767,6 +768,14 @@ fun AddStreamSheet(
     }
 }
 
+/** Case-insensitive substring, plus a normalized pass so "biggboss" finds "Bigg Boss". */
+private fun matchesName(name: String, query: String): Boolean {
+    if (query.isBlank()) return true
+    if (name.contains(query, ignoreCase = true)) return true
+    val normQ = normalizeTitle(query)
+    return normQ.isNotBlank() && normalizeTitle(name).contains(normQ)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddSubtitleSheet(
@@ -786,18 +795,34 @@ fun AddSubtitleSheet(
     var fetching by remember { mutableStateOf(false) }
     var seasonText by remember { mutableStateOf("") }
     var episodeText by remember { mutableStateOf("") }
+    // Search (moon's 2026-11-14): the sheet only showed the first 8
+    // unlinked subtitles — with dozens in a channel, the one he wants
+    // might not be among them. A query searches the whole list.
+    var subQuery by remember { mutableStateOf("") }
+    val subFiltered = remember(unlinked, subQuery) {
+        if (subQuery.isBlank()) unlinked
+        else unlinked.filter { matchesName(it.fileName, subQuery) }
+    }
     IosBottomSheet(
         onDismissRequest = onDismiss,
     ) {
         MsSheetContent(title = "Add Subtitle") {
             if (unlinked.isNotEmpty()) {
                 Text(
-                    "Unlinked in this channel (${unlinked.size})",
+                    if (subQuery.isBlank()) "Unlinked in this channel (${unlinked.size})"
+                    else if (subFiltered.isEmpty()) "No subtitles match \"$subQuery\""
+                    else "${subFiltered.size} match${if (subFiltered.size == 1) "" else "es"}",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MsColors.TextSecondary,
                 )
-                unlinked.take(8).forEach { sub ->
+                MsTextField(
+                    value = subQuery,
+                    onValueChange = { subQuery = it },
+                    hint = "Search subtitles",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                subFiltered.take(8).forEach { sub ->
                     SubtitleRow(
                         sub = sub,
                         actionLabel = "Attach",
@@ -805,9 +830,10 @@ fun AddSubtitleSheet(
                         onDelete = null,
                     )
                 }
-                if (unlinked.size > 8) {
+                if (subFiltered.size > 8) {
                     Text(
-                        "…and ${unlinked.size - 8} more (see the Unlinked section below).",
+                        if (subQuery.isBlank()) "…and ${subFiltered.size - 8} more (see the Unlinked section below)."
+                        else "…and ${subFiltered.size - 8} more matches — narrow your search.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MsColors.TextSecondary,
                     )

@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.moon.moonstream.index.db.UnmatchedFileEntity
+import com.moon.moonstream.index.parse.normalizeTitle
 import com.moon.moonstream.ui.model.PrefillFile
 import com.moon.moonstream.ui.theme.MsColors
 import java.util.Locale
@@ -49,6 +50,10 @@ fun FilePickerSheet(
     onPick: (List<PrefillFile>) -> Unit,
 ) {
     var selected by remember { mutableStateOf(setOf<Long>()) }
+    // Search (moon's 2026-11-14): with 1000+ unmatched files, scrolling
+    // to find one is hopeless — filter as he types. Selection survives
+    // filtering (ids, not positions).
+    var query by remember { mutableStateOf("") }
     // In subtitle mode, only show subtitle files (.srt/.vtt/.ass/.ssa),
     // not video files (moon's bug 2026-11-01: picker showed 250MB+ videos).
     val visibleFiles = remember(files, subtitleMode) {
@@ -58,6 +63,10 @@ fun FilePickerSheet(
             n.endsWith(".srt") || n.endsWith(".vtt") ||
             n.endsWith(".ass") || n.endsWith(".ssa")
         }
+    }
+    val shownFiles = remember(visibleFiles, query) {
+        if (query.isBlank()) visibleFiles
+        else visibleFiles.filter { matchesName(it.fileName, query) }
     }
 
     IosBottomSheet(
@@ -74,13 +83,26 @@ fun FilePickerSheet(
                     color = MsColors.TextSecondary,
                 )
             } else {
+                MsTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    hint = "Search files",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (shownFiles.isEmpty()) {
+                    Text(
+                        "No files match \"$query\".",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MsColors.TextSecondary,
+                    )
+                } else {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 380.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(visibleFiles, key = { it.id }) { f ->
+                    items(shownFiles, key = { it.id }) { f ->
                         val checked = f.id in selected
                         Row(
                             modifier = Modifier
@@ -119,6 +141,9 @@ fun FilePickerSheet(
                         }
                     }
                 }
+                } // shownFiles non-empty — the Add button below stays
+                // visible even with zero matches, so a selection made
+                // before filtering can still be confirmed.
                 Spacer(Modifier.height(12.dp))
                 LimePillButton(
                     text = if (selected.isEmpty()) "Pick files"
@@ -144,6 +169,14 @@ fun FilePickerSheet(
             }
         }
     }
+}
+
+/** Case-insensitive substring, plus a normalized pass so "biggboss" finds "Bigg Boss". */
+private fun matchesName(name: String, query: String): Boolean {
+    if (query.isBlank()) return true
+    if (name.contains(query, ignoreCase = true)) return true
+    val normQ = normalizeTitle(query)
+    return normQ.isNotBlank() && normalizeTitle(name).contains(normQ)
 }
 
 private fun formatBytes(bytes: Long): String {
