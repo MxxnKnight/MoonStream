@@ -826,8 +826,39 @@ private fun MsSegmentedControl(
             .background(Color(0xFF1C1C1E))
             .padding(2.dp),
     ) {
-        val tabWidth = maxWidth / segments.size
-        val tabWidthPx = with(density) { tabWidth.toPx() }
+        // Weighted segments (moon's 2026-11-14): the five slots used to be
+        // equal, so ALL sat in a 65dp slot with ~19dp of empty space on
+        // each side while CUSTOM (the widest word, SemiBold when selected)
+        // overflowed its slot by ~2dp and lost its M. The weights hand
+        // ALL's spare room to CUSTOM — every word now keeps 7-11dp of
+        // breathing room on each side, text stays 13sp, nothing is
+        // cramped. Weights sum to segments.size so the bar still fills
+        // its width exactly.
+        val segWeights =
+            if (segments.size == 5) listOf(0.75f, 1.05f, 1.0f, 1.0f, 1.2f)
+            else List(segments.size) { 1f }
+        val totalWeight = segWeights.sum()
+        val segWidths = segWeights.map { maxWidth * (it / totalWeight) }
+        val segWidthsPx = with(density) { segWidths.map { it.toPx() } }
+        val segOffsetsPx = buildList {
+            var acc = 0f
+            segWidthsPx.forEach { add(acc); acc += it }
+        }
+        val totalWidthPx = segWidthsPx.sum()
+        // Segment whose centre is nearest to x (the old equal-slot math
+        // was (x / tabWidth).roundToInt() — same idea, uneven slots).
+        fun nearestSeg(x: Float): Int {
+            var best = 0
+            var bestDist = Float.MAX_VALUE
+            segOffsetsPx.forEachIndexed { i, off ->
+                val d = kotlin.math.abs(x - (off + segWidthsPx[i] / 2))
+                if (d < bestDist) {
+                    bestDist = d
+                    best = i
+                }
+            }
+            return best
+        }
         // Drag threshold (moon's 2026-11-07): a tap must never trip the
         // drag. The old 24px (8dp) was so small that the tiny finger
         // movement of pressing a segment engaged the drag and the thumb
@@ -836,10 +867,12 @@ private fun MsSegmentedControl(
         val dragThresholdPx = with(density) { 16.dp.toPx() }
         // The thumb's X is a pixel Animatable (not animateDpAsState) so a
         // drag can move it with the finger and it springs back on release.
-        // Same bouncy spring as the original, same fixed thumb size, so
-        // a tap animates exactly like the original control. Pixels (not
-        // Dp) because the drag deltas arrive in pixels — and Dp's
-        // VectorConverter won't resolve in this module's Compose version.
+        // Same bouncy spring as the original, so a tap animates exactly
+        // like the original control. Pixels (not Dp) because the drag
+        // deltas arrive in pixels — and Dp's VectorConverter won't
+        // resolve in this module's Compose version. The thumb's WIDTH is
+        // a second Animatable: slots differ now (ALL 49dp, CUSTOM 78dp),
+        // so it stretches while it glides instead of jumping.
         // Glide spec (moon's 2026-11-09, mpvRx video): the same smooth,
         // visible glide as the bottom pill — the old bouncy Medium
         // spring was too fast to see. A softer spring glides the thumb
@@ -849,20 +882,27 @@ private fun MsSegmentedControl(
             stiffness = 260f,
         )
         val thumbX = remember { Animatable(0f) }
+        val thumbW = remember { Animatable(segWidthsPx[selected]) }
         // Thumb X while the finger holds it (2026-11-09, moon: "same teleport
         // bug on the library tabs"). Null = the Animatable drives it. A plain
         // state so the drag costs one write per event instead of a coroutine +
         // Animatable call, and so the thumb can glide on first engage instead
         // of jumping under the finger.
         var dragThumbX by remember { mutableStateOf<Float?>(null) }
+        // Thumb width while the finger holds it — the slot under the
+        // finger, so the thumb already has the width it settles into.
+        var dragThumbW by remember { mutableStateOf<Float?>(null) }
         var thumbReady by remember { mutableStateOf(false) }
-        LaunchedEffect(selected, tabWidthPx) {
-            val target = tabWidthPx * selected
+        LaunchedEffect(selected, totalWidthPx) {
+            val targetX = segOffsetsPx[selected]
+            val targetW = segWidthsPx[selected]
             if (!thumbReady) {
-                thumbX.snapTo(target)
+                thumbX.snapTo(targetX)
+                thumbW.snapTo(targetW)
                 thumbReady = true
             } else {
-                thumbX.animateTo(target, slideSpec)
+                launch { thumbX.animateTo(targetX, slideSpec) }
+                launch { thumbW.animateTo(targetW, slideSpec) }
             }
         }
         // Horizontal drag (moon's 2026-11-07): press and drag the thumb —
@@ -876,7 +916,12 @@ private fun MsSegmentedControl(
         Box(
             modifier = Modifier
                 .offset { IntOffset((dragThumbX ?: thumbX.value).roundToInt(), 0) }
-                .size(width = tabWidth, height = 36.dp)
+                .size(
+                    width = with(density) {
+                        (dragThumbW ?: thumbW.value).toDp()
+                    },
+                    height = 36.dp,
+                )
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xFF636366)),
         )
@@ -888,7 +933,7 @@ private fun MsSegmentedControl(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(selected, tabWidthPx) {
+                .pointerInput(selected, totalWidthPx) {
                     awaitPointerEventScope {
                         while (true) {
                             val down = awaitFirstDown(
@@ -905,14 +950,19 @@ private fun MsSegmentedControl(
                                     // Gesture cancelled: park the thumb back on
                                     // the selected segment.
                                     val held = dragThumbX
+                                    val heldW = dragThumbW
                                     if (dragging && held != null) {
                                         scope.launch {
                                             thumbX.snapTo(held)
+                                            if (heldW != null) thumbW.snapTo(heldW)
                                             dragThumbX = null
-                                            thumbX.animateTo(tabWidthPx * selected, slideSpec)
+                                            dragThumbW = null
+                                            launch { thumbX.animateTo(segOffsetsPx[selected], slideSpec) }
+                                            launch { thumbW.animateTo(segWidthsPx[selected], slideSpec) }
                                         }
                                     } else {
                                         dragThumbX = null
+                                        dragThumbW = null
                                     }
                                     break
                                 }
@@ -923,9 +973,9 @@ private fun MsSegmentedControl(
                                     // flick the thumb's own X can still be on
                                     // the segment we came from).
                                     val releaseX = dragThumbX ?: thumbX.value
+                                    val releaseW = dragThumbW ?: thumbW.value
                                     if (dragging) {
-                                        val nearest = ((fingerX / tabWidthPx).roundToInt())
-                                            .coerceIn(0, segments.size - 1)
+                                        val nearest = nearestSeg(fingerX)
                                         // Hand the Animatable the drag position
                                         // BEFORE dropping the override, so the
                                         // thumb never flashes back to the old
@@ -934,17 +984,19 @@ private fun MsSegmentedControl(
                                         // teleport).
                                         scope.launch {
                                             thumbX.snapTo(releaseX)
+                                            thumbW.snapTo(releaseW)
                                             dragThumbX = null
+                                            dragThumbW = null
                                             if (nearest != selected) {
                                                 onSelect(nearest)
                                             } else {
-                                                thumbX.animateTo(
-                                                    tabWidthPx * selected, slideSpec
-                                                )
+                                                launch { thumbX.animateTo(segOffsetsPx[selected], slideSpec) }
+                                                launch { thumbW.animateTo(segWidthsPx[selected], slideSpec) }
                                             }
                                         }
                                     } else {
                                         dragThumbX = null
+                                        dragThumbW = null
                                     }
                                     break
                                 }
@@ -964,17 +1016,22 @@ private fun MsSegmentedControl(
                                 // teleport. After that it tracks 1:1 (0.85),
                                 // so sparse touch events don't stutter it.
                                 // thumbX is the thumb's LEFT edge, so the
-                                // centre is thumbX + tabWidthPx/2.
-                                val maxX = tabWidthPx * (segments.size - 1)
+                                // centre is thumbX + thumbWidth/2. The width
+                                // follows the slot under the finger, so the
+                                // thumb already has the size it settles into.
+                                val maxX = totalWidthPx - segWidthsPx.last()
                                 fingerX = change.position.x
+                                val under = nearestSeg(fingerX)
+                                val thumbWidthPx = segWidthsPx[under]
                                 val cur = dragThumbX ?: thumbX.value
                                 val targetX =
-                                    (fingerX - tabWidthPx / 2).coerceIn(0f, maxX)
+                                    (fingerX - thumbWidthPx / 2).coerceIn(0f, maxX)
                                 val follow = if (firstEngage) 0.45f else 0.85f
                                 val next = cur + (targetX - cur) * follow
                                 if (kotlin.math.abs(next - cur) > 0.05f) {
                                     dragThumbX = next
                                 }
+                                dragThumbW = thumbWidthPx
                             }
                         }
                     }
@@ -985,7 +1042,7 @@ private fun MsSegmentedControl(
                 val isSel = i == selected
                 Box(
                     modifier = Modifier
-                        .weight(1f)
+                        .weight(segWeights[i])
                         .fillMaxWidth()
                         .height(36.dp)
                         .clip(RoundedCornerShape(8.dp))
