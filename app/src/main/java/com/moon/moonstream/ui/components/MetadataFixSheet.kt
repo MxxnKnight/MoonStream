@@ -164,7 +164,7 @@ fun MetadataFixSheet(
                     isAnime = isAnime,
                     tmdbKey = key,
                 )
-                if (mode != FixMode.LINK) {
+                if (mode != FixMode.LINK && mode != FixMode.FIX_FILE) {
                     provider
                 } else {
                     // Local first (moon's 2026-11-14): entries the providers
@@ -230,7 +230,7 @@ fun MetadataFixSheet(
                     selected = null
                     searched = false
                 },
-                hint = if (mode == FixMode.LINK) "Search your library or online"
+                hint = if (mode == FixMode.LINK || mode == FixMode.FIX_FILE) "Search your library or online"
                 else "Search title or IMDb ID (e.g. tt0320661)",
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
