@@ -6,7 +6,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -79,14 +82,15 @@ fun mockFormatTime(ms: Long): String {
  * Tracks presses WITHOUT consuming them (requireUnconsumed = false, never
  * consume), so the real click underneath still fires.
  */
-fun Modifier.mockPressScale(): Modifier = androidx.compose.runtime.composed {
+@Composable
+fun Modifier.mockPressScale(): Modifier {
     var pressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (pressed) 0.9f else 1f,
         animationSpec = spring(stiffness = Spring.StiffnessMedium),
         label = "pressScale",
     )
-    this
+    return this
         .graphicsLayer { scaleX = scale; scaleY = scale }
         .pointerInput(Unit) {
             awaitPointerEventScope {
@@ -433,14 +437,14 @@ fun MockVideoScene() {
                 .align(Alignment.BottomStart)
                 .offset(y = 60.dp)
                 .size(420.dp, 180.dp)
-                .background(Color(0xFF070B14), RoundedCornerShape(topStart = 50, topEnd = 50)),
+                .background(Color(0xFF070B14), RoundedCornerShape(topStartPercent = 50, topEndPercent = 50)),
         )
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .offset(y = 80.dp)
                 .size(380.dp, 160.dp)
-                .background(Color(0xFF0A0F1D), RoundedCornerShape(topStart = 50, topEnd = 50)),
+                .background(Color(0xFF0A0F1D), RoundedCornerShape(topStartPercent = 50, topEndPercent = 50)),
         )
     }
 }
@@ -773,7 +777,7 @@ fun MockUnlockSlider(
                 .size(48.dp)
                 .background(Color.White, CircleShape)
                 .pointerInput(travel) {
-                    androidx.compose.foundation.gestures.detectHorizontalDragGestures(
+                    detectHorizontalDragGestures(
                         onDragEnd = {
                             if (travel > 0f && offsetX > travel * 0.7f) onUnlock()
                             else offsetX = 0f
