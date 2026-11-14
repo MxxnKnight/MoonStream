@@ -67,6 +67,9 @@ data class QualityCount(val label: String, val hoursMs: Long)
 
 data class TypeCount(val type: String, val count: Int)
 
+/** One day of the streak calendar: midnight timestamp + ms watched. */
+data class DayHours(val dayStartMs: Long, val hoursMs: Long)
+
 data class WatchStats(
     val range: StatsRange,
     val hoursWatchedMs: Long,
@@ -120,6 +123,10 @@ data class WatchStats(
     val hourBars: List<Pair<String, Float>> = emptyList(),
     /** Finished / started titles in range, as a percent (0-100). */
     val completionRate: Int = 0,
+    /** Streak calendar: 22 full weeks (Sun-Sat) ending this week — 154
+     *  days, range-independent like GitHub's graph. Days after today
+     *  read 0; the card blanks them. */
+    val calendarDays: List<DayHours> = emptyList(),
 )
 
 /** Languages that mark a series as an Asian drama (K/C/J/Thai). */
@@ -387,6 +394,25 @@ object WatchStatsLoader {
             .sortedByDescending { it.finishedAtMs }
             .take(5)
 
+        // Streak calendar: 22 full weeks (Sun-Sat) ending this week, from
+        // ALL rows (range-independent, like GitHub's graph). The grid
+        // starts on the Sunday 21 weeks ago; days after today read 0.
+        val gridStart = Calendar.getInstance().apply {
+            timeInMillis = now
+            set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            add(Calendar.WEEK_OF_YEAR, -21)
+        }.timeInMillis
+        val allPerDay = rows.groupBy { dayStart(it.playedAt) }
+            .mapValues { (_, rs) -> rs.sumOf { it.positionMs } }
+        val calendarDays = (0 until 154).map { i ->
+            val d = gridStart + i * dayMs
+            DayHours(d, allPerDay[d] ?: 0L)
+        }
+
         return WatchStats(
             range = range,
             hoursWatchedMs = hoursMs,
@@ -420,6 +446,7 @@ object WatchStatsLoader {
             streamedBytes = streamedBytes,
             hourBars = hourBars,
             completionRate = completionRate,
+            calendarDays = calendarDays,
         )
     }
 

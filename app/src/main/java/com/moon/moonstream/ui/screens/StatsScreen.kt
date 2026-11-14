@@ -8,7 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -51,6 +51,7 @@ import coil.compose.AsyncImage
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.MsSegmented
+import com.moon.moonstream.ui.stats.DayHours
 import com.moon.moonstream.ui.stats.FinishedItem
 import com.moon.moonstream.ui.stats.MostWatchedItem
 import com.moon.moonstream.ui.stats.StatsRange
@@ -62,6 +63,7 @@ import com.moon.moonstream.ui.theme.doto
 import com.moon.moonstream.ui.theme.motionDurationMs
 import com.moon.moonstream.ui.theme.rememberReducedMotion
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -247,17 +249,23 @@ fun StatsScreen(onBack: () -> Unit) {
                 HabitsCard(s, reveal, reduced,
                     Modifier.fillMaxWidth().statsReveal(reveal, 13))
             }
+            item(key = "calendar") {
+                SectionTitle("Streak calendar")
+                Spacer(Modifier.height(8.dp))
+                StreakCalendarCard(s, reveal,
+                    Modifier.fillMaxWidth().statsReveal(reveal, 14))
+            }
             item(key = "library") {
                 SectionTitle("Your library")
                 Spacer(Modifier.height(8.dp))
                 LibraryCard(s, reveal, reduced,
-                    Modifier.fillMaxWidth().statsReveal(reveal, 14))
+                    Modifier.fillMaxWidth().statsReveal(reveal, 15))
             }
             item(key = "recent") {
                 SectionTitle("Recently finished")
                 Spacer(Modifier.height(8.dp))
                 RecentlyFinishedCard(s.recentlyFinished, reveal,
-                    Modifier.fillMaxWidth().statsReveal(reveal, 15))
+                    Modifier.fillMaxWidth().statsReveal(reveal, 16))
             }
         } else if (s == null) {
             item(key = "loading") {
@@ -1041,6 +1049,149 @@ private fun BarListCard(
 // ---------------------------------------------------------------------------
 // Habits
 // ---------------------------------------------------------------------------
+/**
+ * GitHub-style streak calendar (moon's pick 2026-11-14): 22 weeks of day
+ * squares, darker = more watched that day. Tap a day for its hours.
+ * Future days in the current week render as blank space.
+ */
+@Composable
+private fun StreakCalendarCard(
+    s: WatchStats,
+    reveal: Animatable<Float, AnimationVector1D>,
+    modifier: Modifier = Modifier,
+) {
+    val days = s.calendarDays
+    var selected by remember { mutableStateOf<DayHours?>(null) }
+    // One shared interaction source for all squares (indication is null —
+    // the source only satisfies the clickable signature).
+    val tapSource = remember { MutableInteractionSource() }
+    val today = remember {
+        val c = Calendar.getInstance()
+        c.set(Calendar.HOUR_OF_DAY, 0)
+        c.set(Calendar.MINUTE, 0)
+        c.set(Calendar.SECOND, 0)
+        c.set(Calendar.MILLISECOND, 0)
+        c.timeInMillis
+    }
+    GlowCard(modifier = modifier) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            if (days.isEmpty()) {
+                Text(
+                    "No watch history yet — squares fill in as you watch.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MsColors.TextSecondary,
+                )
+            } else {
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val gap = 3.dp
+                    val sq = (maxWidth - gap * 21) / 22
+                    val monthFmt = SimpleDateFormat("MMM", Locale.getDefault())
+                    // Month label per week column: shown only where the
+                    // month changes (GitHub puts "Nov" over the week it
+                    // starts in). Labels overflow their narrow cell to the
+                    // right — months are weeks apart, so they never collide.
+                    val monthLabels = (0 until 22).map { w ->
+                        monthFmt.format(Date(days[w * 7].dayStartMs))
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(gap),
+                    ) {
+                        for (w in 0 until 22) {
+                            Box(
+                                modifier = Modifier.width(sq),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                if (w == 0 || monthLabels[w] != monthLabels[w - 1]) {
+                                    Text(
+                                        monthLabels[w],
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MsColors.TextSecondary,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Visible,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(gap),
+                    ) {
+                        for (w in 0 until 22) {
+                            Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+                                for (d in 0 until 7) {
+                                    val day = days[w * 7 + d]
+                                    if (day.dayStartMs > today) {
+                                        Spacer(Modifier.size(sq))
+                                    } else {
+                                        val isSel = selected?.dayStartMs == day.dayStartMs
+                                        Box(
+                                            modifier = Modifier
+                                                .size(sq)
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(calendarLevelColor(day.hoursMs))
+                                                .then(
+                                                    if (isSel) Modifier.border(
+                                                        1.5.dp, Color.White, RoundedCornerShape(3.dp),
+                                                    ) else Modifier,
+                                                )
+                                                .clickable(
+                                                    indication = null,
+                                                    interactionSource = tapSource,
+                                                ) { selected = day },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                val dayFmt = SimpleDateFormat("EEE, MMM d", Locale.getDefault())
+                Text(
+                    text = selected?.let { day ->
+                        "${dayFmt.format(Date(day.dayStartMs))} · " +
+                            if (day.hoursMs > 0L) formatHours(day.hoursMs) else "No watching"
+                    } ?: "${days.count { it.hoursMs > 0L && it.dayStartMs <= today }} active days in the last 22 weeks",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MsColors.TextPrimary,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Less", style = MaterialTheme.typography.labelSmall, color = MsColors.TextSecondary)
+                    Spacer(Modifier.width(4.dp))
+                    listOf(0L, 15 * 60_000L, 45 * 60_000L, 90 * 60_000L, 3 * 3_600_000L).forEach { ms ->
+                        Box(
+                            modifier = Modifier
+                                .size(9.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(calendarLevelColor(ms)),
+                        )
+                        Spacer(Modifier.width(3.dp))
+                    }
+                    Text("More", style = MaterialTheme.typography.labelSmall, color = MsColors.TextSecondary)
+                }
+            }
+        }
+    }
+}
+
+/** Calendar shade by hours watched: empty, then four accent steps. */
+private fun calendarLevelColor(ms: Long): Color = when {
+    ms <= 0L -> Color.White.copy(alpha = 0.08f)
+    ms < 30 * 60_000L -> MsColors.Accent.copy(alpha = 0.35f)
+    ms < 60 * 60_000L -> MsColors.Accent.copy(alpha = 0.60f)
+    ms < 2 * 3_600_000L -> MsColors.Accent.copy(alpha = 0.85f)
+    else -> MsColors.Accent
+}
+
 @Composable
 private fun HabitsCard(
     s: WatchStats,
