@@ -273,19 +273,24 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     // tabs and search are always reachable, even scrolled far down.
     @Composable
     fun LibraryHeader() {
+        // Tight header (moon's 2026-11-14): the top area ate a third of
+        // the screen, so barely a row and a half of posters showed. Gaps
+        // trimmed (18/12/16/16/12 -> 12/8/10/10/8) and the Select/Filters
+        // pills shrunk to iOS .mini size — about 42dp back to the grid,
+        // with breathing room still between every row.
         Column(Modifier.fillMaxWidth()) {
             Text(
                 "Library",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 color = MsColors.TextPrimary,
-                modifier = Modifier.padding(start = 20.dp, top = 18.dp, end = 20.dp),
+                modifier = Modifier.padding(start = 20.dp, top = 12.dp, end = 20.dp),
             )
             Text(
                 "$animatedTitles titles · $animatedStreams streams indexed",
                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = Redaction35),
                 color = MsColors.TextSecondary,
-                modifier = Modifier.padding(start = 20.dp, top = 2.dp, end = 20.dp, bottom = 12.dp),
+                modifier = Modifier.padding(start = 20.dp, top = 2.dp, end = 20.dp, bottom = 8.dp),
             )
 
             // Continue Watching row REMOVED (moon's correction 2026-11-02):
@@ -300,14 +305,15 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp),
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(10.dp))
 
             // Filter tabs: the ORIGINAL iOS segmented bar, restored
             // exactly (moon's reference screenshot, 2026-11-07). The pill
             // is a rounded rectangle that fills the whole selected slot
             // (36dp tall, 8dp corners) — NOT a round capsule hugging the
-            // text, and NOT a slot-wide flat slide. The thumb has ONE fixed
-            // size and only its X animates (bouncy spring), so the click
+            // text, and NOT a slot-wide flat slide. Slots are weighted by
+            // word size (moon's 2026-11-14) and the thumb stretches to
+            // each slot's width on the same spring as its X, so the click
             // animation is the clean iOS slide, not a stretching wobble.
             // The bar is fixed — all five tabs visible, no scroll, no drag.
             MsSegmentedControl(
@@ -320,7 +326,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                 },
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(10.dp))
 
             Row(
                 modifier = Modifier
@@ -334,21 +340,27 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     color = MsColors.TextSecondary,
                     modifier = Modifier.weight(1f),
                 )
+                // iOS .mini buttons (moon's 2026-11-14): 12sp text with
+                // compact padding — about 30dp tall instead of 46dp.
+                // At this height the 14dp corners read as a capsule,
+                // like the .mini size in his reference image.
                 MsOutlinePill(
                     text = if (selectMode) "Done" else "Select",
                     onClick = {
                         if (selectMode) exitSelectMode() else selectMode = true
                     },
-                    fontSize = 13,
+                    fontSize = 12,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
                     modifier = Modifier.padding(end = 8.dp),
                 )
                 MsOutlinePill(
                     text = "Filters",
                     onClick = { showFilters = true },
-                    fontSize = 13,
+                    fontSize = 12,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
                 )
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
         }
     }
 
