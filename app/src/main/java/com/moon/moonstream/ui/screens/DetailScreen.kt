@@ -36,6 +36,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AddLink
 import androidx.compose.material.icons.outlined.AutoFixHigh
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -85,6 +86,7 @@ import com.moon.moonstream.index.parse.normalizeTitle
 import com.moon.moonstream.index.scan.ScanManager
 import com.moon.moonstream.index.scan.ScanPrefs
 import com.moon.moonstream.ui.components.BareIconButton
+import com.moon.moonstream.ui.components.EditMetadataSheet
 import com.moon.moonstream.ui.components.FixMode
 import com.moon.moonstream.ui.components.IosDialog
 import com.moon.moonstream.ui.components.IosSheetButton
@@ -155,6 +157,8 @@ fun DetailScreen(
     var attachSub by remember { mutableStateOf<SubtitleFileEntity?>(null) }
     var seasonIdx by remember { mutableStateOf(0) }
     var refreshing by remember { mutableStateOf(false) }
+    // Manual metadata editor, custom entries only (moon's 2026-11-14).
+    var showEditMetadata by remember { mutableStateOf(false) }
 
     val m = media
     if (m == null) {
@@ -583,7 +587,18 @@ fun DetailScreen(
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (refreshing) {
+                // Custom entries get an edit pencil instead of refresh
+                // (moon's 2026-11-14): no provider knows a hand-made
+                // entry, so re-fetching is useless — and a wrong re-match
+                // could overwrite his own words.
+                if (m.isCustom) {
+                    BareIconButton(
+                        icon = Icons.Outlined.Edit,
+                        contentDescription = "Edit metadata",
+                        tint = Color.White,
+                        onClick = { showEditMetadata = true },
+                    )
+                } else if (refreshing) {
                     Box(
                         modifier = Modifier.size(48.dp),
                         contentAlignment = Alignment.Center,
@@ -857,6 +872,14 @@ fun DetailScreen(
                 fixMode = null
                 fixFile = null
             },
+        )
+    }
+
+    // Manual metadata editor (custom entries only).
+    if (showEditMetadata) {
+        EditMetadataSheet(
+            media = m,
+            onDismiss = { showEditMetadata = false },
         )
     }
 

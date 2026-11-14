@@ -92,6 +92,9 @@ fun CreateScreen(
     val scope = rememberCoroutineScope()
 
     var posterUrl by remember { mutableStateOf("") }
+    // Landscape image for the Detail header (moon's 2026-11-14: custom
+    // content had only the one portrait poster field).
+    var backdropUrl by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
     var desc by remember { mutableStateOf("") }
     var year by remember {
@@ -230,6 +233,7 @@ fun CreateScreen(
                         tmdbId = null,
                         stremioId = StremioIds.forNewItem(channelId, norm, null),
                         posterUrl = posterUrl.trim().ifBlank { null },
+                        backdropUrl = backdropUrl.trim().ifBlank { null },
                         overview = desc.trim().ifBlank { null },
                         totalSize = 0L,
                         episodeCount = 0,
@@ -382,6 +386,37 @@ fun CreateScreen(
                 AsyncImage(
                     model = posterUrl.trim(),
                     contentDescription = "Poster preview",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            }
+        }
+
+        MsTextField(
+            value = backdropUrl,
+            onValueChange = { backdropUrl = it },
+            hint = "Backdrop image URL — landscape (optional)",
+            modifier = Modifier.fillMaxWidth(),
+        )
+        // Live backdrop preview.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(160.dp)
+                .clip(RoundedCornerShape(MsRadii.Field))
+                .background(MsColors.SurfaceAlt),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (backdropUrl.isBlank()) {
+                Text(
+                    "Backdrop preview",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MsColors.TextSecondary,
+                )
+            } else {
+                AsyncImage(
+                    model = backdropUrl.trim(),
+                    contentDescription = "Backdrop preview",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                 )
