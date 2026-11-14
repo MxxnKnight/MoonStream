@@ -92,9 +92,6 @@ private sealed interface MockHud {
     data class Volume(override val fraction: Float) : MockHud
 }
 
-/** One in-flight double-tap ripple (id, tap x, tap y). */
-private data class MockRipple(val id: Int, val x: Float, val y: Float)
-
 private val mockChanges = listOf(
     "Segment markers on the seekbar" to
         "Intro (amber) and outro (violet) blocks drawn ON the bar, so you can see them before scrubbing.",
@@ -120,8 +117,6 @@ private val mockChanges = listOf(
         "All lines… lists the dialogue — tap a line to jump there.",
     "Playlist drawer" to
         "The List button shows the episode's streams by quality.",
-    "Double-tap ripple" to
-        "Double-tap either half and a ring ripples out from your finger, with the +10s/−10s text.",
 )
 
 @Composable
@@ -294,8 +289,6 @@ private fun PlayerLandscapeMock() {
     var subStrokeColor by remember { mutableStateOf(Color.Black) }
     var subPosition by remember { mutableStateOf(0f) }
     var qualityIndex by remember { mutableStateOf(0) }
-    var ripples by remember { mutableStateOf(listOf<MockRipple>()) }
-    var rippleId by remember { mutableStateOf(0) }
     val bufferFrac = 0.35f // demo: buffered to ~8:24
 
     fun poke() {
@@ -439,10 +432,13 @@ private fun PlayerLandscapeMock() {
                     onDoubleTap = { offset ->
                         if (!locked && sheet == null && !showTrim) {
                             val forward = offset.x > size.width / 2
-                            seekBy(if (forward) 10_000L else -10_000L)
-                            seekFeedback = forward to 10
-                            rippleId++
-                            ripples = ripples + MockRipple(rippleId, offset.x, offset.y)
+                            // Consecutive double-taps accumulate (10> → 20> → 30>),
+                            // like the app: while the feedback is still up, add 10.
+                            val secs = if (seekFeedback?.first == forward) {
+                                seekFeedback!!.second + 10
+                            } else 10
+                            seekBy(if (forward) secs * 1000L else -secs * 1000L)
+                            seekFeedback = forward to secs
                         }
                     },
                 )
@@ -516,16 +512,6 @@ private fun PlayerLandscapeMock() {
                     .padding(bottom = if (controlsVisible) 132.dp else 36.dp)
                     .padding(bottom = (subPosition * 300).dp)
                     .padding(horizontal = 48.dp),
-            )
-        }
-
-        // Double-tap ripples (moon's 2026-11-14): expanding rings at
-        // each tap point, above the video, below the controls.
-        ripples.forEach { ripple ->
-            MockDoubleTapRipple(
-                x = ripple.x,
-                y = ripple.y,
-                onDone = { ripples = ripples.filter { it.id != ripple.id } },
             )
         }
 
@@ -664,9 +650,10 @@ private fun PlayerLandscapeMock() {
         }
 
         // Double-tap feedback: low-opacity text only (moon's rule).
+        // Arrows now, not +10s/-10s (moon's 2026-11-14).
         seekFeedback?.let { (forward, secs) ->
             Text(
-                if (forward) "+${secs}s" else "-${secs}s",
+                if (forward) "${secs}>" else "<${secs}",
                 color = Color.White.copy(alpha = 0.75f),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold,

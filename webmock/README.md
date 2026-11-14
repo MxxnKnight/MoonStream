@@ -35,7 +35,7 @@ Live site: https://mxxnknight.github.io/MoonStream/
 - **Player** (`screens/PlayerScreen.kt` + `screens/PlayerComponents.kt`,
   2026-11-14) — the in-app player redesign mockup. Interactive: fake
   playback clock (Alice in Borderland S1, 24:00), seek, double-tap ±10s
-  (with a ripple at the tap point), swipe brightness/volume/seek, skip
+  (arrow feedback: 10> / <10, accumulating), swipe brightness/volume/seek, skip
   segments, subtitles/audio/episodes/playlist sheets, subtitle lines,
   lock + slide-to-unlock, NextUp, and the trimmer drawer (marks, range
   slider, loop preview, fake save). The subtitle sheet's appearance
