@@ -56,7 +56,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -107,8 +106,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * Library on REAL data (v0.7.0): observes the Room library built by the
- * scanner. Segments ALL/MOVIES/SERIES/ANIME/HIDDEN, search, real filters,
- * long-press/Select multi-select with Hide/Unhide persisted to the database.
+ * scanner. Segments ALL/MOVIES/SERIES/ANIME/CUSTOM, search, real filters,
+ * long-press/Select multi-select with Delete and Merge.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -166,12 +165,13 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     val filtered = remember(
         allItems, segment, query, qualityIds, subFilter, subIds, subLangIds, sort,
     ) { allItems.filter { t ->
+        // Hide is gone (moon's 2026-11-14): the HIDDEN tab is now CUSTOM.
         val matchesSegment = when (segment) {
-            0 -> !t.hidden
-            1 -> t.type == "movie" && !t.hidden
-            2 -> t.type == "series" && !t.hidden
-            3 -> t.type == "anime" && !t.hidden
-            4 -> t.hidden
+            0 -> true
+            1 -> t.type == "movie"
+            2 -> t.type == "series"
+            3 -> t.type == "anime"
+            4 -> t.isCustom
             else -> true
         }
         val matchesQuery = query.isBlank() || t.title.contains(query, ignoreCase = true)
@@ -191,7 +191,6 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             else -> list // "Recently added": observeAll is updatedAt DESC
         }
     } }
-    val inHiddenTab = segment == 4
     // Low-end pass (moon's 2026-11-09): this sum walked every entry on every
     // recomposition (it sits in a header that also moves while scrolling).
     val totalStreams = remember(allItems) { allItems.sumOf { it.fileCount } }
@@ -215,14 +214,6 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
         selectMode = false
         selectedIds.clear()
         mergeSources.clear()
-    }
-
-    fun setHidden(ids: List<Long>, hidden: Boolean) {
-        scope.launch {
-            ids.forEach { db.mediaDao().setHidden(it, hidden) }
-            MsToast.show(if (hidden) "${ids.size} hidden" else "${ids.size} unhidden")
-            exitSelectMode()
-        }
     }
 
     /** Phase 1 → 2: lock selected as merge sources (red outline = will be deleted),
@@ -320,7 +311,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             // animation is the clean iOS slide, not a stretching wobble.
             // The bar is fixed — all five tabs visible, no scroll, no drag.
             MsSegmentedControl(
-                segments = listOf("ALL", "MOVIES", "SERIES", "ANIME", "HIDDEN"),
+                segments = listOf("ALL", "MOVIES", "SERIES", "ANIME", "CUSTOM"),
                 selected = segment,
                 onSelect = {
                     segment = it
@@ -420,7 +411,7 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                     Text(
                         text = when {
                             allItems.isEmpty() -> "No titles yet — scan a channel to build your library."
-                            seg == 4 -> "Nothing hidden."
+                            seg == 4 -> "No custom content yet."
                             seg == 1 -> "No movies yet."
                             seg == 2 -> "No series yet."
                             seg == 3 -> "No anime yet."
@@ -448,7 +439,6 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                             selectMode = selectMode,
                             isSelected = isSelected,
                             isMergeSource = mergeSources.contains(item.id),
-                            inHiddenTab = inHiddenTab,
                             onClick = {
                                 if (selectMode) {
                                     // In phase 2 (mergeSources locked), can't pick a source as target.
@@ -470,11 +460,6 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                                     selectedIds.add(item.id)
                                 } else if (!isSelected) {
                                     selectedIds.add(item.id)
-                                }
-                            },
-                            onToggleHide = {
-                                scope.launch {
-                                    db.mediaDao().setHidden(item.id, !item.hidden)
                                 }
                             },
                         )
@@ -530,34 +515,6 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
                         style = MaterialTheme.typography.bodyMedium,
                         color = MsColors.Accent,
                     )
-                }
-                // iOS red pill for Hide/Unhide.
-                val hideColor = if (inHiddenTab) Color(0xFF30D158) else Color(0xFFFF453A)
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(if (selectedIds.isNotEmpty()) hideColor else Color(0xFF39393B))
-                        .clickable(enabled = selectedIds.isNotEmpty()) {
-                            setHidden(selectedIds.toList(), !inHiddenTab)
-                        }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.VisibilityOff,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(15.dp),
-                        )
-                        Spacer(Modifier.padding(horizontal = 3.dp))
-                        Text(
-                            (if (inHiddenTab) "Unhide" else "Hide") + " (${selectedIds.size})",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
-                        )
-                    }
                 }
                 // Two-phase merge (moon's design 2026-11-04):
                 // Phase 1: "Merge to" (1+ selected) → locks sources, pick target next.
@@ -637,10 +594,8 @@ private fun PosterCell(
     isSelected: Boolean,
     /** Red outline = marked as merge source, will be deleted (moon's 2026-11-04). */
     isMergeSource: Boolean = false,
-    inHiddenTab: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
-    onToggleHide: () -> Unit,
 ) {
     val context = LocalContext.current
     // Low-end pass (moon's 2026-11-09): the poster style/template live in
@@ -773,13 +728,6 @@ private fun PosterCell(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (inHiddenTab) {
-            LimeTextButton(
-                text = "Unhide",
-                fontSize = 13,
-                onClick = onToggleHide,
-            )
-        }
     }
 }
 

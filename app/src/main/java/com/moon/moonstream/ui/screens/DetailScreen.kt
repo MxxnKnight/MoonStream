@@ -44,8 +44,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Subtitles
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.text.input.KeyboardType
@@ -356,14 +354,6 @@ fun DetailScreen(
         }
     }
 
-    fun toggleHide() {
-        scope.launch {
-            db.mediaDao().setHidden(m.id, !m.hidden)
-            MsToast.show(if (!m.hidden) "Hidden — find it in the Hidden tab" else "Unhidden")
-            if (!m.hidden) onBack()
-        }
-    }
-
     /** FIX_TITLE apply: re-run the matcher on the picked title, update the row. */
     fun applyFixTitle(picked: MetaPick) {
         scope.launch(Dispatchers.IO) {
@@ -608,12 +598,6 @@ fun DetailScreen(
                         onClick = { refreshMetadata() },
                     )
                 }
-                BareIconButton(
-                    icon = if (m.hidden) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
-                    contentDescription = if (m.hidden) "Unhide entry" else "Hide entry",
-                    tint = Color.White,
-                    onClick = { toggleHide() },
-                )
             }
             Text(
                 text = m.title,
