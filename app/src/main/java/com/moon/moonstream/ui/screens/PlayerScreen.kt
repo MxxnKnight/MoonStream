@@ -118,6 +118,7 @@ import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.index.StremioIds
 import com.moon.moonstream.index.match.MetadataMatcher
 import com.moon.moonstream.index.parse.normalizeTitle
+import com.moon.moonstream.index.parse.SplitFiles
 import com.moon.moonstream.index.scan.ScanPrefs
 import com.moon.moonstream.util.AnimeSkip
 import com.moon.moonstream.util.AppLog
@@ -447,20 +448,40 @@ fun PlayerScreen(
     val playUri = remember(orderedFiles, streamFileId, videoUri) {
         val f = orderedFiles.firstOrNull { it.id == streamFileId }
         if (f != null && f.fileSize > 0L) {
-            TdStreamUri.build(f.channelId, f.messageId, f.fileSize, f.fileName)
+            // Split file (.001, .002, … — moon's 2026-11-15): one tdfile://
+            // URI carries every part, and the DataSource joins them into
+            // a single stream. A part with an unknown size breaks the
+            // byte map, so an incomplete sequence falls back to the
+            // single file it always played.
+            val seq = SplitFiles.sequenceFor(orderedFiles, f)
+            if (seq.size > 1 && seq.all { it.fileSize > 0L }) {
+                TdStreamUri.buildParts(
+                    seq.map { TdStreamUri.Part(it.channelId, it.messageId, it.fileSize) },
+                    SplitFiles.baseName(f.fileName),
+                )
+            } else {
+                TdStreamUri.build(f.channelId, f.messageId, f.fileSize, f.fileName)
+            }
         } else {
             videoUri
         }
     }
-    // Channel/message for the chunk cleanup on close (moon's rule: both
-    // caches cleared on every player close). Held in a rememberUpdatedState
+    // Files whose bytes get deleted on close (moon's rule: both caches
+    // cleared on every player close). Held in rememberUpdatedState
     // because the onDispose below captures the first composition's values
     // and files load async (currentFile starts null) — this always reads
-    // the CURRENT file at dispose time. Library files come from
-    // currentFile; unmatched files (no library row) from the tdfile:// URI.
-    val closeTarget by rememberUpdatedState(
-        currentFile?.let { it.channelId to it.messageId }
-            ?: TdStreamUri.parse(videoUri)?.let { it.channelId to it.messageId },
+    // the CURRENT files at dispose time. A split file contributes every
+    // part (the chunk dirs and Telegram copies are per part). Unmatched
+    // files (no library row) fall back to the tdfile:// URI's single file.
+    val closeFiles by rememberUpdatedState(
+        currentFile?.let { SplitFiles.sequenceFor(orderedFiles, it) } ?: emptyList(),
+    )
+    val closeTargets by rememberUpdatedState(
+        closeFiles.map { it.channelId to it.messageId }
+            .ifEmpty {
+                TdStreamUri.parse(videoUri)?.let { listOf(it.channelId to it.messageId) }
+                    ?: emptyList()
+            },
     )
     val groups = remember(orderedFiles) {
         orderedFiles.groupBy { Pair(it.season, it.episode) }
@@ -1109,9 +1130,9 @@ fun PlayerScreen(
                     }
                     // Auto-delete the downloaded bytes on every close
                     // (moon's call 2026-11-02: no 90% rule — always clear).
+                    // A split file deletes every part's Telegram copy.
                     try {
-                        val f = files.find { it.id == streamFileId }
-                        if (f != null) {
+                        closeFiles.forEach { f ->
                             val deleted = BackendProvider.backend
                                 .deleteCachedFile(f.channelId, f.messageId)
                             AppLog.i(
@@ -1125,18 +1146,21 @@ fun PlayerScreen(
             }
             // Delete the player chunks on close (moon's rule: BOTH caches
             // cleared on every player close). Runs for EVERY file, including
-            // unmatched ones (streamFileId 0) — closeTarget falls back to
-            // the tdfile:// URI for those. This used to happen in
-            // TdByteWindow.release(), but ExoPlayer closes/reopens the
-            // DataSource during playback and each reopen wiped the buffer
-            // (the 0.15.151 stall — moon's log showed the 11 MB window
-            // deleted on every reopen). Now release() only closes handles.
-            val target = closeTarget
-            if (target != null) {
+            // unmatched ones (streamFileId 0) — closeTargets falls back to
+            // the tdfile:// URI for those. A split file clears every part.
+            // This used to happen in TdByteWindow.release(), but ExoPlayer
+            // closes/reopens the DataSource during playback and each reopen
+            // wiped the buffer (the 0.15.151 stall — moon's log showed the
+            // 11 MB window deleted on every reopen). Now release() only
+            // closes handles.
+            val targets = closeTargets
+            if (targets.isNotEmpty()) {
                 ioScope.launch(Dispatchers.IO) {
-                    try {
-                        TdStreamCache.clearFile(context, target.first, target.second)
-                    } catch (e: Exception) { /* never break close */ }
+                    targets.forEach { (ch, msg) ->
+                        try {
+                            TdStreamCache.clearFile(context, ch, msg)
+                        } catch (e: Exception) { /* never break close */ }
+                    }
                 }
             }
             player.release()
@@ -1239,6 +1263,13 @@ fun PlayerScreen(
         }
         if (file == null || file.fileSize <= 0L) {
             MsToast.show("Can't trim this stream")
+            return
+        }
+        // Split files can't be trimmed yet: the trimmer reads byte ranges
+        // from one Telegram file, but the joined stream spans several
+        // parts (moon's 2026-11-15).
+        if (SplitFiles.sequenceFor(orderedFiles, file).size > 1) {
+            MsToast.show("Can't trim split files yet")
             return
         }
         trimSaving = true

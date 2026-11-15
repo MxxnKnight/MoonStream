@@ -10,6 +10,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.TransferListener
 import com.moon.moonstream.cache.TdStreamCache
+import com.moon.moonstream.index.parse.SplitFiles
 import com.moon.moonstream.util.AppLog
 import java.io.IOException
 
@@ -28,10 +29,19 @@ import java.io.IOException
  * The file name rides along as the last path segment so this source can name
  * the container to Media3 (see [contentMimeFor]) instead of making its
  * extractor sniff every format before the right one.
+ *
+ * Split files (.001, .002, … — moon's 2026-11-15) carry every part in a
+ * `parts` query param as `channel:message:size` triples, comma-separated;
+ * the path still carries the first part (for logging) and the base file
+ * name (`Movie.mkv`, so the container hint sees the real extension).
+ * [TdDataSource] then serves the parts as one virtual file.
  */
 @UnstableApi
 object TdStreamUri {
     const val SCHEME = "tdfile"
+
+    /** One part of a (possibly split) stream: a Telegram file + its size. */
+    data class Part(val channelId: Long, val messageId: Long, val size: Long)
 
     fun build(
         channelId: Long,
@@ -47,11 +57,30 @@ object TdStreamUri {
         .appendQueryParameter("size", fileSize.toString())
         .build()
 
+    /** Multi-part build for split files: every part rides in `parts`. */
+    fun buildParts(parts: List<Part>, fileName: String): Uri {
+        val first = parts.first()
+        return Uri.Builder()
+            .scheme(SCHEME)
+            .authority("stream")
+            .appendPath(first.channelId.toString())
+            .appendPath(first.messageId.toString())
+            .appendPath(fileName)
+            .appendQueryParameter("size", parts.sumOf { it.size }.toString())
+            .appendQueryParameter(
+                "parts",
+                parts.joinToString(",") { "${it.channelId}:${it.messageId}:${it.size}" },
+            )
+            .build()
+    }
+
     class Spec(
         val channelId: Long,
         val messageId: Long,
         val fileSize: Long,
         val fileName: String,
+        /** All parts in play order; a single part for a normal file. */
+        val parts: List<Part>,
     )
 
     fun parse(uri: Uri): Spec? {
@@ -62,7 +91,24 @@ object TdStreamUri {
         val messageId = segments[1].toLongOrNull() ?: return null
         val size = uri.getQueryParameter("size")?.toLongOrNull() ?: -1L
         if (size <= 0L) return null
-        return Spec(channelId, messageId, size, segments.getOrNull(2).orEmpty())
+        val fileName = segments.getOrNull(2).orEmpty()
+        val partsParam = uri.getQueryParameter("parts")
+        val parts = if (partsParam.isNullOrBlank()) {
+            listOf(Part(channelId, messageId, size))
+        } else {
+            val parsed = partsParam.split(",").mapNotNull { triple ->
+                val t = triple.split(":")
+                if (t.size != 3) return@mapNotNull null
+                val ch = t[0].toLongOrNull() ?: return@mapNotNull null
+                val msg = t[1].toLongOrNull() ?: return@mapNotNull null
+                val sz = t[2].toLongOrNull()?.takeIf { it > 0L } ?: return@mapNotNull null
+                Part(ch, msg, sz)
+            }
+            // A malformed parts list falls back to the single file in the
+            // path — better a truncated play than no play at all.
+            if (parsed.isEmpty()) listOf(Part(channelId, messageId, size)) else parsed
+        }
+        return Spec(channelId, messageId, parts.sumOf { it.size }, fileName, parts)
     }
 
     /**
@@ -72,9 +118,12 @@ object TdStreamUri {
      * Matroska last), each reading the head of the stream to say no. A
      * Content-Type puts the matching one first, which is the difference
      * between an instant first frame and several dead reads on a big MKV.
+     *
+     * A split part (`Movie.mkv.001`) names its container before the part
+     * number — the suffix is stripped first or the hint is lost.
      */
     fun contentMimeFor(fileName: String): String? =
-        when (fileName.substringAfterLast('.', "").lowercase()) {
+        when (SplitFiles.baseName(fileName).substringAfterLast('.', "").lowercase()) {
             "mkv", "mka", "mk3d" -> "video/x-matroska"
             "webm" -> "video/webm"
             "mp4", "m4v", "mov", "3gp" -> "video/mp4"
@@ -89,28 +138,60 @@ object TdStreamUri {
  * Media3 [DataSource] for one `tdfile://` stream. Reads block while the
  * needed chunk is fetched — that's normal for a network source; Media3 calls
  * us on its loading thread, never the UI thread.
+ *
+ * Split files (.001, .002, … — moon's 2026-11-15): the stream is one
+ * [TdByteWindow] per part, and this class maps the virtual file position
+ * (0..total) onto the part that holds it. A read never crosses a part
+ * boundary in one call — Media3 just calls read() again and lands in the
+ * next part. Each window keeps its own chunk dir, prefetch and rate limit,
+ * so the per-file machinery is untouched.
  */
 @UnstableApi
 class TdDataSource(private val context: Context) : BaseDataSource(true) {
 
-    private var window: TdByteWindow? = null
+    private var windows: List<TdByteWindow> = emptyList()
+    private var parts: List<TdStreamUri.Part> = emptyList()
+
+    /** Virtual start offset of each part (cumulative sizes). */
+    private var partStarts: LongArray = longArrayOf()
     private var position = 0L
     private var bytesRemaining = 0L
     private var uri: Uri? = null
     private var headers: Map<String, List<String>> = emptyMap()
     private var fileSize = -1L
 
+    /** Which part holds this virtual position (parts are few — linear scan). */
+    private fun partIndexFor(pos: Long): Int {
+        var idx = 0
+        while (idx < partStarts.size - 1 && pos >= partStarts[idx + 1]) idx++
+        return idx
+    }
+
     /**
      * Fraction of the file (0..1) downloaded contiguously from the playhead
      * onward — the seekbar's buffer band. Null when this source isn't serving
      * (no window). Byte fraction ≈ time fraction; the band is indicative.
+     * For a split file the run walks across parts: a part whose chunks run
+     * to its end continues into the next part from byte 0.
      */
     fun downloadedAheadFraction(playheadMs: Long, durationMs: Long): Float? {
-        val w = window ?: return null
+        val ws = windows
+        if (ws.isEmpty()) return null
         val size = fileSize
         if (size <= 0L || durationMs <= 0L) return null
-        val playheadByte = (playheadMs.toDouble() / durationMs * size).toLong()
-        return (w.downloadedAheadBytes(playheadByte).toFloat() / size).coerceIn(0f, 1f)
+        val playheadByte = (playheadMs.toDouble() / durationMs * size)
+            .toLong().coerceIn(0L, size)
+        var idx = partIndexFor(playheadByte.coerceAtMost(size - 1))
+        var localFrom = playheadByte - partStarts[idx]
+        var virtualEnd = playheadByte
+        while (idx < ws.size) {
+            val runEnd = ws[idx].downloadedAheadBytes(localFrom)
+            virtualEnd = partStarts[idx] + runEnd
+            if (runEnd < parts[idx].size) break
+            idx++
+            localFrom = 0L
+        }
+        return (virtualEnd.toFloat() / size).coerceIn(0f, 1f)
     }
 
     /**
@@ -150,8 +231,14 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
             return 0L
         }
 
-        TdStreamCache.markActive(parsed.channelId, parsed.messageId)
-        window = TdByteWindow(context, parsed.channelId, parsed.messageId, size)
+        val parts = parsed.parts
+        parts.forEach { TdStreamCache.markActive(it.channelId, it.messageId) }
+        windows = parts.map { TdByteWindow(context, it.channelId, it.messageId, it.size) }
+        this.parts = parts
+        partStarts = LongArray(parts.size).also { arr ->
+            var acc = 0L
+            parts.forEachIndexed { i, p -> arr[i] = acc; acc += p.size }
+        }
         fileSize = size
         current = this
         position = dataSpec.position
@@ -164,7 +251,8 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
         AppLog.i(
             "TDLOCAL",
             "opening direct stream msg=${parsed.messageId} from ${position}B " +
-                "of ${size / (1024 * 1024)} MB",
+                "of ${size / (1024 * 1024)} MB" +
+                if (parts.size > 1) " (${parts.size} split parts)" else "",
         )
         return bytesRemaining
     }
@@ -202,9 +290,15 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
     }
 
     private fun windowRead(dest: ByteArray, destOffset: Int, length: Int): Int {
-        val w = window ?: return -1
+        if (windows.isEmpty()) return -1
+        // Never read past the holding part's end in one call — the next
+        // read() lands in the following part (see the class comment).
+        val idx = partIndexFor(position)
+        val inPart = position - partStarts[idx]
+        val capped = minOf(length.toLong(), parts[idx].size - inPart).toInt()
+        if (capped <= 0) return -1
         return try {
-            w.read(position, dest, destOffset, length)
+            windows[idx].read(inPart, dest, destOffset, capped)
         } catch (e: IOException) {
             throw e
         } catch (e: Exception) {
@@ -214,10 +308,16 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
 
     override fun close() {
         try {
-            window?.release()
+            windows.forEach { w ->
+                try {
+                    w.release()
+                } catch (e: Exception) { /* never break playback on close */ }
+            }
         } catch (e: Exception) { /* never break playback on close */ }
         if (current == this) current = null
-        window = null
+        windows = emptyList()
+        parts = emptyList()
+        partStarts = longArrayOf()
         uri = null
         headers = emptyMap()
         position = 0L

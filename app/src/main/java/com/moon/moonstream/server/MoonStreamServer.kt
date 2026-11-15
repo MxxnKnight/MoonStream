@@ -11,6 +11,7 @@ import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.index.db.SubtitleFileEntity
 import com.moon.moonstream.index.StremioIds
+import com.moon.moonstream.index.parse.SplitFiles
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStream
@@ -317,17 +318,16 @@ class MoonStreamServer(
             }
 
         // Group split parts (.001, .002, etc.) so they stream as a joined single stream
-        val splitRegex = Regex("""(?i)\.(?:(?:mkv|mp4|avi|webm)\.)?0*\d{1,3}$""")
         val groups = files.groupBy { f ->
-            val base = splitRegex.replace(f.fileName, "")
+            val base = SplitFiles.baseName(f.fileName)
             "$base|${f.season ?: ""}|${f.episode ?: ""}"
         }
 
         val base = streamBaseUrl()
         for ((_, groupFiles) in groups) {
-            val sorted = groupFiles.sortedBy { it.fileName }
+            val sorted = SplitFiles.sortParts(groupFiles)
             val first = sorted.first()
-            val isSplit = sorted.size > 1 || splitRegex.containsMatchIn(first.fileName)
+            val isSplit = sorted.size > 1 || SplitFiles.isSplitPart(first.fileName)
             val totalSize = sorted.sumOf { it.fileSize }
 
             val label = buildString {
@@ -377,13 +377,8 @@ class MoonStreamServer(
         if (targetFile == null) { sendJson(output, 404, errJson("File not found").toString(), headOnly); return }
 
         // Determine if targetFile is part of a split sequence (.001, .002, etc.)
-        val splitRegex = Regex("""(?i)\.(?:(?:mkv|mp4|avi|webm)\.)?0*\d{1,3}$""")
         val allMediaFiles = runBlocking { db.streamDao().listByMedia(mediaId) }
-        val baseName = splitRegex.replace(targetFile.fileName, "")
-        val sequence = allMediaFiles.filter { f ->
-            splitRegex.replace(f.fileName, "") == baseName &&
-            f.season == targetFile.season && f.episode == targetFile.episode
-        }.sortedBy { it.fileName }
+        val sequence = SplitFiles.sequenceFor(allMediaFiles, targetFile)
 
         val isSplit = sequence.size > 1
         val partsList = if (isSplit) sequence else listOf(targetFile)

@@ -83,6 +83,7 @@ import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.index.db.SubtitleFileEntity
 import com.moon.moonstream.index.match.MetadataMatcher
 import com.moon.moonstream.index.parse.normalizeTitle
+import com.moon.moonstream.index.parse.SplitFiles
 import com.moon.moonstream.index.scan.ScanManager
 import com.moon.moonstream.index.scan.ScanPrefs
 import com.moon.moonstream.ui.components.BareIconButton
@@ -263,11 +264,15 @@ fun DetailScreen(
      *  (moon's pick 2026-11-06 — no prompt box).
      *  0.15.0: plays via tdfile:// when the DB knows the size — no server needed. */
     fun playInApp(file: StreamFileEntity) {
+        // Split file (.001, .002, … — moon's 2026-11-15): always play
+        // from part 1, so the resume position and watch row live on one
+        // file. The player joins the parts either way.
+        val first = SplitFiles.sequenceFor(files, file).first()
         onPlayInApp(
-            PlayerUrls.stream(m.id, file.id), playTitle(file), m.title,
-            m.id, file.id,
+            PlayerUrls.stream(m.id, first.id), playTitle(first), m.title,
+            m.id, first.id,
         )
-        recordWatch(file)
+        recordWatch(first)
     }
 
     /**
@@ -288,11 +293,13 @@ fun DetailScreen(
                     MsToast.show("No files to play yet")
                     return@withContext
                 }
+                // Split file: play from part 1 (same as playInApp).
+                val first = SplitFiles.sequenceFor(files, target).first()
                 onPlayInApp(
-                    PlayerUrls.stream(m.id, target.id), playTitle(target), m.title,
-                    m.id, target.id,
+                    PlayerUrls.stream(m.id, first.id), playTitle(first), m.title,
+                    m.id, first.id,
                 )
-                recordWatch(target)
+                recordWatch(first)
             }
         }
     }
