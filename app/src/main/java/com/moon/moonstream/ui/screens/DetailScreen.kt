@@ -81,7 +81,9 @@ import com.moon.moonstream.index.db.MediaItemEntity
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.index.db.SubtitleFileEntity
+import com.moon.moonstream.index.db.UnmatchedFileEntity
 import com.moon.moonstream.index.match.MetadataMatcher
+import com.moon.moonstream.index.parse.FilenameParser
 import com.moon.moonstream.index.parse.normalizeTitle
 import com.moon.moonstream.index.parse.SplitFiles
 import com.moon.moonstream.index.scan.ScanManager
@@ -89,6 +91,7 @@ import com.moon.moonstream.index.scan.ScanPrefs
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.EditMetadataSheet
 import com.moon.moonstream.ui.components.FixMode
+import com.moon.moonstream.ui.components.IosBottomSheet
 import com.moon.moonstream.ui.components.IosDialog
 import com.moon.moonstream.ui.components.IosSheetButton
 import com.moon.moonstream.ui.components.IosSpinner
@@ -98,6 +101,7 @@ import com.moon.moonstream.ui.components.MetadataFixSheet
 import com.moon.moonstream.ui.components.MetaPick
 import com.moon.moonstream.ui.components.MsCard
 import com.moon.moonstream.ui.components.MsOutlinePill
+import com.moon.moonstream.ui.components.MsSheetContent
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.components.QualityChip
 import com.moon.moonstream.ui.model.formatBytes
@@ -160,6 +164,9 @@ fun DetailScreen(
     var refreshing by remember { mutableStateOf(false) }
     // Manual metadata editor, custom entries only (moon's 2026-11-14).
     var showEditMetadata by remember { mutableStateOf(false) }
+    // "Move to" sheet + file-delete dialog (moon's 2026-11-15).
+    var showMoveSheet by remember { mutableStateOf(false) }
+    var fileToDelete by remember { mutableStateOf<StreamFileEntity?>(null) }
 
     val m = media
     if (m == null) {
@@ -361,7 +368,35 @@ fun DetailScreen(
         scope.launch {
             db.streamDao().deleteById(file.id)
             db.mediaDao().refreshAggregates(m.id, System.currentTimeMillis())
+            // Same as a move (moon's 2026-11-10): don't leave an entry
+            // with zero files behind.
+            db.mediaDao().deleteIfEmpty(m.id)
             MsToast.show("File removed")
+        }
+    }
+
+    /**
+     * Move one file back to the unmatched list (moon's 2026-11-15): the
+     * file stays in Telegram and can be re-attached from Channels
+     * (Re-check / manual attach) instead of being gone for good.
+     */
+    fun moveFileToUnmatched(file: StreamFileEntity) {
+        scope.launch(Dispatchers.IO) {
+            db.unmatchedDao().insert(
+                UnmatchedFileEntity(
+                    channelId = file.channelId,
+                    messageId = file.messageId,
+                    fileName = file.fileName,
+                    fileSize = file.fileSize,
+                    editDate = file.editDate,
+                ),
+            )
+            db.streamDao().deleteById(file.id)
+            db.mediaDao().refreshAggregates(m.id, System.currentTimeMillis())
+            db.mediaDao().deleteIfEmpty(m.id)
+            withContext(Dispatchers.Main) {
+                MsToast.show("Moved to unmatched")
+            }
         }
     }
 
@@ -471,6 +506,20 @@ fun DetailScreen(
             db.mediaDao().updateType(m.id, newType)
             withContext(Dispatchers.Main) {
                 MsToast.show("Moved to ${newType.replaceFirstChar { it.uppercase() }}")
+            }
+        }
+    }
+
+    /**
+     * "Move to Custom" (moon's 2026-11-15): turn a wrongly-matched entry
+     * into a local one — files stay, wrong provider data goes, and the
+     * edit pencil appears so he can set his own title/poster.
+     */
+    fun makeLocal() {
+        scope.launch(Dispatchers.IO) {
+            db.mediaDao().convertToLocal(m.id, System.currentTimeMillis())
+            withContext(Dispatchers.Main) {
+                MsToast.show("Moved to Custom — use the pencil to set your poster")
             }
         }
     }
@@ -729,11 +778,12 @@ fun DetailScreen(
                     icon = Icons.Outlined.AddLink,
                 )
             }
-            // Move between tabs (moon's 2026-11-07: anime in a non-anime
-            // channel lands in Series — this moves one title to Anime).
+            // "Move to" sheet (moon's 2026-11-15): one button instead of
+            // a growing row — type moves + "Custom content" for local
+            // titles with no provider page.
             MsOutlinePill(
-                text = if (isAnime) "Move to Series" else "Move to Anime",
-                onClick = { moveToType(if (isAnime) "series" else "anime") },
+                text = "Move to",
+                onClick = { showMoveSheet = true },
                 modifier = Modifier.fillMaxWidth(),
                 fontSize = 13,
                 icon = Icons.Outlined.SwapHoriz,
@@ -757,7 +807,7 @@ fun DetailScreen(
                     onSeason = { seasonIdx = it },
                     onPlay = { playInApp(it) },
                     onCopy = { copyLink(it) },
-                    onDelete = { deleteFile(it) },
+                    onDelete = { fileToDelete = it },
                     onFixFile = { fixFile = it; fixMode = FixMode.FIX_FILE },
                     onOpenExternal = { playExternal(it) },
                     onUnlinkSub = { sub ->
@@ -789,7 +839,7 @@ fun DetailScreen(
                         stream = f,
                         onPlay = { playInApp(f) },
                         onCopy = { copyLink(f) },
-                        onDelete = { deleteFile(f) },
+                        onDelete = { fileToDelete = f },
                         onFixFile = { fixFile = f; fixMode = FixMode.FIX_FILE },
                         onOpenExternal = { playExternal(f) },
                         watchedAt = watchedAt[f.id],
@@ -887,6 +937,78 @@ fun DetailScreen(
         EditMetadataSheet(
             media = m,
             onDismiss = { showEditMetadata = false },
+        )
+    }
+
+    // "Move to" sheet (moon's 2026-11-15): every destination except the
+    // one the entry already sits in.
+    if (showMoveSheet) {
+        IosBottomSheet(onDismissRequest = { showMoveSheet = false }) {
+            MsSheetContent(title = "Move to") {
+                if (m.type != "movie") {
+                    MoveSheetRow(
+                        icon = Icons.Outlined.Movie,
+                        label = "Movies",
+                        onClick = { showMoveSheet = false; moveToType("movie") },
+                    )
+                }
+                if (m.type != "series") {
+                    MoveSheetRow(
+                        icon = Icons.Outlined.Tv,
+                        label = "Series",
+                        onClick = { showMoveSheet = false; moveToType("series") },
+                    )
+                }
+                if (m.type != "anime") {
+                    MoveSheetRow(
+                        icon = Icons.Outlined.Animation,
+                        label = "Anime",
+                        onClick = { showMoveSheet = false; moveToType("anime") },
+                    )
+                }
+                if (!m.isCustom) {
+                    MoveSheetRow(
+                        icon = Icons.Outlined.FolderSpecial,
+                        label = "Custom content",
+                        sub = "Local title — drops the provider match",
+                        onClick = { showMoveSheet = false; makeLocal() },
+                    )
+                }
+            }
+        }
+    }
+
+    // File delete (moon's 2026-11-15): no more instant delete — choose
+    // between removing it for good or sending it back to unmatched.
+    fileToDelete?.let { f ->
+        IosDialog(
+            onDismiss = { fileToDelete = null },
+            title = "Delete file",
+            buttons = listOf(
+                IosSheetButton(
+                    label = "Move to unmatched",
+                    onClick = { moveFileToUnmatched(f); fileToDelete = null },
+                ),
+                IosSheetButton(
+                    label = "Delete permanently",
+                    isDestructive = true,
+                    onClick = { deleteFile(f); fileToDelete = null },
+                ),
+                IosSheetButton(
+                    label = "Cancel",
+                    onClick = { fileToDelete = null },
+                ),
+            ),
+            content = {
+                Text(
+                    text = FilenameParser.cleanDisplayName(f.fileName),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MsColors.TextSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+            },
         )
     }
 
@@ -1083,6 +1205,56 @@ fun DetailScreen(
                     attachSub = null
                 }
             },
+        )
+    }
+}
+
+/**
+ * One row in the "Move to" sheet (moon's 2026-11-15): icon + label,
+ * iOS action-sheet style with a hairline divider underneath.
+ */
+@Composable
+private fun MoveSheetRow(
+    icon: ImageVector,
+    label: String,
+    sub: String? = null,
+    onClick: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onClick() }
+                .padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MsColors.Accent,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.White,
+                )
+                if (sub != null) {
+                    Text(
+                        text = sub,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextSecondary,
+                    )
+                }
+            }
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(0.5.dp)
+                .background(Color(0xFF38383A)),
         )
     }
 }

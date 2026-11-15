@@ -171,6 +171,26 @@ interface MediaDao {
     @Query("UPDATE media_items SET hidden = :hidden WHERE id = :id")
     suspend fun setHidden(id: Long, hidden: Boolean)
 
+    /**
+     * Convert a matched entry to a local (custom) entry (moon's 2026-11-15):
+     * keeps title/year/type/files, drops every provider-derived field so a
+     * wrong match (e.g. a local OTT title that shares a name with an IMDb
+     * title) can never come back. The entry then shows the edit pencil
+     * (isCustom) and future same-title files attach to it via the local
+     * exact-title lookup instead of re-matching. stremioId is kept so the
+     * addon link stays stable.
+     */
+    @Query(
+        """UPDATE media_items SET
+               isCustom = 1, imdbId = NULL, tmdbId = NULL,
+               kitsuId = NULL, anilistId = NULL,
+               posterUrl = NULL, backdropUrl = NULL, overview = NULL,
+               genres = NULL, originalLanguage = NULL, country = NULL,
+               updatedAt = :now
+           WHERE id = :id""",
+    )
+    suspend fun convertToLocal(id: Long, now: Long)
+
     @Query(
         """UPDATE media_items SET
                title = :title, normalizedTitle = :norm, year = :year,
