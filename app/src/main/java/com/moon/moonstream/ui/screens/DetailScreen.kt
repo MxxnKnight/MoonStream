@@ -147,6 +147,13 @@ fun DetailScreen(
         channelId?.let { db.subtitleDao().observeUnlinkedByChannel(it) }
             ?: flowOf(emptyList())
         ).collectAsState(initial = emptyList())
+    // Search (moon's 2026-11-15): a big channel can hold hundreds of
+    // unlinked subtitles — a query filters them by filename.
+    var unlinkedQuery by remember { mutableStateOf("") }
+    val unlinkedFiltered = remember(unlinkedSubs, unlinkedQuery) {
+        if (unlinkedQuery.isBlank()) unlinkedSubs
+        else unlinkedSubs.filter { matchesName(it.fileName, unlinkedQuery) }
+    }
     // "watched X ago" per file (moon's design 2026-11-02) — newest entry wins.
     val watchList by db.watchProgressDao().observeByMedia(mediaId).collectAsState(initial = emptyList())
     val watchedAt = remember(watchList) {
@@ -861,7 +868,9 @@ fun DetailScreen(
             // Unlinked subtitles for this channel — attach by hand.
             if (unlinkedSubs.isNotEmpty()) {
                 Text(
-                    "Unlinked subtitles (${unlinkedSubs.size})",
+                    if (unlinkedQuery.isBlank()) "Unlinked subtitles (${unlinkedSubs.size})"
+                    else if (unlinkedFiltered.isEmpty()) "No subtitles match \"$unlinkedQuery\""
+                    else "${unlinkedFiltered.size} match${if (unlinkedFiltered.size == 1) "" else "es"}",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MsColors.TextPrimary,
@@ -871,7 +880,13 @@ fun DetailScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MsColors.TextSecondary,
                 )
-                unlinkedSubs.forEach { sub ->
+                MsTextField(
+                    value = unlinkedQuery,
+                    onValueChange = { unlinkedQuery = it },
+                    hint = "Search subtitles",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                unlinkedFiltered.forEach { sub ->
                     SubtitleRow(
                         sub = sub,
                         actionLabel = "Attach",

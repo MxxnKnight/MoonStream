@@ -769,7 +769,7 @@ fun AddStreamSheet(
 }
 
 /** Case-insensitive substring, plus a normalized pass so "biggboss" finds "Bigg Boss". */
-private fun matchesName(name: String, query: String): Boolean {
+fun matchesName(name: String, query: String): Boolean {
     if (query.isBlank()) return true
     if (name.contains(query, ignoreCase = true)) return true
     val normQ = normalizeTitle(query)
