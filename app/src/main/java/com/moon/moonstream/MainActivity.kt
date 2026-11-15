@@ -1,5 +1,6 @@
 package com.moon.moonstream
 
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -70,6 +71,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.layout.boundsInParent
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.ui.components.NeutralRippleTheme
@@ -82,6 +84,7 @@ import com.moon.moonstream.ui.screens.PlayerScreen
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -269,6 +272,18 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
     // It is invisible because the tint is already near-black, and it comes
     // back the moment the switch lands.
     var screenSwitching by remember { mutableStateOf(false) }
+    // Player rotation blackout (moon's 2026-11-15): the window rotation
+    // turns the whole screen as a rigid plane — the Detail page visibly
+    // lying on its side for ~0.5s. Fade to black first, rotate behind
+    // black, fade back in when the new orientation lands.
+    var playerBlackout by remember { mutableStateOf(false) }
+    val blackoutAlpha by animateFloatAsState(
+        targetValue = if (playerBlackout) 1f else 0f,
+        animationSpec = tween(if (playerBlackout) 150 else 250),
+        label = "playerBlackout",
+    )
+    val navScope = rememberCoroutineScope()
+    val configuration = LocalConfiguration.current
 
     // Detail belongs to the Library tab; Create belongs to Channels; Logs to Settings.
     val selectedTab = when (current) {
@@ -297,11 +312,6 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
         backStack.removeLast()
     }
 
-    // No going back from Splash or Login.
-    BackHandler(enabled = backStack.size > 1 && current !is AppScreen.Splash && current !is AppScreen.Login) {
-        back()
-    }
-
     fun go(screen: AppScreen) {
         // Forward push: the new screen slides in from the right.
         slideDir = 1
@@ -324,6 +334,40 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
         backStack.add(screen)
     }
 
+    // Open the player behind a blackout (moon's 2026-11-15): fade to
+    // black, then navigate — the rotation happens behind black and the
+    // orientation effect below fades back in when landscape lands.
+    fun openPlayer(
+        videoUrl: String,
+        title: String,
+        mediaTitle: String,
+        mediaId: Long,
+        streamFileId: Long,
+    ) {
+        if (playerBlackout) return
+        navScope.launch {
+            playerBlackout = true
+            delay(180)
+            go(AppScreen.Player(videoUrl, title, mediaId, streamFileId, mediaTitle))
+        }
+    }
+
+    // Close the player behind a blackout: same fade, reversed.
+    fun closePlayer() {
+        if (playerBlackout) return
+        navScope.launch {
+            playerBlackout = true
+            delay(180)
+            back()
+        }
+    }
+
+    // No going back from Splash or Login. Back from the player fades
+    // out through the same blackout instead of a bare pop.
+    BackHandler(enabled = backStack.size > 1 && current !is AppScreen.Splash && current !is AppScreen.Login) {
+        if (current is AppScreen.Player) closePlayer() else back()
+    }
+
     // Keep the pill blur off while a screen slide runs (see screenSwitching).
     LaunchedEffect(current) {
         screenSwitching = true
@@ -331,6 +375,27 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
         // whole switch and gets its blur back when the slide lands.
         delay(if (reducedMotion) 180 else 320)
         screenSwitching = false
+    }
+
+    // Clear the blackout when the rotation it hides has landed: the
+    // Player wants landscape, everything else wants portrait.
+    LaunchedEffect(configuration.orientation, current) {
+        if (playerBlackout) {
+            val isLandscape =
+                configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            if (isLandscape == (current is AppScreen.Player)) {
+                playerBlackout = false
+            }
+        }
+    }
+
+    // Safety net: if the rotation never lands, never leave the screen
+    // black for good.
+    LaunchedEffect(playerBlackout) {
+        if (playerBlackout) {
+            delay(2500)
+            playerBlackout = false
+        }
     }
 
     // Floating pill nav (v0.4.0, NoxMedia-style): detached from the edges,
@@ -451,23 +516,13 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                             onBack = { back() },
                             onOpenCreate = { prefill -> go(AppScreen.Create(prefill)) },
                             onPlayInApp = { videoUrl, title, mediaTitle, mediaId, streamFileId ->
-                                go(
-                                    AppScreen.Player(
-                                        videoUrl, title,
-                                        mediaId, streamFileId, mediaTitle,
-                                    )
-                                )
+                                openPlayer(videoUrl, title, mediaTitle, mediaId, streamFileId)
                             },
                         )
                     AppScreen.Channels ->
                         ChannelsScreen(
                             onPlayInApp = { videoUrl, title, mediaTitle, mediaId, streamFileId ->
-                                go(
-                                    AppScreen.Player(
-                                        videoUrl, title,
-                                        mediaId, streamFileId, mediaTitle,
-                                    )
-                                )
+                                openPlayer(videoUrl, title, mediaTitle, mediaId, streamFileId)
                             },
                             onCreateEntry = { file ->
                                 go(
@@ -518,7 +573,7 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                         mediaTitle = screen.mediaTitle.ifBlank { screen.title },
                         mediaId = screen.mediaId,
                         streamFileId = screen.streamFileId,
-                        onClose = { back() },
+                        onClose = { closePlayer() },
                         onSwitchPlayer = { url, t, mt, mid, fid ->
                             // Episode switch: replace this player with the new file's.
                             back()
@@ -1106,6 +1161,20 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                 state = com.moon.moonstream.ui.components.MsToast.host,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
+            // Player rotation blackout (moon's 2026-11-15): covers the
+            // window while it turns, so the tilt is never visible. Eats
+            // touches while up so nothing can be tapped mid-transition.
+            if (blackoutAlpha > 0.01f) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = blackoutAlpha))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {},
+                )
+            }
         }
     }
 }

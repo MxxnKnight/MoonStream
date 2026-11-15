@@ -60,16 +60,18 @@ internal class TdByteWindow(
     private var openFile: RandomAccessFile? = null
 
     /**
-     * Bulk download for the prefetch (moon's buffer fix 2026-11-13): pulls
-     * [count] chunks in ONE backend request and splits them into chunk
-     * files. Each Telegram request costs ~1s on moon's connection whether
-     * it carries 1 MB or 8 MB (his log: every 1 MB chunk took 900-1200ms),
+     * Bulk download for the prefetch and the reader (moon's buffer fix
+     * 2026-11-13, reader switched to bulk 2026-11-15): pulls [count]
+     * chunks in ONE backend request and splits them into chunk files.
+     * Each Telegram request costs ~1s on moon's connection whether it
+     * carries 1 MB or 8 MB (his log: every 1 MB chunk took 900-1200ms),
      * so one chunk per request capped downloads at ~1 MB/s and the
      * prefetch never got ahead of ExoPlayer's reads — only ~4s of video
      * was ever ready. One 8 MB request carries 8 chunks for the same ~1s,
-     * so the prefetch runs up to 8x faster. The reader (urgent, on-demand)
-     * still uses the single-chunk [download] — it needs one chunk with
-     * minimal latency. Must be called while holding [mutex].
+     * so the prefetch runs up to 8x faster — and the reader bulk-loads
+     * the same way, so a resume seek starts playback after a single
+     * round-trip instead of one chunk at a time. Must be called while
+     * holding [mutex].
      */
     private suspend fun downloadRange(fromIndex: Long, count: Int) {
         if (closed) return
@@ -260,7 +262,17 @@ internal class TdByteWindow(
             runBlocking {
                 withTimeout(READ_TIMEOUT_MS) {
                     mutex.withLock {
-                        if (!have(index)) download(index)
+                        // Bulk-load (moon's 2026-11-15): one Telegram
+                        // request costs ~1s whether it carries 1 MB or
+                        // 8 MB, so the reader pulls the next 8 chunks in
+                        // one go instead of one chunk per ~1s request.
+                        // The old single-chunk reader waited ~9s for its
+                        // first 3s of media after a resume seek — one
+                        // chunk at a time, interleaved with prefetch
+                        // batches on this same mutex. The following
+                        // chunks land on disk with the first, so
+                        // playback starts after a single round-trip.
+                        if (!have(index)) downloadRange(index, PREFETCH_BATCH_CHUNKS)
                     }
                 }
             }
@@ -272,66 +284,6 @@ internal class TdByteWindow(
         } finally {
             readerWaiting = false
         }
-    }
-
-    /** Must be called while holding [mutex]. */
-    private suspend fun download(index: Long) {
-        if (closed) return
-        val start = LowStorageWindow.chunkStart(index)
-        val want = LowStorageWindow.chunkLength(index, fileSize).toInt()
-        if (want <= 0) return
-
-        val target = chunkFile(index)
-        val partial = File(dir, "chunk_$index.part")
-        partial.delete()
-        var got = 0L
-        var emptyReplies = 0
-        var requests = 0
-        val startedAt = SystemClock.elapsedRealtime()
-
-        while (got < want) {
-            if (closed) return
-            awaitRateLimit()
-            requests++
-            val bytes = try {
-                BackendProvider.backend.readFileRange(
-                    channelId = channelId,
-                    messageId = messageId,
-                    offset = start + got,
-                    length = (want - got).toInt(),
-                )
-            } catch (e: Exception) {
-                throw IOException("Telegram read failed at chunk $index", e)
-            }
-            if (bytes.isEmpty()) {
-                emptyReplies++
-                if (emptyReplies >= LowStorageWindow.MAX_EMPTY_REPLIES) {
-                    partial.delete()
-                    throw IOException("No bytes for chunk $index (offset ${start + got})")
-                }
-                registerEmptyReply(index, emptyReplies)
-                continue
-            }
-            emptyReplies = 0
-            registerBytes()
-            partial.appendBytes(bytes)
-            got += bytes.size
-        }
-
-        if (!partial.renameTo(target)) {
-            // Rename can fail if the target lingered; fall back to a copy.
-            target.delete()
-            if (!partial.renameTo(target)) {
-                partial.copyTo(target, overwrite = true)
-                partial.delete()
-            }
-        }
-        AppLog.d(
-            "TDLOCAL",
-            "chunk $index/${LowStorageWindow.chunkCount(fileSize)} stored: " +
-                "${want / 1024} KB in ${SystemClock.elapsedRealtime() - startedAt} ms " +
-                "($requests request${if (requests == 1) "" else "s"})",
-        )
     }
 
     /**
