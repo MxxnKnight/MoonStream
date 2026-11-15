@@ -154,15 +154,15 @@ object AppUiState {
         }
         // One-time backfill: rows created before the Stremio-ID scheme get
         // their stable tt/tg ID now, so the addon serves them to clients
-        // like Nuvio without a rescan.
+        // like Nuvio without a rescan. Asks the database for only the
+        // rows still missing an ID (moon's 2026-11-15) — the old version
+        // loaded the whole library on every launch to find almost none.
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val dao = MsDatabase.get(context).mediaDao()
-                dao.getAll()
-                    .filter { it.stremioId.isNullOrBlank() }
-                    .forEach { m ->
-                        dao.setStremioId(m.id, StremioIds.forMedia(m))
-                    }
+                dao.getMissingStremioId().forEach { m ->
+                    dao.setStremioId(m.id, StremioIds.forMedia(m))
+                }
             } catch (_: Exception) {
                 // Best-effort: the server falls back to computing IDs on the
                 // fly, so a failed backfill is never fatal.

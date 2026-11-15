@@ -129,9 +129,6 @@ data class WatchStats(
     val calendarDays: List<DayHours> = emptyList(),
 )
 
-/** Languages that mark a series as an Asian drama (K/C/J/Thai). */
-private val DRAMA_LANGS = setOf("ko", "zh", "ja", "th")
-
 /** ISO language code → display name (only the ones in the library's orbit). */
 private val LANGUAGE_NAMES = mapOf(
     "ml" to "Malayalam", "en" to "English", "hi" to "Hindi",
@@ -156,174 +153,114 @@ private val COUNTRY_NAMES = mapOf(
     "VN" to "Vietnam", "PH" to "Philippines",
 )
 
-/** The stats type a title counts as: movies and anime as-is; a series in
- * a drama language (Korean/Chinese/Japanese/Thai) counts as a drama,
- * everything else stays a series. */
-private fun displayType(media: com.moon.moonstream.index.db.MediaItemEntity): String =
-    when {
-        media.type == "movie" -> "movie"
-        media.type == "anime" -> "anime"
-        media.type == "series" && media.originalLanguage in DRAMA_LANGS -> "drama"
-        else -> "series"
-    }
+/** The stats type a title counts as lives in SQL now (the CASE in
+ *  WatchProgressDao.countByTypeSince): movies and anime as-is, a series
+ *  in a drama language (Korean/Chinese/Japanese/Thai) counts as a drama,
+ *  everything else stays a series. */
 
 object WatchStatsLoader {
+    // SQL aggregates (moon's 2026-11-15): every number below comes from
+    // the database — no table is ever loaded whole. The only lists that
+    // reach Kotlin are one small row per day / weekday / month / hour /
+    // quality / watched title, plus the top-5 rows. The shaping (day
+    // labels, streaks, genre splitting) is unchanged from the old
+    // in-Kotlin version, so the numbers on screen stay the same.
     suspend fun load(db: MsDatabase, range: StatsRange): WatchStats {
         val now = System.currentTimeMillis()
         val since = range.sinceMs(now)
-        val rows = db.watchProgressDao().getAll()
-        val inRange = if (since == null) rows else rows.filter { it.playedAt >= since }
-        val media = db.mediaDao().getAll()
-        val mediaById = media.associateBy { it.id }
-
-        // Hours watched (proxy): sum of positionMs for rows played in range.
-        val hoursMs = inRange.sumOf { it.positionMs }
-        // Episodes/files played (position past 10s) in range.
-        val episodesWatched = inRange.count { it.positionMs > 10_000L }
-        // Movies watched in range (distinct movie mediaIds).
-        val moviesWatched = inRange
-            .filter { mediaById[it.mediaId]?.type == "movie" }
-            .map { it.mediaId }.distinct().size
-        // Finished: titles with a finishedAt stamp (the player sets it when
-        // a file is watched to >=90% — the resume position itself is
-        // cleared to 0 on a finish, so position can never prove it).
-        val finishedIds = rows
-            .filter { it.finishedAt != null }
-            .map { it.mediaId }
-            .toSet()
-        // "Titles finished" counts finishes that happened in range; for ALL
-        // it is every finished title.
-        val finishedInRange = if (since == null) finishedIds else finishedIds.filter { id ->
-            rows.any { it.mediaId == id && it.finishedAt != null && it.finishedAt >= since }
-        }
-        val titlesFinished = finishedInRange.size
-
-        // Chart bars.
-        val chartBars = chartBars(inRange, range, now)
-
-        // ---- 2026-11-11: hero, habits and library numbers ----
+        val wp = db.watchProgressDao()
         val dayMs = TimeUnit.DAYS.toMillis(1)
         val today = dayStart(now)
-        val todayMs = rows.filter { it.playedAt >= today }.sumOf { it.positionMs }
-        // Same-length window before the selected one, for the hero's delta.
-        val prevHoursMs = when (range) {
-            StatsRange.WEEK -> rows.filter {
-                it.playedAt >= now - 14 * dayMs && it.playedAt < now - 7 * dayMs
-            }
-            StatsRange.MONTH -> rows.filter {
-                it.playedAt >= now - 60 * dayMs && it.playedAt < now - 30 * dayMs
-            }
-            StatsRange.ALL -> emptyList()
-        }.sumOf { it.positionMs }
-        val perDay = inRange.groupBy { dayStart(it.playedAt) }
-            .mapValues { (_, rs) -> rs.sumOf { it.positionMs } }
+
+        // Core numbers — one small value each, straight from SQLite.
+        val hoursMs = wp.sumPositionSince(since)
+        val episodesWatched = wp.countEpisodesSince(since)
+        val moviesWatched = wp.countMoviesWatchedSince(since)
+        val titlesFinished = wp.countFinishedSince(since)
+        val startedTitles = wp.countDistinctMediaSince(since)
+        val watchedTitles = wp.countDistinctMediaSince(null)
+        val longestSessionMs = wp.maxPositionSince(since)
+
+        // Per-day hours in range, keyed by local midnight — drives the
+        // chart, the best day, and the active-days count.
+        val perDay = wp.sumByDaySince(since).associate { parseDay(it.day) to it.ms }
         val activeDays = perDay.count { it.value > 0 }
         val bestDay = perDay.maxByOrNull { it.value }
         val bestDayLabel = bestDay
             ?.let { SimpleDateFormat("EEE", Locale.getDefault()).format(Date(it.key)) }
             ?: ""
         val bestDayMs = bestDay?.value ?: 0L
-        val longestSessionMs = inRange.maxOfOrNull { it.positionMs } ?: 0L
+
+        // Chart bars.
+        val chartBars = chartBars(perDay, wp, since, range, now)
+
+        // Hero numbers.
+        val todayMs = wp.sumPositionSince(today)
+        // Same-length window before the selected one, for the hero's delta.
+        val prevHoursMs = when (range) {
+            StatsRange.WEEK -> wp.sumPositionBetween(now - 14 * dayMs, now - 7 * dayMs)
+            StatsRange.MONTH -> wp.sumPositionBetween(now - 60 * dayMs, now - 30 * dayMs)
+            StatsRange.ALL -> 0L
+        }
+
         // Played files → their quality, so "By quality" is about watching,
         // not about what the library happens to hold.
-        val streams = db.streamDao().getAll()
-        val qualityByFile = streams.associate { it.id to it.quality }
-        val byQuality = inRange
-            .groupBy { it.streamFileId }
-            .mapValues { (_, rs) -> rs.sumOf { it.positionMs } }
-            .filterValues { it > 0L }
-            .entries
+        val byQuality = wp.sumByQualitySince(since)
             // Collapse "1080p • Mal" / "1080p • Tam" into plain "1080p" —
             // the badge's language suffix split one resolution into many
             // rows (moon's 2026-11-13).
             .groupBy {
-                qualityByFile[it.key]
-                    ?.takeIf { q -> q.isNotBlank() }
-                    ?.substringBefore("•")?.trim()
-                    ?.takeIf { it.isNotBlank() }
-                    ?: "Unknown"
+                it.quality.substringBefore("•").trim().takeIf { q -> q.isNotBlank() } ?: "Unknown"
             }
-            .map { (label, entries) -> QualityCount(label, entries.sumOf { it.value }) }
+            .map { (label, rows) -> QualityCount(label, rows.sumOf { it.ms }) }
             .sortedByDescending { it.hoursMs }
             .take(5)
-
-        // Library coverage: distinct titles with any watch row, all time.
-        val watchedTitles = rows.map { it.mediaId }.distinct().size
 
         // Data streamed in range: each played file contributes its size ×
         // the fraction watched (a finished file counts whole — its saved
         // position is 0, so finishedAt is the signal).
-        val streamById = streams.associateBy { it.id }
-        val streamedBytes = inRange.sumOf { r ->
-            val size = streamById[r.streamFileId]?.fileSize ?: return@sumOf 0L
-            val frac = when {
-                r.finishedAt != null -> 1f
-                r.durationMs > 0L -> (r.positionMs.toFloat() / r.durationMs).coerceIn(0f, 1f)
-                else -> 0f
-            }
-            (size * frac).toLong()
-        }
+        val streamedBytes = wp.streamedBytesSince(since)
 
         // When you watch: hours per 4-hour bucket of the day.
         val hourLabels = listOf("12am", "4am", "8am", "12pm", "4pm", "8pm")
         val hourSums = LongArray(6)
-        for (r in inRange) {
-            val cal = Calendar.getInstance()
-            cal.timeInMillis = r.playedAt
-            hourSums[cal.get(Calendar.HOUR_OF_DAY) / 4] += r.positionMs
+        for (r in wp.sumByHourSince(since)) {
+            hourSums[r.hour / 4] += r.ms
         }
         val hourBars = hourLabels.mapIndexed { i, label ->
             label to hourSums[i] / 3_600_000f
         }
 
         // Completion rate: finished / started titles in range, as a percent.
-        val startedTitles = inRange.map { it.mediaId }.distinct().size
-        val completionRate = if (startedTitles > 0) finishedInRange.size * 100 / startedTitles else 0
+        val completionRate = if (startedTitles > 0) titlesFinished * 100 / startedTitles else 0
 
-        // Most watched: top 5 mediaIds by summed positionMs in range.
-        val mostWatched = inRange
-            .groupBy { it.mediaId }
-            .map { (id, rs) ->
-                val first = rs.first()
-                MostWatchedItem(
-                    mediaId = id,
-                    title = mediaById[id]?.title ?: first.title,
-                    posterUrl = mediaById[id]?.posterUrl ?: first.posterUrl,
-                    hoursMs = rs.sumOf { it.positionMs },
-                    episodes = rs.size,
-                    type = mediaById[id]?.type,
-                )
-            }
-            .sortedByDescending { it.hoursMs }
-            .take(5)
+        // Most watched: top 5 titles by summed positionMs in range.
+        val mostWatched = wp.topWatchedSince(since).map {
+            MostWatchedItem(
+                mediaId = it.mediaId,
+                title = it.title,
+                posterUrl = it.posterUrl,
+                hoursMs = it.hoursMs,
+                episodes = it.episodes,
+                type = it.type,
+            )
+        }
 
-        // By type: distinct mediaIds played in range, grouped by display
+        // By type: distinct titles played in range, grouped by display
         // type — movies, series, anime, and dramas (Asian-language series)
         // each get their own slice (moon's 2026-11-11).
-        val byType = inRange.map { it.mediaId }.distinct()
-            .mapNotNull { mediaById[it] }
-            .map { displayType(it) }
-            .groupingBy { it }.eachCount()
-            .map { TypeCount(it.key, it.value) }
-            .sortedByDescending { it.count }
+        val byType = wp.countByTypeSince(since).map { TypeCount(it.type, it.count) }
 
-        // Hours per title in range, computed once and shared by the
-        // genre / language / country / decade breakdowns below.
-        val hoursByMedia = inRange.groupBy { it.mediaId }
-            .mapValues { (_, rs) -> rs.sumOf { it.positionMs } }
+        // One row per watched title in range: its metadata + hours.
+        // The genre / language / country / decade breakdowns share it.
+        val watchedMeta = wp.watchedTitleMetaSince(since)
 
         // Top genres: hours per genre, from titles that have genres.
         val genreHours = mutableMapOf<String, Long>()
-        var withGenres = 0
-        var totalMedia = 0
-        for (m in media) {
-            totalMedia++
+        for (m in watchedMeta) {
             val gs = m.genres?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
             if (gs.isNullOrEmpty()) continue
-            withGenres++
-            val hours = hoursByMedia[m.id] ?: 0L
-            if (hours <= 0L) continue
-            for (g in gs) genreHours[g] = (genreHours[g] ?: 0L) + hours
+            for (g in gs) genreHours[g] = (genreHours[g] ?: 0L) + m.hoursMs
         }
         val topGenres = genreHours.entries
             .sortedByDescending { it.value }
@@ -332,13 +269,9 @@ object WatchStatsLoader {
 
         // Top languages: hours per original language (v16).
         val langHours = mutableMapOf<String, Long>()
-        var withLang = 0
-        for (m in media) {
+        for (m in watchedMeta) {
             val lang = m.originalLanguage?.takeIf { it.isNotBlank() } ?: continue
-            withLang++
-            val hours = hoursByMedia[m.id] ?: 0L
-            if (hours <= 0L) continue
-            langHours[lang] = (langHours[lang] ?: 0L) + hours
+            langHours[lang] = (langHours[lang] ?: 0L) + m.hoursMs
         }
         val topLanguages = langHours.entries
             .sortedByDescending { it.value }
@@ -347,13 +280,9 @@ object WatchStatsLoader {
 
         // Top countries: hours per country (v16).
         val countryHours = mutableMapOf<String, Long>()
-        var withCountry = 0
-        for (m in media) {
+        for (m in watchedMeta) {
             val c = m.country?.takeIf { it.isNotBlank() } ?: continue
-            withCountry++
-            val hours = hoursByMedia[m.id] ?: 0L
-            if (hours <= 0L) continue
-            countryHours[c] = (countryHours[c] ?: 0L) + hours
+            countryHours[c] = (countryHours[c] ?: 0L) + m.hoursMs
         }
         val topCountries = countryHours.entries
             .sortedByDescending { it.value }
@@ -362,37 +291,38 @@ object WatchStatsLoader {
 
         // Top decades: hours per release decade, from the title year.
         val decadeHours = mutableMapOf<String, Long>()
-        for (m in media) {
+        for (m in watchedMeta) {
             val y = m.year?.take(4)?.toIntOrNull() ?: continue
             val label = "${(y / 10) * 10}s"
-            val hours = hoursByMedia[m.id] ?: 0L
-            if (hours <= 0L) continue
-            decadeHours[label] = (decadeHours[label] ?: 0L) + hours
+            decadeHours[label] = (decadeHours[label] ?: 0L) + m.hoursMs
         }
         val topDecades = decadeHours.entries
             .sortedByDescending { it.value }
             .take(5)
             .map { DecadeCount(it.key, it.value) }
 
+        // Library coverage counts — plain COUNTs, no rows loaded.
+        val mediaDao = db.mediaDao()
+        val totalMedia = mediaDao.countAll()
+        val withGenres = mediaDao.countWithGenres()
+        val withLang = mediaDao.countWithLanguage()
+        val withCountry = mediaDao.countWithCountry()
+        val libraryFiles = db.streamDao().countAll()
+        val libraryBytes = db.streamDao().totalSize()
+
         // Streaks from distinct play days (all time, not just the range).
-        val days = rows.map { dayStart(it.playedAt) }.distinct().sorted()
+        val days = wp.distinctDays().map { parseDay(it) }.sorted()
         val (current, longest) = streaks(days, dayStart(now))
 
-        // Recently finished: finished titles ordered by latest playedAt.
-        val recentlyFinished = finishedIds
-            .mapNotNull { id ->
-                val last = rows.filter { it.mediaId == id }.mapNotNull { it.finishedAt }.maxOrNull()
-                    ?: return@mapNotNull null
-                val m = mediaById[id]
-                FinishedItem(
-                    mediaId = id,
-                    title = m?.title ?: rows.first { it.mediaId == id }.title,
-                    posterUrl = m?.posterUrl,
-                    finishedAtMs = last,
-                )
-            }
-            .sortedByDescending { it.finishedAtMs }
-            .take(5)
+        // Recently finished: finished titles ordered by latest finish.
+        val recentlyFinished = wp.recentlyFinished().map {
+            FinishedItem(
+                mediaId = it.mediaId,
+                title = it.title,
+                posterUrl = it.posterUrl,
+                finishedAtMs = it.finishedAtMs,
+            )
+        }
 
         // Streak calendar: 22 full weeks (Sun-Sat) ending this week, from
         // ALL rows (range-independent, like GitHub's graph). The grid
@@ -406,8 +336,7 @@ object WatchStatsLoader {
             set(Calendar.MILLISECOND, 0)
             add(Calendar.WEEK_OF_YEAR, -21)
         }.timeInMillis
-        val allPerDay = rows.groupBy { dayStart(it.playedAt) }
-            .mapValues { (_, rs) -> rs.sumOf { it.positionMs } }
+        val allPerDay = wp.sumByDaySince(null).associate { parseDay(it.day) to it.ms }
         val calendarDays = (0 until 154).map { i ->
             val d = gridStart + i * dayMs
             DayHours(d, allPerDay[d] ?: 0L)
@@ -439,15 +368,35 @@ object WatchStatsLoader {
             activeDays = activeDays,
             longestSessionMs = longestSessionMs,
             byQuality = byQuality,
-            libraryTitles = media.size,
-            libraryFiles = streams.size,
-            libraryBytes = streams.sumOf { it.fileSize },
+            libraryTitles = totalMedia,
+            libraryFiles = libraryFiles,
+            libraryBytes = libraryBytes,
             watchedTitles = watchedTitles,
             streamedBytes = streamedBytes,
             hourBars = hourBars,
             completionRate = completionRate,
             calendarDays = calendarDays,
         )
+    }
+
+    /** "yyyy-MM-dd" (SQLite local date) → that day's midnight, local
+     *  time. Parsed by hand (no SimpleDateFormat: this runs for every
+     *  play day and the formatter isn't thread-safe). */
+    private fun parseDay(day: String): Long {
+        val parts = day.split("-")
+        if (parts.size != 3) return 0L
+        val y = parts[0].toIntOrNull() ?: return 0L
+        val m = parts[1].toIntOrNull() ?: return 0L
+        val d = parts[2].toIntOrNull() ?: return 0L
+        return Calendar.getInstance().apply {
+            set(Calendar.YEAR, y)
+            set(Calendar.MONTH, m - 1)
+            set(Calendar.DAY_OF_MONTH, d)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
     }
 
     /** Start of the day (midnight) for a timestamp, local time. */
@@ -489,9 +438,12 @@ object WatchStatsLoader {
     }
 
     /** Chart bars for the range. Week = last 7 days, Month = by weekday
-     *  (Mon..Sun), All = last 7 months. */
-    private fun chartBars(
-        rows: List<com.moon.moonstream.index.db.WatchProgressEntity>,
+     *  (Mon..Sun), All = last 7 months. The numbers come from the SQL
+     *  aggregates; only the labels are built here. */
+    private suspend fun chartBars(
+        perDay: Map<Long, Long>,
+        wp: com.moon.moonstream.index.db.WatchProgressDao,
+        since: Long?,
         range: StatsRange,
         now: Long,
     ): List<Pair<String, Float>> {
@@ -503,20 +455,19 @@ object WatchStatsLoader {
                     cal.timeInMillis = now - TimeUnit.DAYS.toMillis(back.toLong())
                     val day = dayStart(cal.timeInMillis)
                     val label = dayNames[(cal.get(Calendar.DAY_OF_WEEK) + 5) % 7]
-                    val hours = rows.filter { dayStart(it.playedAt) == day }
-                        .sumOf { it.positionMs } / 3_600_000f
+                    val hours = (perDay[day] ?: 0L) / 3_600_000f
                     label to hours
                 }
             }
             StatsRange.MONTH -> {
                 val dayNames = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-                dayNames.map { name ->
-                    val idx = dayNames.indexOf(name)
-                    val hours = rows.filter {
-                        cal.timeInMillis = it.playedAt
-                        (cal.get(Calendar.DAY_OF_WEEK) + 5) % 7 == idx
-                    }.sumOf { it.positionMs } / 3_600_000f
-                    name to hours
+                // SQLite %w: Sunday = 0 .. Saturday = 6; the labels run
+                // Monday = 0 .. Sunday = 6.
+                val byWeekday = wp.sumByWeekdaySince(since).associate {
+                    (it.weekday + 6) % 7 to it.ms
+                }
+                dayNames.mapIndexed { idx, name ->
+                    name to (byWeekday[idx] ?: 0L) / 3_600_000f
                 }
             }
             StatsRange.ALL -> {
@@ -524,16 +475,15 @@ object WatchStatsLoader {
                     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
                 )
+                val byMonth = wp.sumByMonthSince(since).associate { it.month to it.ms }
                 (6 downTo 0).map { back ->
                     cal.timeInMillis = now
                     cal.add(Calendar.MONTH, -back)
                     val y = cal.get(Calendar.YEAR)
                     val m = cal.get(Calendar.MONTH)
                     val label = monthNames[m]
-                    val hours = rows.filter {
-                        cal.timeInMillis = it.playedAt
-                        cal.get(Calendar.YEAR) == y && cal.get(Calendar.MONTH) == m
-                    }.sumOf { it.positionMs } / 3_600_000f
+                    val key = "%04d-%02d".format(y, m + 1)
+                    val hours = (byMonth[key] ?: 0L) / 3_600_000f
                     label to hours
                 }
             }

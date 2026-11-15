@@ -45,6 +45,26 @@ interface MediaDao {
     @Query("SELECT COUNT(*) FROM media_items WHERE type = :type")
     suspend fun countByType(type: String): Int
 
+    /** Titles with a genre recorded (stats coverage caption). A genres
+     *  string counts when it holds at least one non-blank segment —
+     *  TRIM strips the separators, so "," alone doesn't count. */
+    @Query("SELECT COUNT(*) FROM media_items WHERE genres IS NOT NULL AND TRIM(genres, ' ,') != ''")
+    suspend fun countWithGenres(): Int
+
+    /** Titles with an original language recorded (stats coverage). */
+    @Query("SELECT COUNT(*) FROM media_items WHERE originalLanguage IS NOT NULL AND TRIM(originalLanguage) != ''")
+    suspend fun countWithLanguage(): Int
+
+    /** Titles with a country recorded (stats coverage). */
+    @Query("SELECT COUNT(*) FROM media_items WHERE country IS NOT NULL AND TRIM(country) != ''")
+    suspend fun countWithCountry(): Int
+
+    /** Rows still missing their Stremio ID — the startup backfill used
+     *  to load the whole library to find these (moon's 2026-11-15).
+     *  After the first backfill this returns almost nothing. */
+    @Query("SELECT * FROM media_items WHERE stremioId IS NULL OR stremioId = ''")
+    suspend fun getMissingStremioId(): List<MediaItemEntity>
+
     @Query("SELECT COALESCE(SUM(episodeCount), 0) FROM media_items WHERE type IN ('series', 'anime')")
     suspend fun episodeTotal(): Int
 
@@ -444,6 +464,52 @@ interface ChannelConfigDao {
     suspend fun setLastSynced(channelId: Long, at: Long)
 }
 
+/** One row of a stats aggregate: a local date ("yyyy-MM-dd") + ms watched. */
+data class StatsDayRow(val day: String, val ms: Long)
+
+/** Weekday bucket: 0 = Sunday .. 6 = Saturday (SQLite strftime '%w'). */
+data class StatsWeekdayRow(val weekday: Int, val ms: Long)
+
+/** Month bucket: "yyyy-MM" + ms watched. */
+data class StatsMonthRow(val month: String, val ms: Long)
+
+/** Hour-of-day bucket: 0-23 (local time) + ms watched. */
+data class StatsHourRow(val hour: Int, val ms: Long)
+
+/** Hours watched per video quality, from stream_files.quality. */
+data class StatsQualityRow(val quality: String, val ms: Long)
+
+/** One watched title's stats metadata + its hours in range — the genre,
+ *  language, country and decade breakdowns all read this one list. */
+data class StatsTitleMetaRow(
+    val genres: String?,
+    val originalLanguage: String?,
+    val country: String?,
+    val year: String?,
+    val hoursMs: Long,
+)
+
+/** Top-watched title: media info joined from media_items. */
+data class StatsTopRow(
+    val mediaId: Long,
+    val title: String,
+    val posterUrl: String?,
+    val hoursMs: Long,
+    val episodes: Int,
+    val type: String?,
+)
+
+/** Recently finished title: latest finish stamp + media info. */
+data class StatsFinishedRow(
+    val mediaId: Long,
+    val title: String,
+    val posterUrl: String?,
+    val finishedAtMs: Long,
+)
+
+/** By-type slice: display type ("movie"/"series"/"anime"/"drama") + count. */
+data class StatsTypeRow(val type: String, val count: Int)
+
 @Dao
 interface WatchProgressDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -550,4 +616,139 @@ interface WatchProgressDao {
 
     @Query("DELETE FROM watch_progress")
     suspend fun clearAll()
+
+    // ---- Stats aggregates (moon's 2026-11-15) ----
+    // The stats screen used to load every watch row, every media row and
+    // every stream file, then count and add them up in Kotlin — a
+    // full-table read x3 on a ~20k-title library, every time Stats
+    // opened (twice for the server card). These queries return only the
+    // finished numbers (or one small row per watched title), so the big
+    // tables are never loaded.
+    //
+    // Day math uses SQLite's 'localtime' so a "day" is the phone's
+    // midnight-to-midnight, matching the old dayStart() grouping.
+
+    /** Hours watched (sum of positionMs) at/after :since; null = all time. */
+    @Query("SELECT COALESCE(SUM(positionMs), 0) FROM watch_progress WHERE :since IS NULL OR playedAt >= :since")
+    suspend fun sumPositionSince(since: Long?): Long
+
+    /** Hours watched between two cutoffs (the hero's previous window). */
+    @Query("SELECT COALESCE(SUM(positionMs), 0) FROM watch_progress WHERE playedAt >= :from AND playedAt < :to")
+    suspend fun sumPositionBetween(from: Long, to: Long): Long
+
+    /** Files watched past 10s in range (episodes/files watched). */
+    @Query("SELECT COUNT(*) FROM watch_progress WHERE positionMs > 10000 AND (:since IS NULL OR playedAt >= :since)")
+    suspend fun countEpisodesSince(since: Long?): Int
+
+    /** Distinct titles played in range (started titles / coverage). */
+    @Query("SELECT COUNT(DISTINCT mediaId) FROM watch_progress WHERE :since IS NULL OR playedAt >= :since")
+    suspend fun countDistinctMediaSince(since: Long?): Int
+
+    /** Longest single file watched in range (position reached). */
+    @Query("SELECT COALESCE(MAX(positionMs), 0) FROM watch_progress WHERE :since IS NULL OR playedAt >= :since")
+    suspend fun maxPositionSince(since: Long?): Long
+
+    /** Finished titles: distinct mediaIds with a finish in range
+     *  (null since = all time). A title counts when ANY of its rows
+     *  finished in the range. */
+    @Query("SELECT COUNT(DISTINCT mediaId) FROM watch_progress WHERE finishedAt IS NOT NULL AND (:since IS NULL OR finishedAt >= :since)")
+    suspend fun countFinishedSince(since: Long?): Int
+
+    /** Distinct movie titles played in range. */
+    @Query("SELECT COUNT(DISTINCT w.mediaId) FROM watch_progress w JOIN media_items m ON m.id = w.mediaId WHERE m.type = 'movie' AND (:since IS NULL OR w.playedAt >= :since)")
+    suspend fun countMoviesWatchedSince(since: Long?): Int
+
+    /** Hours per local day in range ("yyyy-MM-dd" keys). */
+    @Query("SELECT date(playedAt / 1000, 'unixepoch', 'localtime') AS day, SUM(positionMs) AS ms FROM watch_progress WHERE :since IS NULL OR playedAt >= :since GROUP BY day")
+    suspend fun sumByDaySince(since: Long?): List<StatsDayRow>
+
+    /** Distinct local play days, all time — for streaks. */
+    @Query("SELECT DISTINCT date(playedAt / 1000, 'unixepoch', 'localtime') AS day FROM watch_progress")
+    suspend fun distinctDays(): List<String>
+
+    /** Hours per weekday in range (0 = Sunday .. 6 = Saturday). */
+    @Query("SELECT CAST(strftime('%w', playedAt / 1000, 'unixepoch', 'localtime') AS INTEGER) AS weekday, SUM(positionMs) AS ms FROM watch_progress WHERE :since IS NULL OR playedAt >= :since GROUP BY weekday")
+    suspend fun sumByWeekdaySince(since: Long?): List<StatsWeekdayRow>
+
+    /** Hours per month in range ("yyyy-MM" keys). */
+    @Query("SELECT strftime('%Y-%m', playedAt / 1000, 'unixepoch', 'localtime') AS month, SUM(positionMs) AS ms FROM watch_progress WHERE :since IS NULL OR playedAt >= :since GROUP BY month")
+    suspend fun sumByMonthSince(since: Long?): List<StatsMonthRow>
+
+    /** Hours per hour of day in range (0-23, local time). */
+    @Query("SELECT CAST(strftime('%H', playedAt / 1000, 'unixepoch', 'localtime') AS INTEGER) AS hour, SUM(positionMs) AS ms FROM watch_progress WHERE :since IS NULL OR playedAt >= :since GROUP BY hour")
+    suspend fun sumByHourSince(since: Long?): List<StatsHourRow>
+
+    /** Top 5 titles by hours in range, media info joined. The title
+     *  falls back to the watch row's own title when the media row is
+     *  gone (orphan watch row). */
+    @Query(
+        """SELECT w.mediaId AS mediaId, COALESCE(m.title, MAX(w.title)) AS title,
+                  m.posterUrl AS posterUrl, SUM(w.positionMs) AS hoursMs,
+                  COUNT(*) AS episodes, m.type AS type
+           FROM watch_progress w LEFT JOIN media_items m ON m.id = w.mediaId
+           WHERE :since IS NULL OR w.playedAt >= :since
+           GROUP BY w.mediaId ORDER BY hoursMs DESC LIMIT 5"""
+    )
+    suspend fun topWatchedSince(since: Long?): List<StatsTopRow>
+
+    /** By-type slices: distinct titles played in range, grouped by
+     *  display type — series in a drama language count as dramas.
+     *  Orphan watch rows (no media row) are dropped, as before. */
+    @Query(
+        """SELECT CASE WHEN m.type = 'movie' THEN 'movie'
+                      WHEN m.type = 'anime' THEN 'anime'
+                      WHEN m.type = 'series' AND m.originalLanguage IN ('ko', 'zh', 'ja', 'th') THEN 'drama'
+                      ELSE 'series' END AS type, COUNT(*) AS count
+           FROM (SELECT DISTINCT mediaId FROM watch_progress
+                 WHERE :since IS NULL OR playedAt >= :since) w
+           JOIN media_items m ON m.id = w.mediaId
+           GROUP BY type ORDER BY count DESC"""
+    )
+    suspend fun countByTypeSince(since: Long?): List<StatsTypeRow>
+
+    /** Recently finished titles: latest finish stamp per title, newest
+     *  first, top 5. */
+    @Query(
+        """SELECT w.mediaId AS mediaId, COALESCE(m.title, MAX(w.title)) AS title,
+                  m.posterUrl AS posterUrl, MAX(w.finishedAt) AS finishedAtMs
+           FROM watch_progress w LEFT JOIN media_items m ON m.id = w.mediaId
+           WHERE w.finishedAt IS NOT NULL
+           GROUP BY w.mediaId ORDER BY finishedAtMs DESC LIMIT 5"""
+    )
+    suspend fun recentlyFinished(): List<StatsFinishedRow>
+
+    /** Hours per video quality of the files actually played in range.
+     *  Files whose stream row is gone land in "Unknown", as before. */
+    @Query(
+        """SELECT COALESCE(s.quality, 'Unknown') AS quality, SUM(w.positionMs) AS ms
+           FROM watch_progress w LEFT JOIN stream_files s ON s.id = w.streamFileId
+           WHERE :since IS NULL OR w.playedAt >= :since
+           GROUP BY quality HAVING ms > 0"""
+    )
+    suspend fun sumByQualitySince(since: Long?): List<StatsQualityRow>
+
+    /** Bytes actually streamed in range: each played file contributes
+     *  its size x the fraction watched (a finished file counts whole).
+     *  Per-row truncation matches the old Kotlin sum. */
+    @Query(
+        """SELECT COALESCE(SUM(CAST(s.fileSize * CASE
+               WHEN w.finishedAt IS NOT NULL THEN 1.0
+               WHEN w.durationMs > 0 THEN MIN(1.0, MAX(0.0, w.positionMs * 1.0 / w.durationMs))
+               ELSE 0.0 END AS INTEGER)), 0)
+           FROM watch_progress w JOIN stream_files s ON s.id = w.streamFileId
+           WHERE :since IS NULL OR w.playedAt >= :since"""
+    )
+    suspend fun streamedBytesSince(since: Long?): Long
+
+    /** One row per watched title in range: its stats metadata + hours.
+     *  The genre / language / country / decade breakdowns all read
+     *  this list instead of every media row. */
+    @Query(
+        """SELECT m.genres AS genres, m.originalLanguage AS originalLanguage,
+                  m.country AS country, m.year AS year, SUM(w.positionMs) AS hoursMs
+           FROM watch_progress w JOIN media_items m ON m.id = w.mediaId
+           WHERE :since IS NULL OR w.playedAt >= :since
+           GROUP BY w.mediaId HAVING hoursMs > 0"""
+    )
+    suspend fun watchedTitleMetaSince(since: Long?): List<StatsTitleMetaRow>
 }
