@@ -1075,7 +1075,18 @@ private fun StreakCalendarCard(
         c.timeInMillis
     }
     GlowCard(modifier = modifier) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        // Tapping anywhere in the card that isn't a day square clears
+        // the selection (moon's 2026-11-15) — the squares' own
+        // clickables consume their taps, so this only fires outside
+        // them (gaps, labels, the detail line, the legend).
+        Column(
+            modifier = Modifier
+                .padding(14.dp)
+                .clickable(
+                    indication = null,
+                    interactionSource = tapSource,
+                ) { selected = null },
+        ) {
             if (days.isEmpty()) {
                 Text(
                     "No watch history yet — squares fill in as you watch.",
@@ -1089,11 +1100,18 @@ private fun StreakCalendarCard(
                     val monthFmt = SimpleDateFormat("MMM", Locale.getDefault())
                     // Month label per week column: shown only where the
                     // month changes (GitHub puts "Nov" over the week it
-                    // starts in). Labels overflow their narrow cell to the
-                    // right — months are weeks apart, so they never collide.
+                    // starts in). A month name is ~2 columns wide, so a
+                    // label is only shown when at least 3 columns have
+                    // passed since the previous one — month boundaries
+                    // can fall 1-2 columns apart (short months, or the
+                    // grid starting mid-month) and the names used to
+                    // collide ("Jun Jul", moon's 2026-11-15). A month
+                    // whose label is skipped just has no label, like
+                    // GitHub's graph.
                     val monthLabels = (0 until 22).map { w ->
                         monthFmt.format(Date(days[w * 7].dayStartMs))
                     }
+                    var lastLabelW = -3
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(gap),
@@ -1103,7 +1121,8 @@ private fun StreakCalendarCard(
                                 modifier = Modifier.width(sq),
                                 contentAlignment = Alignment.CenterStart,
                             ) {
-                                if (w == 0 || monthLabels[w] != monthLabels[w - 1]) {
+                                if ((w == 0 || monthLabels[w] != monthLabels[w - 1]) && w - lastLabelW >= 3) {
+                                    lastLabelW = w
                                     Text(
                                         monthLabels[w],
                                         style = MaterialTheme.typography.labelSmall,
@@ -1142,7 +1161,9 @@ private fun StreakCalendarCard(
                                                 .clickable(
                                                     indication = null,
                                                     interactionSource = tapSource,
-                                                ) { selected = day },
+                                                    // Tapping the selected day again
+                                                    // clears it (moon's 2026-11-15).
+                                                ) { selected = if (isSel) null else day },
                                         )
                                     }
                                 }

@@ -115,6 +115,9 @@ import com.moon.moonstream.ui.player.TdSubUri
 import com.moon.moonstream.ui.state.LanguagePrefs
 import com.moon.moonstream.ui.theme.Inter
 import com.moon.moonstream.ui.theme.MsColors
+import com.moon.moonstream.index.StremioIds
+import com.moon.moonstream.index.match.MetadataMatcher
+import com.moon.moonstream.index.parse.normalizeTitle
 import com.moon.moonstream.index.scan.ScanPrefs
 import com.moon.moonstream.util.AnimeSkip
 import com.moon.moonstream.util.AppLog
@@ -935,6 +938,58 @@ fun PlayerScreen(
     // Create the watch-progress row on playback start (moon's bug 2026-11-04:
     // updatePosition is UPDATE-only, so without this the row never exists and
     // Continue Watching stays empty).
+    // Auto-refresh metadata on play (moon's 2026-11-15): an entry that
+    // is missing the fields the Stats screen needs (language, country,
+    // genres) gets a silent background refresh when it is played — the
+    // same matcher run as the Detail screen's Refresh button. Entries
+    // that already have those fields, custom entries (user-authored
+    // metadata) and unmatched-file plays (mediaId 0) are left alone.
+    // Silent on purpose: no toast, no spinner — the stats just start
+    // showing the data. A failed lookup retries on the next play.
+    LaunchedEffect(mediaId) {
+        if (mediaId == 0L) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            try {
+                val m = db.mediaDao().getById(mediaId) ?: return@withContext
+                if (m.isCustom) return@withContext
+                if (!m.genres.isNullOrBlank() && !m.originalLanguage.isNullOrBlank() &&
+                    !m.country.isNullOrBlank()
+                ) return@withContext
+                val key = ScanPrefs.getTmdbKey(context)
+                val omdbKey = ScanPrefs.getOmdbKey(context)
+                val full = MetadataMatcher.match(
+                    m.title, m.year, m.type, m.type == "anime", key,
+                    imdbId = m.imdbId, omdbKey = omdbKey,
+                )?.let { MetadataMatcher.enrichFromCinemeta(it, m.type) }
+                    ?: return@withContext
+                db.mediaDao().updateMetadata(
+                    id = m.id,
+                    title = full.title,
+                    norm = normalizeTitle(full.title),
+                    year = full.year ?: m.year,
+                    imdbId = full.imdbId ?: m.imdbId,
+                    tmdbId = full.tmdbId ?: m.tmdbId,
+                    posterUrl = full.posterUrl ?: m.posterUrl,
+                    backdropUrl = full.backdropUrl ?: m.backdropUrl,
+                    overview = full.overview ?: m.overview,
+                    stremioId = StremioIds.forNewItem(
+                        m.channelId,
+                        normalizeTitle(full.title),
+                        full.imdbId ?: m.imdbId,
+                    ),
+                    type = m.type,
+                    genres = full.genres?.takeIf { it.isNotEmpty() }?.joinToString(",") ?: m.genres,
+                    originalLanguage = full.originalLanguage ?: m.originalLanguage,
+                    country = full.country ?: m.country,
+                    now = System.currentTimeMillis(),
+                )
+                AppLog.i("PLAYER", "Auto-refresh filled stats metadata for '${m.title}'")
+            } catch (e: Exception) {
+                AppLog.i("PLAYER", "Auto-refresh skipped: ${e.message}")
+            }
+        }
+    }
+
     LaunchedEffect(streamFileId) {
         if (streamFileId == 0L || mediaId == 0L) {
             com.moon.moonstream.util.AppLog.i("PLAYER", "ContinueWatching: SKIP upsert (mediaId=$mediaId, streamFileId=$streamFileId)")
