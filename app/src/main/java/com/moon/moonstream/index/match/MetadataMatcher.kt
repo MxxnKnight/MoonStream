@@ -455,7 +455,15 @@ object MetadataMatcher {
             val anilistId = kitsuId?.let { lookupAnilistId(it) }
             val attr = item.optJSONObject("attributes")
                 ?: return@mapNotNull null
-            val name = attr.optString("canonicalTitle").ifBlank { return@mapNotNull null }
+            // Prefer the English title (moon's 2026-11-15): Kitsu's
+            // canonical title is the romanized Japanese name for some
+            // anime, while titles.en has the English name. Fall back
+            // to the canonical title when there is no English one.
+            val titles = attr.optJSONObject("titles")
+            val name = titles?.optString("en")?.takeIf { it.isNotBlank() }
+                ?: titles?.optString("en_us")?.takeIf { it.isNotBlank() }
+                ?: attr.optString("canonicalTitle").takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
             val poster = attr.optJSONObject("posterImage")?.optString("large")
                 ?.takeIf { it.isNotBlank() }
             val cover = attr.optJSONObject("coverImage")?.optString("large")
@@ -661,7 +669,12 @@ object MetadataMatcher {
                 val s = similarity(title, c)
                 if (s > bestScore) {
                     bestScore = s
-                    bestTitle = c
+                    // Save the English title when MAL has one (moon's
+                    // 2026-11-15): its main title is the romanized
+                    // Japanese name. Matching still scores both names;
+                    // only the saved name prefers English.
+                    bestTitle = item.optString("title_english")
+                        .takeIf { it.isNotBlank() } ?: c
                     val images = item.optJSONObject("images")?.optJSONObject("jpg")
                     val poster = images?.optString("large_image_url")?.takeIf { it.isNotBlank() }
                         ?: images?.optString("image_url")?.takeIf { it.isNotBlank() }
@@ -757,7 +770,16 @@ object MetadataMatcher {
                 if (s > bestScore) {
                     bestScore = s
                     best = attr
-                    bestTitle = attr.optString("canonicalTitle").ifBlank { c }
+                    // Save the English title when one exists (moon's
+                    // 2026-11-15): canonicalTitle is the romanized
+                    // Japanese name for some anime ("Ore Dake Level Up
+                    // na Ken" for Solo Leveling). Matching still scores
+                    // every candidate above; only the saved name
+                    // prefers English.
+                    val titles = attr.optJSONObject("titles")
+                    bestTitle = titles?.optString("en")?.takeIf { it.isNotBlank() }
+                        ?: titles?.optString("en_us")?.takeIf { it.isNotBlank() }
+                        ?: attr.optString("canonicalTitle").ifBlank { c }
                     bestKitsuId = data.optJSONObject(i)?.optString("id")
                         ?.takeIf { it.isNotBlank() }
                 }
