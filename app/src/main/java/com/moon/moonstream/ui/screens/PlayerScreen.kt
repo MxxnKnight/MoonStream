@@ -935,9 +935,6 @@ fun PlayerScreen(
         }
     }
 
-    // Create the watch-progress row on playback start (moon's bug 2026-11-04:
-    // updatePosition is UPDATE-only, so without this the row never exists and
-    // Continue Watching stays empty).
     // Auto-refresh metadata on play (moon's 2026-11-15): an entry that
     // is missing the fields the Stats screen needs (language, country,
     // genres) gets a silent background refresh when it is played — the
@@ -990,6 +987,9 @@ fun PlayerScreen(
         }
     }
 
+    // Create the watch-progress row on playback start (moon's bug 2026-11-04:
+    // updatePosition is UPDATE-only, so without this the row never exists and
+    // Continue Watching stays empty).
     LaunchedEffect(streamFileId) {
         if (streamFileId == 0L || mediaId == 0L) {
             com.moon.moonstream.util.AppLog.i("PLAYER", "ContinueWatching: SKIP upsert (mediaId=$mediaId, streamFileId=$streamFileId)")
