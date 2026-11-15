@@ -98,6 +98,8 @@ fun MetadataFixSheet(
     mediaType: String = "series",
     /** Pre-fill the search field (moon's request 2026-11-01: parsed name auto-filled). */
     initialQuery: String = "",
+    /** Telegram caption of the file (LINK mode only) — shown under the filename. */
+    caption: String = "",
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -105,8 +107,8 @@ fun MetadataFixSheet(
     // Prefill with the CLEAN title (moon's 2026-11-06): the raw filename
     // carries the @promo handle, quality tags and "- 10.mkv", which
     // pollutes the search (and is too long to read in the box — the full
-    // filename is already shown just above the field). Parse it to the
-    // bare title, e.g. "Meesaya Murukku 2".
+    // filename is shown just above the field in LINK mode). Parse it to
+    // the bare title, e.g. "Meesaya Murukku 2".
     val initialSearch = remember(initialQuery, isAnime) {
         FilenameParser.parse(initialQuery, isAnime, "").title.trim()
             .ifBlank { initialQuery.trim() }
@@ -210,15 +212,40 @@ fun MetadataFixSheet(
         onDismissRequest = onDismiss,
     ) {
         MsSheetContent(title = heading) {
-            Text(
-                text = when (mode) {
-                    FixMode.FIX_TITLE -> "Currently: $currentTitle. Search and pick the correct title — the entry's metadata will be updated."
-                    FixMode.FIX_FILE -> "Currently filed under: $currentTitle. Search and pick the correct title — this file will be moved there."
-                    FixMode.LINK -> "Search an existing title to attach this file to it, or create a new entry from a result."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MsColors.TextSecondary,
-            )
+            // Original filename + caption (moon's 2026-11-15): in LINK
+            // mode the header showed only a generic help sentence, so he
+            // couldn't see the file's year or details while picking a
+            // title. The full filename (and caption, when the uploader
+            // left one) now sits here instead.
+            if (mode == FixMode.LINK) {
+                Text(
+                    text = currentTitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MsColors.TextPrimary,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (caption.isNotBlank()) {
+                    Text(
+                        text = caption,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextSecondary,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            } else {
+                Text(
+                    text = when (mode) {
+                        FixMode.FIX_TITLE -> "Currently: $currentTitle. Search and pick the correct title — the entry's metadata will be updated."
+                        FixMode.FIX_FILE -> "Currently filed under: $currentTitle. Search and pick the correct title — this file will be moved there."
+                        FixMode.LINK -> "" // unreachable — LINK has its own header above
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MsColors.TextSecondary,
+                )
+            }
             MsTextField(
                 value = query,
                 onValueChange = {

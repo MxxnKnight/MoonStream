@@ -755,6 +755,7 @@ fun ChannelsScreen(
             // provider search found nothing.
             mediaType = FilenameParser.parse(f.fileName, false, "").type,
             initialQuery = f.fileName,
+            caption = f.caption,
             onDismiss = { linkFile = null },
             onApply = { picked ->
                 scope.launch {
@@ -830,6 +831,7 @@ fun ChannelsScreen(
             isAnime = false,
             mediaType = FilenameParser.parse(first.fileName, false, "").type,
             initialQuery = first.fileName,
+            caption = first.caption,
             onDismiss = { linkFileBulk = emptyList() },
             onApply = { picked ->
                 scope.launch {
