@@ -643,7 +643,10 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
                                 .height(1.dp)
                                 .background(Color.White.copy(alpha = 0.08f)),
                         )
-                        ManifestDrawer(active = cardState == ServerCardState.RUNNING)
+                        ManifestDrawer(
+                            active = cardState == ServerCardState.RUNNING,
+                            starting = cardState == ServerCardState.STARTING,
+                        )
                     }
                 }
             }
@@ -660,25 +663,38 @@ private fun ServerCard(on: Boolean, uptimeSecs: Int, onToggle: () -> Unit) {
  * - ALL chars randomize TOGETHER on every step and resolve TOGETHER at
  *   the end — no left-to-right reveal. 10 steps x 100ms = ~1s, starting
  *   once the server is actually RUNNING.
+ * - While the server is STARTING the URL scrambles continuously (moon's
+ *   2026-11-15: the plain URL showed first and only THEN scrambled,
+ *   which looked broken — the scramble is the reveal, not a garble).
  */
 @Composable
-private fun ScrambleUrlText(url: String, active: Boolean, modifier: Modifier = Modifier) {
+private fun ScrambleUrlText(
+    url: String,
+    active: Boolean,
+    starting: Boolean,
+    modifier: Modifier = Modifier,
+) {
     var display by remember { mutableStateOf(url) }
     // Only scramble on a real OFF→ON flip while this screen is visible.
     // A fresh composition with the server already on must show the plain
     // URL at once (moon's 2026-11-06: the scramble replayed on every return).
     var wasActive by remember { mutableStateOf(active) }
-    LaunchedEffect(url, active) {
-        if (!active || url.isEmpty()) { display = url; wasActive = false; return@LaunchedEffect }
+    LaunchedEffect(url, active, starting) {
+        if (url.isEmpty()) { display = ""; wasActive = false; return@LaunchedEffect }
+        if (starting) {
+            // Server still waking: keep the URL scrambling so the plain
+            // URL never flashes before the reveal. The effect restarts
+            // (and this loop is cancelled) when STARTING ends.
+            wasActive = false
+            while (true) {
+                display = scrambleUrl(url)
+                delay(100)
+            }
+        }
+        if (!active) { display = url; wasActive = false; return@LaunchedEffect }
         if (!wasActive) {
-            val pool = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-            val steps = 10
-            repeat(steps) {
-                display = buildString {
-                    url.forEach { c ->
-                        if (c.isLetterOrDigit()) append(pool.random()) else append(c)
-                    }
-                }
+            repeat(10) {
+                display = scrambleUrl(url)
                 delay(100)
             }
             display = url
@@ -705,12 +721,22 @@ private fun ScrambleUrlText(url: String, active: Boolean, modifier: Modifier = M
     }
 }
 
+/** One scramble frame: letters/digits randomized, separators fixed. */
+private fun scrambleUrl(url: String): String {
+    val pool = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    return buildString {
+        url.forEach { c ->
+            if (c.isLetterOrDigit()) append(pool.random()) else append(c)
+        }
+    }
+}
+
 /**
  * The manifest URL row. The WHOLE row is tappable and copies the link
  * (not just an icon) — a short gold flash confirms the copy.
  */
 @Composable
-private fun ManifestDrawer(active: Boolean) {
+private fun ManifestDrawer(active: Boolean, starting: Boolean) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val url = AppUiState.manifestLink
@@ -740,7 +766,7 @@ private fun ManifestDrawer(active: Boolean) {
             .padding(18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ScrambleUrlText(url = url, active = active, modifier = Modifier.weight(1f))
+        ScrambleUrlText(url = url, active = active, starting = starting, modifier = Modifier.weight(1f))
         // NoxMedia-style "copied" feedback (moon's request 2026-11-01).
         AnimatedVisibility(
             visible = copied,
