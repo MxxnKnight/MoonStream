@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.media.AudioManager
 import android.net.Uri
@@ -60,6 +61,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -82,6 +84,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.decoder.ffmpeg.FfmpegLibrary
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -298,6 +301,22 @@ fun PlayerScreen(
     // Build the ExoPlayer instance (media item is set by the load effect below,
     // so subtitle changes / delay can rebuild it while preserving position).
     var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
+    // Video surface (moon's 2026-11-15): the surface must NOT be created
+    // while the window is still portrait — a surface born in portrait
+    // keeps its portrait size through the rotation and shows the video
+    // as a narrow center strip until playback starts. Wait for landscape
+    // (or 1.5s, in case the rotation never lands) before creating it.
+    val configuration = LocalConfiguration.current
+    var surfaceReady by remember { mutableStateOf(false) }
+    LaunchedEffect(configuration.orientation) {
+        if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            surfaceReady = true
+        }
+    }
+    LaunchedEffect(Unit) {
+        delay(1500)
+        surfaceReady = true
+    }
     // tdfile:// streams come straight from Telegram through our own
     // DataSource (no addon server needed); http/file URIs still work through
     // Media3's defaults. See ui/player/TdDataSource.kt.
@@ -646,6 +665,23 @@ fun PlayerScreen(
         }
         MsToast.show(label)
         AppLog.i("PLAYER", "Resize mode: $label")
+    }
+
+    /**
+     * Force the video surface to match the PlayerView's current (landscape)
+     * size (moon's 2026-11-15): a surface born in portrait can keep its
+     * portrait size through the rotation and show the video as a narrow
+     * center strip. Cheap and idempotent — a no-op when already correct.
+     */
+    fun resyncVideoSurface() {
+        playerViewRef?.let { pv ->
+            pv.post {
+                try {
+                    (pv.videoSurfaceView as? SurfaceView)?.holder?.setSizeFromLayout()
+                } catch (e: Exception) { /* never break playback */ }
+                pv.requestLayout()
+            }
+        }
     }
 
     /** Capture the current video frame into Pictures/MoonStream. */
@@ -1345,6 +1381,24 @@ fun PlayerScreen(
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
+                if (playing) resyncVideoSurface()
+            }
+            // Video size (moon's 2026-11-15): log every size the player
+            // reports, so the next device test shows whether the narrow
+            // strip was a wrong size or a stale surface — and re-sync the
+            // surface on each report so a late size still lands promptly.
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                AppLog.i(
+                    "PLAYER",
+                    "Video size: ${videoSize.width}x${videoSize.height} " +
+                        "(rot ${videoSize.unappliedRotationDegrees}, " +
+                        "px ${videoSize.pixelWidthHeightRatio})",
+                )
+                resyncVideoSurface()
+            }
+            override fun onRenderedFirstFrame() {
+                AppLog.i("PLAYER", "First frame rendered")
+                resyncVideoSurface()
             }
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) {
@@ -1736,21 +1790,25 @@ fun PlayerScreen(
                 }
             }
     ) {
-        // Video surface.
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    this.player = player
-                    useController = false // We draw our own Compose controls.
-                    layoutParams = FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                    )
-                    playerViewRef = this
-                }
-            },
-            modifier = Modifier.fillMaxSize(),
-        )
+        // Video surface — only once the window is landscape (see
+        // surfaceReady above); a surface born in portrait shows the
+        // video as a narrow center strip until playback starts.
+        if (surfaceReady) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        this.player = player
+                        useController = false // We draw our own Compose controls.
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                        )
+                        playerViewRef = this
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         // Top bar (mpvex-style): back + title pill on the left,
         // quick-action cluster on the right.
