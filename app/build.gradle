@@ -131,6 +131,13 @@ dependencies {
     // Haze backdrop blur for the bottom pill (experiment branch only).
     implementation 'dev.chrisbanes.haze:haze:1.3.0'
 
+    // ProfileInstaller: applies the baseline profile on first launch
+    // (moon's 2026-11-15) — the app is sideloaded, not from Play, so
+    // nothing else hands the profile to ART. No code needed: it runs
+    // by itself at startup and ART compiles the profile in the
+    // background afterwards.
+    implementation 'androidx.profileinstaller:profileinstaller:1.4.1'
+
 
     // Room: on-phone library database (Phase 3 indexing)
     implementation 'androidx.room:room-runtime:2.6.1'

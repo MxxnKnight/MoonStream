@@ -1,0 +1,50 @@
+# MoonStream starter baseline profile (moon's 2026-11-15).
+#
+# Hand-written: covers app startup + the screens he uses most, so ART
+# pre-compiles those paths instead of compiling them on first use.
+# Libraries (Compose, Room, media3, Coil, Haze) ship their own profiles
+# in their AARs — this file only needs the app's own classes.
+#
+# Rule forms (developer.android.com baseline profiles):
+# - A bare class line marks the class used at startup (pre-loaded, so
+#   the cost of class loading is paid ahead of time).
+# - A method rule is [FLAGS][CLASS]->[METHOD]; H = hot (called often),
+#   S = startup, P = post-startup. "**" wildcards cover a whole package.
+#
+# How it reaches the phone: AGP compiles this file into the APK's binary
+# profile (assets/dexopt/baseline.prof). The app is sideloaded, not from
+# Play, so the ProfileInstaller dependency bootstraps it on first launch
+# and ART compiles it in the background — the speedup shows from the
+# next day or so, not the very first open after updating.
+
+# --- Startup: the first thing that runs ---
+Lcom/moon/moonstream/MainActivity;
+Lcom/moon/moonstream/ui/screens/SplashScreen;
+Lcom/moon/moonstream/ui/state/AppState;
+Lcom/moon/moonstream/index/db/MsDatabase;
+Lcom/moon/moonstream/index/db/LibraryCache;
+HSPLcom/moon/moonstream/MainActivity;->onCreate(Landroid/os/Bundle;)V
+
+# --- Screens + UI: the code behind every frame ---
+HSPLcom/moon/moonstream/ui/screens/**->**(**)**
+HSPLcom/moon/moonstream/ui/components/**->**(**)**
+HSPLcom/moon/moonstream/ui/theme/**->**(**)**
+HSPLcom/moon/moonstream/ui/state/**->**(**)**
+HSPLcom/moon/moonstream/ui/model/**->**(**)**
+
+# --- Hot paths: library data, scanning, stats ---
+HLcom/moon/moonstream/index/db/**->**(**)**
+HLcom/moon/moonstream/index/scan/**->**(**)**
+HLcom/moon/moonstream/index/parse/**->**(**)**
+HLcom/moon/moonstream/index/match/**->**(**)**
+HLcom/moon/moonstream/ui/stats/**->**(**)**
+
+# --- Post-startup: player, server, backend ---
+PLcom/moon/moonstream/ui/player/**->**(**)**
+PLcom/moon/moonstream/server/**->**(**)**
+PLcom/moon/moonstream/backend/**->**(**)**
+PLcom/moon/moonstream/tdlib/**->**(**)**
+PLcom/moon/moonstream/util/**->**(**)**
+PLcom/moon/moonstream/cache/**->**(**)**
+PLcom/moon/moonstream/backup/**->**(**)**
+PLcom/moon/moonstream/update/**->**(**)**

@@ -957,19 +957,26 @@ fun MoonStreamApp(telegramManager: com.moon.moonstream.tdlib.TelegramManager) {
                                         Modifier.hazeEffect(hazeState) {
                                     style = HazeStyle(
                                         // Black-tinted backdrop blur (moon's
-                                        // AMOLED pick, blacker 2026-11-07):
-                                        // darker base + stronger black tint
-                                        // so the pill reads black-frosted,
-                                        // with the blurred content still
-                                        // showing through.
-                                        backgroundColor = Color.Black.copy(alpha = 0.75f),
-                                        tint = HazeTint(Color.Black.copy(alpha = 0.55f)),
-                                        // Smaller radius (was 12dp, moon's
-                                        // 2026-11-09 low-end): a tighter
-                                        // blur kernel is cheaper on the GPU,
-                                        // and the darker tint hides the
-                                        // softer frost.
-                                        blurRadius = 8.dp,
+                                        // AMOLED pick, blacker 2026-11-07,
+                                        // blacker again 2026-11-15): a darker
+                                        // base + stronger black tint so the
+                                        // pill reads black-frosted with a
+                                        // much weaker blur underneath — the
+                                        // blur is still there, it just has
+                                        // less to show through.
+                                        backgroundColor = Color.Black.copy(alpha = 0.82f),
+                                        tint = HazeTint(Color.Black.copy(alpha = 0.60f)),
+                                        // Very low blur (was 8dp, moon's
+                                        // 2026-11-15 low-end tune): a tighter
+                                        // blur kernel is far cheaper on the
+                                        // GPU, and the darker tint above
+                                        // hides the softer frost.
+                                        blurRadius = 4.dp,
+                                        // No grain (moon's 2026-11-15): the
+                                        // default 0.15 noise dithers every
+                                        // pixel — with this dark a tint the
+                                        // grain is invisible anyway.
+                                        noiseFactor = 0f,
                                     )
                                     // LOW-SETTINGS blur (moon's 2026-11-07:
                                     // lag-free on his low-budget phone):

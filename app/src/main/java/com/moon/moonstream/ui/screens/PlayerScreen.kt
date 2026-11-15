@@ -22,6 +22,8 @@ import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -3074,12 +3076,26 @@ private fun MoonSeekBar(
     val posFrac = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
     } else 0f
+    // Smooth fill (moon's 2026-11-15): the player only reports its
+    // position twice a second, so the fill used to jump in visible
+    // steps. Glide the displayed fraction toward each new reading over
+    // the same 500ms, at a constant speed — the bar now slides like a
+    // clock hand. A real seek (a jump of 3%+) snaps straight there
+    // instead of gliding, so seeking still feels instant.
+    val fillAnim = remember { Animatable(posFrac) }
+    LaunchedEffect(posFrac) {
+        if (kotlin.math.abs(posFrac - fillAnim.value) > 0.03f) {
+            fillAnim.snapTo(posFrac)
+        } else {
+            fillAnim.animateTo(posFrac, tween(500, easing = LinearEasing))
+        }
+    }
     // While scrubbing, the played fill follows the finger's target, not
     // the actual playback position — so the bar shows exactly where the
     // seek will land before the finger lifts.
     val displayFrac = if (isScrubbing && scrubMs != null && durationMs > 0L) {
         (scrubMs!!.toFloat() / durationMs).coerceIn(0f, 1f)
-    } else posFrac
+    } else fillAnim.value
     BoxWithConstraints(
         modifier = modifier
             .height(24.dp)
