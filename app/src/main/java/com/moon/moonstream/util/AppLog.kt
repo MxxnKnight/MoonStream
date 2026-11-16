@@ -49,6 +49,9 @@ object AppLog {
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.US)
     private val io = Executors.newSingleThreadExecutor()
     @Volatile private var logFile: File? = null
+    /** Guards the log file: the async writer (io executor) and the
+     * synchronous watchdog/crash writer run on different threads. */
+    private val fileLock = Any()
 
     /**
      * Call once from MainActivity.onCreate. Points the file mirror at
@@ -77,6 +80,9 @@ object AppLog {
         // Boundary marker: makes it obvious where this launch begins when the
         // older lines are still on screen (they are, until Clear or 200 lines).
         i(TAG_APP, "app launched — older lines kept from previous run")
+        // Freeze/crash trap (moon's 2026-11-16): two random freeze-kills
+        // left no log behind. The watchdog writes the evidence itself.
+        Watchdog.start()
     }
 
     private fun formatLine(line: LogLine): String =
@@ -94,9 +100,34 @@ object AppLog {
     private fun appendToFile(line: LogLine) {
         val file = logFile ?: return
         io.execute {
+            synchronized(fileLock) {
+                try {
+                    if (file.length() > MAX_FILE_BYTES) {
+                        // Rotate: keep the last ~300 lines.
+                        val kept = file.readLines().takeLast(300)
+                        file.writeText(kept.joinToString("\n") + "\n")
+                    }
+                    file.appendText(formatLine(line) + "\n")
+                } catch (e: Exception) { /* never break the app for logging */ }
+            }
+        }
+    }
+
+    /**
+     * Appends ONE line straight to the log file, synchronously, from any
+     * thread. For the watchdog and the crash handler only: the normal
+     * add() path posts to the main thread first, so during a main-thread
+     * freeze it queues behind the blockage and never flushes — the
+     * evidence of the freeze would be lost exactly when it matters.
+     * Does NOT touch the in-memory list (that needs the main thread).
+     */
+    fun appendSync(level: String, tag: String, msg: String) {
+        val file = logFile ?: return
+        synchronized(fileLock) {
             try {
+                val time = synchronized(timeFmt) { timeFmt.format(Date()) }
+                val line = LogLine(nextId.incrementAndGet(), time, tag, level, msg)
                 if (file.length() > MAX_FILE_BYTES) {
-                    // Rotate: keep the last ~300 lines.
                     val kept = file.readLines().takeLast(300)
                     file.writeText(kept.joinToString("\n") + "\n")
                 }

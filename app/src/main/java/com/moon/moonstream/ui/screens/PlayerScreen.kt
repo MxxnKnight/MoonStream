@@ -1483,7 +1483,17 @@ fun PlayerScreen(
                 // downloaded ahead (mpv-style) over ExoPlayer's ~50s sliver;
                 // fall back to ExoPlayer for http/server streams.
                 val td = TdDataSource.current
-                val winFrac = td?.downloadedAheadFraction(currentPosition, duration)
+                // Disk check off the main thread (moon's 2026-11-16 freeze
+                // after a backward seek): downloadedAheadFraction stats
+                // chunk files, and after a backward seek it scans over
+                // hundreds of evicted chunks — disk I/O in a 500ms loop
+                // on the UI thread. The values are captured first so the
+                // IO switch only carries plain numbers.
+                val posNow = currentPosition
+                val durNow = duration
+                val winFrac = if (td == null) null else withContext(Dispatchers.IO) {
+                    td.downloadedAheadFraction(posNow, durNow)
+                }
                 val exoFrac = if (duration > 0L) {
                     (bufferedPosition.toFloat() / duration).coerceIn(0f, 1f)
                 } else 0f

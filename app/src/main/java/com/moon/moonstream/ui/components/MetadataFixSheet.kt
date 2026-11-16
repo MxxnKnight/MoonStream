@@ -118,11 +118,26 @@ fun MetadataFixSheet(
     // pollutes the search (and is too long to read in the box — the full
     // filename is shown just above the field in LINK mode). Parse it to
     // the bare title, e.g. "Meesaya Murukku 2".
-    val initialSearch = remember(initialQuery, isAnime) {
-        FilenameParser.parse(initialQuery, isAnime, "").title.trim()
-            .ifBlank { initialQuery.trim() }
+    // Parsed OFF the main thread (moon's 2026-11-16: the sheet once
+    // froze on the tap before it even opened — the parse is the only
+    // heavy work before the first frame, so the sheet opens instantly
+    // with the raw name and the clean title fills in when ready; the
+    // first search waits for it so it never searches the dirty name).
+    var query by remember { mutableStateOf(initialQuery.trim()) }
+    var parseDone by remember { mutableStateOf(false) }
+    var userEditedQuery by remember { mutableStateOf(false) }
+    LaunchedEffect(initialQuery, isAnime) {
+        val clean = try {
+            withContext(Dispatchers.Default) {
+                FilenameParser.parse(initialQuery, isAnime, "").title.trim()
+                    .ifBlank { initialQuery.trim() }
+            }
+        } catch (e: Exception) {
+            initialQuery.trim()
+        }
+        if (!userEditedQuery) query = clean
+        parseDone = true
     }
-    var query by remember { mutableStateOf(initialSearch) }
     // True once a search has actually run for the current query — gates
     // the "No results." line so it never shows while just typing.
     var searched by remember { mutableStateOf(false) }
@@ -239,7 +254,9 @@ fun MetadataFixSheet(
     }
     // Once on open (covers the prefill), and again when the Movies/Series
     // toggle flips.
-    LaunchedEffect(searchType) { runSearch() }
+    // First search waits for the background prefill parse — searching the
+    // raw filename would pollute the results (see the parse above).
+    LaunchedEffect(searchType, parseDone) { if (parseDone) runSearch() }
 
     IosBottomSheet(
         onDismissRequest = onDismiss,
@@ -305,6 +322,9 @@ fun MetadataFixSheet(
                 value = query,
                 onValueChange = {
                     query = it
+                    // The user typed — the background prefill must not
+                    // overwrite their text when it lands.
+                    userEditedQuery = true
                     // Don't show stale results for a query that's no
                     // longer in the box — they clear until Search is
                     // tapped again.
