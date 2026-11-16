@@ -543,12 +543,16 @@ fun DetailScreen(
             // Use the picked type, not the source entry's type (same fix as
             // applyFixTitle — a file moved to a series must match as series).
             val targetType = picked.type ?: m.type
-            var target = db.mediaDao().findByNormAnyChannel(norm)
+            // The EXACT row the user tapped when the pick came from a local
+            // result — a custom entry and a real show can share a name.
+            var target = picked.mediaId?.let { db.mediaDao().getById(it) }
+                ?: db.mediaDao().findByNormAnyChannel(norm)
             // FIX 2026-11-05: if target exists but lacks IMDb ID, update it
             // (needed for Skip Intro via IntroDB)
             if (target != null && target.imdbId.isNullOrBlank() && !picked.imdbId.isNullOrBlank()) {
                 db.mediaDao().updateImdbId(target.id, picked.imdbId!!)
-                target = db.mediaDao().findByNormAnyChannel(norm)
+                target = picked.mediaId?.let { db.mediaDao().getById(it) }
+                    ?: db.mediaDao().findByNormAnyChannel(norm)
             }
             if (target == null) {
                 val key = ScanPrefs.getTmdbKey(context)

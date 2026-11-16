@@ -767,11 +767,13 @@ fun ChannelsScreen(
                         ScanPrefs.isAnimeAbsolute(context),
                     )
                     // ONE path for every button: reuse the entry that already
-                    // exists (same IMDb id anywhere, else same title in this
-                    // channel) and only create a new one if there is none.
+                    // exists (the EXACT row the user tapped, else same IMDb id
+                    // anywhere, else same title in this channel) and only
+                    // create a new one if there is none.
                     // Before this, "New entry/episode" always inserted a row,
                     // so linking created duplicates.
-                    val existing = picked.imdbId?.let { db.mediaDao().findByImdb(it) }
+                    val existing = picked.mediaId?.let { db.mediaDao().getById(it) }
+                        ?: picked.imdbId?.let { db.mediaDao().findByImdb(it) }
                         ?: db.mediaDao().findByNormAnyChannel(norm)
                     // FIX 2026-11-05: if linking to an existing entry that lacks
                     // an IMDb ID, update it with the picked one (needed for Skip Intro)
@@ -784,7 +786,7 @@ fun ChannelsScreen(
                             title = picked.title,
                             normalizedTitle = norm,
                             year = picked.year,
-                            type = parsed.type, // movie vs series from the file itself
+                            type = if (picked.type == "anime") "anime" else parsed.type, // movie vs series from the file itself; anime from the sheet toggle
                             imdbId = picked.imdbId,
                             tmdbId = picked.tmdbId,
                             stremioId = StremioIds.forNewItem(
@@ -838,7 +840,8 @@ fun ChannelsScreen(
                     val norm = normalizeTitle(picked.title)
                     val now = System.currentTimeMillis()
                     // Find or create ONE entry for all files.
-                    val existing = picked.imdbId?.let { db.mediaDao().findByImdb(it) }
+                    val existing = picked.mediaId?.let { db.mediaDao().getById(it) }
+                        ?: picked.imdbId?.let { db.mediaDao().findByImdb(it) }
                         ?: db.mediaDao().findByNormAnyChannel(norm)
                     val mediaId = existing?.id ?: db.mediaDao().upsert(
                         MediaItemEntity(
@@ -846,7 +849,7 @@ fun ChannelsScreen(
                             title = picked.title,
                             normalizedTitle = norm,
                             year = picked.year,
-                            type = "series", // bulk link assumes series; user can fix
+                            type = if (picked.type == "anime") "anime" else "series", // bulk link assumes series; user can fix
                             imdbId = picked.imdbId,
                             tmdbId = picked.tmdbId,
                             stremioId = StremioIds.forNewItem(

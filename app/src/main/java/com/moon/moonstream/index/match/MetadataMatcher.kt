@@ -48,6 +48,12 @@ data class EnrichedMeta(
     val country: String? = null,
     /** 0.0–1.0 match confidence. Below 0.75 the file goes to unmatched. */
     val confidence: Double = 1.0,
+    /** Library row id when this result came from the local library (the
+     * LINK sheet's local search). Null for provider results. Lets the
+     * apply step attach to the EXACT entry the user tapped, instead of
+     * re-guessing by title — a custom entry and a real show can share
+     * a name (moon's 2026-11-16). */
+    val mediaId: Long? = null,
 )
 
 /**

@@ -7,8 +7,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -71,8 +74,14 @@ data class MetaPick(
     val posterUrl: String?,
     val overview: String?,
     val action: String = "pick",
-    /** "movie" or "series" — the tab the result was picked from. Null = keep current. */
+    /** "movie" | "series" | "anime" — the tab the result was picked from.
+     * Null = keep current. "custom" is never stored here (it is a search
+     * filter, not a media type) — a custom pick is identified by mediaId. */
     val type: String? = null,
+    /** Library row id when the pick came from a local result row. The
+     * apply step attaches to this exact entry instead of re-guessing
+     * by title. Null for provider picks. */
+    val mediaId: Long? = null,
 )
 
 /**
@@ -125,8 +134,20 @@ fun MetadataFixSheet(
     var selected by remember { mutableStateOf<EnrichedMeta?>(null) }
     var searchJob by remember { mutableStateOf<Job?>(null) }
     var noKeyHint by remember { mutableStateOf(false) }
-    // Movie/Series toggle for the search (anime always uses Kitsu).
-    var searchType by remember { mutableStateOf(if (mediaType == "movie") "movie" else "series") }
+    // Search-type toggle (moon's 2026-11-16): "movie" | "series" |
+    // "anime" | "custom". Anime files start on Anime (Kitsu); the toggle
+    // itself — not the channel flag — now drives the search lane, so an
+    // anime file from a non-anime channel can still search Kitsu.
+    var searchType by remember {
+        mutableStateOf(
+            if (isAnime) "anime"
+            else if (mediaType == "movie") "movie"
+            else "series",
+        )
+    }
+    /** Type carried into a pick: "custom" is a search filter, not a media
+     * type, so it maps to null (keep current / file's own type). */
+    val pickType = if (searchType == "custom") null else searchType
 
     val heading = when (mode) {
         FixMode.FIX_TITLE -> "Fix Metadata — This Title"
@@ -158,12 +179,17 @@ fun MetadataFixSheet(
             // Network must run on IO dispatcher, not Main (moon's bug
             // 2026-11-01: search returned empty due to NetworkOnMainThread).
             results = withContext(Dispatchers.IO) {
-                val provider = MetadataMatcher.searchTitles(
+                // Custom searches the local library only — no provider
+                // knows custom content, so no API call at all.
+                val isCustomSearch = searchType == "custom"
+                val isAnimeSearch = searchType == "anime"
+                val provider = if (isCustomSearch) emptyList()
+                else MetadataMatcher.searchTitles(
                     query = query,
                     // Anime goes through Kitsu; otherwise use the toggle —
                     // movies were wrongly searching TV shows.
-                    type = if (isAnime) "series" else searchType,
-                    isAnime = isAnime,
+                    type = if (isAnimeSearch) "series" else searchType,
+                    isAnime = isAnimeSearch,
                     tmdbKey = key,
                 )
                 if (mode != FixMode.LINK && mode != FixMode.FIX_FILE) {
@@ -174,17 +200,23 @@ fun MetadataFixSheet(
                     // typed name matches. Same type toggle as the provider
                     // search (anime counts as series); a provider row wins
                     // over a local row with the same title, so linking via
-                    // it still fills the entry's IMDb id.
+                    // it still fills the entry's IMDb id. Custom skips that
+                    // suppression (no provider results) — that is the point:
+                    // a custom entry is pickable even when a real show
+                    // shares its name (moon's 2026-11-16).
                     val norm = normalizeTitle(query)
                     val local = if (norm.isBlank()) emptyList()
                     else MsDatabase.get(context).mediaDao().searchByNorm(norm)
-                    val localType = if (isAnime) "series" else searchType
                     val providerNorms =
                         provider.map { normalizeTitle(it.title) }.toSet()
                     val localOnly = local.filter {
-                        (it.type == localType ||
-                            (localType == "series" && it.type == "anime")) &&
-                            normalizeTitle(it.title) !in providerNorms
+                        val typeOk = when {
+                            isCustomSearch -> it.isCustom
+                            isAnimeSearch -> it.type == "anime"
+                            searchType == "series" -> it.type == "series" || it.type == "anime"
+                            else -> it.type == "movie"
+                        }
+                        typeOk && normalizeTitle(it.title) !in providerNorms
                     }
                     localOnly.map {
                         EnrichedMeta(
@@ -197,6 +229,7 @@ fun MetadataFixSheet(
                             tmdbId = it.tmdbId,
                             kitsuId = it.kitsuId,
                             anilistId = it.anilistId,
+                            mediaId = it.id,
                         )
                     } + provider
                 }
@@ -210,8 +243,30 @@ fun MetadataFixSheet(
 
     IosBottomSheet(
         onDismissRequest = onDismiss,
+        modifier = Modifier.fillMaxHeight(),
     ) {
-        MsSheetContent(title = heading) {
+        // Full-tall sheet (moon's 2026-11-16): the results area takes the
+        // free space (weight) so the action buttons stay pinned at the
+        // bottom, and imePadding lifts them above the keyboard while
+        // typing instead of letting the keyboard cover them. Same title /
+        // padding / tap-outside-unfocus as MsSheetContent, laid out here
+        // because the wrapper can't stretch.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .imePadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+                .unfocusOnTapOutside(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = heading,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MsColors.TextPrimary,
+            )
             // Original filename + caption (moon's 2026-11-15): in LINK
             // mode the header showed only a generic help sentence, so he
             // couldn't see the file's year or details while picking a
@@ -282,32 +337,53 @@ fun MetadataFixSheet(
                     }
                 },
             )
-            // Movie / Series search toggle (anime always searches Kitsu).
-            if (!isAnime) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    listOf("movie" to "Movies", "series" to "Series").forEach { (v, label) ->
-                        val sel = searchType == v
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(if (sel) MsColors.Accent else MsColors.SurfaceAlt)
-                                .clickable { searchType = v }
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                label,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (sel) MsColors.OnAccent else MsColors.TextSecondary,
-                            )
-                        }
+            // Search-type toggle (moon's 2026-11-16): Movies / Series /
+            // Anime / Custom. Anime searches Kitsu; Custom shows only
+            // local custom entries. Custom is not offered in FIX_TITLE —
+            // fixing metadata means picking a real title.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                val options = when (mode) {
+                    FixMode.FIX_TITLE -> listOf(
+                        "movie" to "Movies",
+                        "series" to "Series",
+                        "anime" to "Anime",
+                    )
+                    else -> listOf(
+                        "movie" to "Movies",
+                        "series" to "Series",
+                        "anime" to "Anime",
+                        "custom" to "Custom",
+                    )
+                }
+                options.forEach { (v, label) ->
+                    val sel = searchType == v
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (sel) MsColors.Accent else MsColors.SurfaceAlt)
+                            .clickable { searchType = v }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (sel) MsColors.OnAccent else MsColors.TextSecondary,
+                        )
                     }
                 }
             }
+            // Results area takes the free space (weight) — the buttons
+            // below stay pinned at the bottom of the full-tall sheet.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
             when {
                 searching -> {
                     Row(
@@ -367,7 +443,7 @@ fun MetadataFixSheet(
                             }
                         }
                     }
-                    LazyColumn(modifier = Modifier.height(264.dp)) {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(results) { r ->
                             val inLibrary = !r.imdbId.isNullOrBlank() && libraryKeys.contains(r.imdbId) ||
                                 libraryKeys.contains(normalizeTitle(r.title))
@@ -382,6 +458,7 @@ fun MetadataFixSheet(
                     }
                 }
             }
+            } // Box: results area
             if (mode == FixMode.LINK) {
                 Text(
                     "Or attach as:",
@@ -401,7 +478,8 @@ fun MetadataFixSheet(
                                     posterUrl = selected?.posterUrl,
                                     overview = selected?.overview,
                                     action = "new-episode",
-                                    type = searchType,
+                                    type = pickType,
+                                    mediaId = selected?.mediaId,
                                 ),
                             )
                         },
@@ -420,7 +498,8 @@ fun MetadataFixSheet(
                                     posterUrl = selected?.posterUrl,
                                     overview = selected?.overview,
                                     action = "new-entry",
-                                    type = searchType,
+                                    type = pickType,
+                                    mediaId = selected?.mediaId,
                                 ),
                             )
                         },
@@ -441,7 +520,8 @@ fun MetadataFixSheet(
                                 tmdbId = it.tmdbId,
                                 posterUrl = it.posterUrl,
                                 overview = it.overview,
-                                type = searchType,
+                                type = pickType,
+                                mediaId = it.mediaId,
                             ),
                         )
                     }
