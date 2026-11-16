@@ -1185,7 +1185,12 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
                     )
                 }
 
+                // Big number + period only (moon's 2026-11-16): "0 finished"
+                // used to sit in this row too, and the two fixed texts left
+                // the wide Doto number ~120px — "1h 24m" rendered as "1...".
+                // Finished moved down to the counts line.
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -1204,16 +1209,6 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
                         text = "this week" + deltaSuffix,
                         style = MaterialTheme.typography.bodyMedium.doto(),
                         color = MsColors.TextSecondary,
-                        modifier = Modifier.padding(bottom = 6.dp),
-                    )
-                    Text(
-                        text = "${finished ?: 0} finished",
-                        style = MaterialTheme.typography.bodyMedium.doto(),
-                        fontWeight = FontWeight.SemiBold,
-                        color = MsColors.TextSecondary,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(bottom = 6.dp),
                     )
                 }
@@ -1241,11 +1236,24 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
+                    Text(text = "·", style = breakStyle, color = MsColors.TextSecondary)
+                    Text(
+                        text = "${finished ?: 0} finished",
+                        style = breakStyle,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MsColors.TextSecondary,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
 
                 // Last 7 days as tiny bars (moon's 2026-11-11): the same
                 // chart as the stats screen, in one cheap row — 7 flat
                 // boxes and no animation, so the home screen stays light.
+                // Each slot has a faint full-height track (moon's 2026-11-16):
+                // without it, low days shrank to a 1.4dp sliver and the row
+                // read as one big bar floating in empty space.
                 if (chart.any { it.second > 0f }) {
                     Row(
                         modifier = Modifier
@@ -1259,10 +1267,19 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .fillMaxHeight((hours / max).coerceIn(0.07f, 1f))
+                                    .fillMaxHeight()
                                     .clip(RoundedCornerShape(2.dp))
-                                    .background(MsColors.Accent.copy(alpha = 0.7f)),
-                            )
+                                    .background(MsColors.Accent.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.BottomCenter,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .fillMaxHeight((hours / max).coerceIn(0.07f, 1f))
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(MsColors.Accent.copy(alpha = 0.7f)),
+                                )
+                            }
                         }
                     }
                 }
