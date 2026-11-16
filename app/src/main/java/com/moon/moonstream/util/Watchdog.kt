@@ -3,6 +3,7 @@ package com.moon.moonstream.util
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 
 /**
@@ -55,7 +56,10 @@ object Watchdog {
         // 2. ANR watchdog.
         thread(name = "watchdog", isDaemon = true, priority = Thread.MIN_PRIORITY) {
             val mainHandler = Handler(Looper.getMainLooper())
-            @Volatile var lastHandled = SystemClock.uptimeMillis()
+            // AtomicLong, not @Volatile: @Volatile is illegal on a local
+            // variable (CI caught this on the first 0.15.159 dispatch).
+            // Written from the main thread, read from this one.
+            val lastHandled = AtomicLong(SystemClock.uptimeMillis())
             var reported = false
             while (true) {
                 try {
@@ -63,13 +67,13 @@ object Watchdog {
                 } catch (_: InterruptedException) {
                     return@thread
                 }
-                mainHandler.post { lastHandled = SystemClock.uptimeMillis() }
+                mainHandler.post { lastHandled.set(SystemClock.uptimeMillis()) }
                 try {
                     Thread.sleep(200)
                 } catch (_: InterruptedException) {
                     return@thread
                 }
-                val lag = SystemClock.uptimeMillis() - lastHandled
+                val lag = SystemClock.uptimeMillis() - lastHandled.get()
                 if (lag >= STUCK_THRESHOLD_MS) {
                     if (!reported) {
                         reported = true
