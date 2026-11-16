@@ -36,10 +36,11 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -132,8 +133,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
+
+/** Max gap between the two taps of a double-tap seek (moon's 2026-11-16:
+ * the stock ~300ms window was too tight for relaxed double-taps). */
+private const val DOUBLE_TAP_WINDOW_MS = 500L
+/** Max gap between double-taps for the 10s/20s/30s accumulation. */
+private const val DOUBLE_TAP_CHAIN_MS = 1500L
 
 /** Which bottom sheet is open in the player. */
 private enum class PlayerSheet { SUBS, AUDIO, PLAYLIST, EPISODES, SUBLINES }
@@ -1217,6 +1225,11 @@ fun PlayerScreen(
     var seekFeedback by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
     var lastSeekTapTime by remember { mutableStateOf(0L) }
     var seekTapCount by remember { mutableStateOf(0) }
+    // Double-tap timing (moon's 2026-11-16): the stock 300ms window was
+    // too tight for his relaxed double-taps, so they counted as two
+    // single taps and woke the UI instead of seeking. 500ms for the
+    // second tap; 1500ms between double-taps to keep accumulating
+    // (slow pairs complete ~2x the tap gap apart).
     // Horizontal swipe-to-seek (moon's pick 2026-11-10): drag across the
     // video to move, target time shown live, seek lands on release.
     // Pair = target position ms, delta ms from where the drag started.
@@ -1695,37 +1708,53 @@ fun PlayerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(controlsLocked) {
-                detectTapGestures(
-                    onTap = {
-                        if (controlsLocked) {
-                            // Locked: tap reveals the slide-to-unlock pill.
-                            showUnlockPill = true
-                        } else if (!showTrimPanel) {
-                            // While trimming, a tap must not hide the panel
-                            // (moon's bug 2026-11-10).
-                            controlsVisible = !controlsVisible
-                        }
-                    },
-                    onDoubleTap = { offset ->
-                        // Double-tap left/right: ∓10s with animated feedback.
-                        // Consecutive double-taps accumulate (20>, 30>...).
-                        // Disabled while locked or trimming.
-                        if (!controlsLocked && !showTrimPanel) {
-                            val forward = offset.x > size.width / 2
-                            val now = System.currentTimeMillis()
-                            seekTapCount =
-                                if (now - lastSeekTapTime < 900) seekTapCount + 1 else 1
-                            lastSeekTapTime = now
-                            val secs = seekTapCount * 10
-                            val newPos = (player.currentPosition +
-                                if (forward) secs * 1000L else -secs * 1000L)
-                                .coerceIn(0L, player.duration.coerceAtLeast(0L))
-                            player.seekTo(newPos)
-                            seekFeedback = forward to secs
-                        }
-                    },
-                )
+            .pointerInput(controlsLocked, showTrimPanel) {
+                // Custom tap detection (moon's 2026-11-16): the stock
+                // detectTapGestures only counts two taps as a double-tap
+                // within ~300ms — moon's relaxed double-taps are slower
+                // than that, so they counted as two single taps: the UI
+                // woke up and no seek happened. This waits up to 500ms
+                // for the second tap instead. Tradeoff: a lone single tap
+                // toggles the controls after that wait instead of at once.
+                // No position check (the stock one also rejects taps that
+                // land apart) — any second tap within the window seeks,
+                // using its side for direction.
+                awaitEachGesture {
+                    awaitFirstDown()
+                    val up = waitForUpOrCancellation() ?: return@awaitEachGesture
+                    if (controlsLocked) {
+                        // Locked: tap reveals the slide-to-unlock pill at
+                        // once — no double-tap to wait for while locked.
+                        showUnlockPill = true
+                        return@awaitEachGesture
+                    }
+                    // While trimming, a tap must not hide the panel
+                    // (moon's bug 2026-11-10) — taps do nothing at all.
+                    if (showTrimPanel) return@awaitEachGesture
+                    val secondDown = withTimeoutOrNull(DOUBLE_TAP_WINDOW_MS) {
+                        awaitFirstDown()
+                    }
+                    if (secondDown == null) {
+                        // Lone tap: toggle the controls.
+                        controlsVisible = !controlsVisible
+                        return@awaitEachGesture
+                    }
+                    val secondUp = waitForUpOrCancellation()
+                        ?: return@awaitEachGesture
+                    // Double-tap left/right: ∓10s with animated feedback.
+                    // Consecutive double-taps accumulate (20>, 30>...).
+                    val forward = secondUp.position.x > size.width / 2
+                    val now = System.currentTimeMillis()
+                    seekTapCount =
+                        if (now - lastSeekTapTime < DOUBLE_TAP_CHAIN_MS) seekTapCount + 1 else 1
+                    lastSeekTapTime = now
+                    val secs = seekTapCount * 10
+                    val newPos = (player.currentPosition +
+                        if (forward) secs * 1000L else -secs * 1000L)
+                        .coerceIn(0L, player.duration.coerceAtLeast(0L))
+                    player.seekTo(newPos)
+                    seekFeedback = forward to secs
+                }
             }
             .pointerInput(sheet, controlsLocked, showTrimPanel) {
                 // Vertical swipes: left half = brightness, right half = volume
