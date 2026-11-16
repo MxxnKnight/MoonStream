@@ -1112,59 +1112,63 @@ private fun StreakCalendarCard(
                         monthFmt.format(Date(days[w * 7].dayStartMs))
                     }
                     var lastLabelW = -3
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(gap),
-                    ) {
-                        for (w in 0 until 22) {
-                            Box(
-                                modifier = Modifier.width(sq),
-                                contentAlignment = Alignment.CenterStart,
-                            ) {
-                                if ((w == 0 || monthLabels[w] != monthLabels[w - 1]) && w - lastLabelW >= 3) {
-                                    lastLabelW = w
-                                    Text(
-                                        monthLabels[w],
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MsColors.TextSecondary,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Visible,
-                                    )
+                    // Labels + grid in a Column (moon's 2026-11-16): they were direct children of the Box,
+                    // so the Box stacked them and the month names printed over the first row of squares.
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(gap),
+                        ) {
+                            for (w in 0 until 22) {
+                                Box(
+                                    modifier = Modifier.width(sq),
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    if ((w == 0 || monthLabels[w] != monthLabels[w - 1]) && w - lastLabelW >= 3) {
+                                        lastLabelW = w
+                                        Text(
+                                            monthLabels[w],
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MsColors.TextSecondary,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Visible,
+                                        )
+                                    }
                                 }
                             }
                         }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(gap),
-                    ) {
-                        for (w in 0 until 22) {
-                            Column(verticalArrangement = Arrangement.spacedBy(gap)) {
-                                for (d in 0 until 7) {
-                                    val day = days[w * 7 + d]
-                                    if (day.dayStartMs > today) {
-                                        Spacer(Modifier.size(sq))
-                                    } else {
-                                        val isSel = selected?.dayStartMs == day.dayStartMs
-                                        Box(
-                                            modifier = Modifier
-                                                .size(sq)
-                                                .clip(RoundedCornerShape(3.dp))
-                                                .background(calendarLevelColor(day.hoursMs))
-                                                .then(
-                                                    if (isSel) Modifier.border(
-                                                        1.5.dp, Color.White, RoundedCornerShape(3.dp),
-                                                    ) else Modifier,
-                                                )
-                                                .clickable(
-                                                    indication = null,
-                                                    interactionSource = tapSource,
-                                                    // Tapping the selected day again
-                                                    // clears it (moon's 2026-11-15).
-                                                ) { selected = if (isSel) null else day },
-                                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(gap),
+                        ) {
+                            for (w in 0 until 22) {
+                                Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+                                    for (d in 0 until 7) {
+                                        val day = days[w * 7 + d]
+                                        if (day.dayStartMs > today) {
+                                            Spacer(Modifier.size(sq))
+                                        } else {
+                                            val isSel = selected?.dayStartMs == day.dayStartMs
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(sq)
+                                                    .clip(RoundedCornerShape(3.dp))
+                                                    .background(calendarLevelColor(day.hoursMs))
+                                                    .then(
+                                                        if (isSel) Modifier.border(
+                                                            1.5.dp, Color.White, RoundedCornerShape(3.dp),
+                                                        ) else Modifier,
+                                                    )
+                                                    .clickable(
+                                                        indication = null,
+                                                        interactionSource = tapSource,
+                                                        // Tapping the selected day again
+                                                        // clears it (moon's 2026-11-15).
+                                                    ) { selected = if (isSel) null else day },
+                                            )
+                                        }
                                     }
                                 }
                             }
