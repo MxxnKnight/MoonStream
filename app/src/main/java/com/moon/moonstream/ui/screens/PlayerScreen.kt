@@ -339,6 +339,14 @@ fun PlayerScreen(
                 1_500,
                 3_000,
             )
+            // Back buffer (moon's 2026-11-16: a -10s rewind buffered ~3s).
+            // ExoPlayer otherwise keeps nothing it already played, so every
+            // rewind re-reads — and the disk window behind the playhead
+            // (10 MB) often doesn't reach the keyframe before the target,
+            // forcing a re-download. 15 s kept in RAM + back to the
+            // keyframe before it, so -10s taps replay instantly without
+            // touching disk or network. ~15-30 MB RAM at typical bitrates.
+            .setBackBuffer(15_000, true)
             .build()
         ExoPlayer.Builder(context, buildRenderersFactory(context))
             .setMediaSourceFactory(DefaultMediaSourceFactory(MsDataSourceFactory(context)))

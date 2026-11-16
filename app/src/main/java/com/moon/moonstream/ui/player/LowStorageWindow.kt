@@ -30,10 +30,14 @@ object LowStorageWindow {
     const val MIN_WINDOW_BYTES = 32L * 1024 * 1024
 
     /** Keep this much *behind* the play position (small rewinds stay free).
-     *  10 MB (moon's 2026-11-13: was 2 MB, only ~2-3s back — a -10s
-     *  rewind had to re-download). 10 MB covers a 10s rewind at typical
-     *  bitrates (5-8 Mbps); still small next to the 200 MB window cap. */
-    const val BACK_BYTES = 10L * 1024 * 1024
+     *  20 MB (moon's 2026-11-16: was 10 MB — a -10s rewind still buffered
+     *  ~3s because the keyframe before the target sits further back than
+     *  the target itself, and high-bitrate files eat 10 MB in ~5-7s).
+     *  20 MB covers a -10s rewind plus its keyframe at typical bitrates
+     *  (5-8 Mbps) and bigger seekbar jumps back; still small next to the
+     *  200 MB window cap. The ExoPlayer RAM back buffer (15 s) covers the
+     *  -10s taps first — this is the second layer for larger rewinds. */
+    const val BACK_BYTES = 20L * 1024 * 1024
 
     /** Extra headroom so container index reads near EOF don't evict the start. */
     const val SLACK_BYTES = 16L * 1024 * 1024
