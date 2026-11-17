@@ -35,13 +35,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AddLink
-import androidx.compose.material.icons.outlined.Animation
 import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.FolderSpecial
-import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.SwapHoriz
-import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
@@ -95,7 +91,7 @@ import com.moon.moonstream.index.scan.ScanPrefs
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.EditMetadataSheet
 import com.moon.moonstream.ui.components.FixMode
-import com.moon.moonstream.ui.components.IosBottomSheet
+import com.moon.moonstream.ui.components.IosActionSheet
 import com.moon.moonstream.ui.components.IosDialog
 import com.moon.moonstream.ui.components.IosSheetButton
 import com.moon.moonstream.ui.components.IosSpinner
@@ -105,7 +101,6 @@ import com.moon.moonstream.ui.components.MetadataFixSheet
 import com.moon.moonstream.ui.components.MetaPick
 import com.moon.moonstream.ui.components.MsCard
 import com.moon.moonstream.ui.components.MsOutlinePill
-import com.moon.moonstream.ui.components.MsSheetContent
 import com.moon.moonstream.ui.components.MsTextField
 import com.moon.moonstream.ui.components.QualityChip
 import com.moon.moonstream.ui.model.formatBytes
@@ -963,42 +958,55 @@ fun DetailScreen(
         )
     }
 
-    // "Move to" sheet (moon's 2026-11-15): every destination except the
-    // one the entry already sits in.
+    // "Move to" sheet (moon's 2026-11-15; iOS action sheet since 2026-11-17):
+    // every destination except the one the entry already sits in. Uses
+    // IosActionSheet, not IosBottomSheet — the M3 sheet's baked-in tween
+    // was too slow to open and close, and the action sheet is the real
+    // iOS style (floating cards + its own Cancel button).
     if (showMoveSheet) {
-        IosBottomSheet(onDismissRequest = { showMoveSheet = false }) {
-            MsSheetContent(title = "Move to") {
+        IosActionSheet(
+            onDismiss = { showMoveSheet = false },
+            title = "Move to",
+            message = if (!m.isCustom) {
+                "Custom content drops the provider match — the title stays local."
+            } else {
+                null
+            },
+            buttons = buildList {
                 if (m.type != "movie") {
-                    MoveSheetRow(
-                        icon = Icons.Outlined.Movie,
-                        label = "Movies",
-                        onClick = { showMoveSheet = false; moveToType("movie") },
+                    add(
+                        IosSheetButton(
+                            label = "Movies",
+                            onClick = { showMoveSheet = false; moveToType("movie") },
+                        ),
                     )
                 }
                 if (m.type != "series") {
-                    MoveSheetRow(
-                        icon = Icons.Outlined.Tv,
-                        label = "Series",
-                        onClick = { showMoveSheet = false; moveToType("series") },
+                    add(
+                        IosSheetButton(
+                            label = "Series",
+                            onClick = { showMoveSheet = false; moveToType("series") },
+                        ),
                     )
                 }
                 if (m.type != "anime") {
-                    MoveSheetRow(
-                        icon = Icons.Outlined.Animation,
-                        label = "Anime",
-                        onClick = { showMoveSheet = false; moveToType("anime") },
+                    add(
+                        IosSheetButton(
+                            label = "Anime",
+                            onClick = { showMoveSheet = false; moveToType("anime") },
+                        ),
                     )
                 }
                 if (!m.isCustom) {
-                    MoveSheetRow(
-                        icon = Icons.Outlined.FolderSpecial,
-                        label = "Custom content",
-                        sub = "Local title — drops the provider match",
-                        onClick = { showMoveSheet = false; makeLocal() },
+                    add(
+                        IosSheetButton(
+                            label = "Custom content",
+                            onClick = { showMoveSheet = false; makeLocal() },
+                        ),
                     )
                 }
-            }
-        }
+            },
+        )
     }
 
     // File delete (moon's 2026-11-15): no more instant delete — choose
@@ -1237,51 +1245,6 @@ fun DetailScreen(
  * iOS action-sheet style with a hairline divider underneath.
  */
 @Composable
-private fun MoveSheetRow(
-    icon: ImageVector,
-    label: String,
-    sub: String? = null,
-    onClick: () -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onClick() }
-                .padding(vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MsColors.Accent,
-                modifier = Modifier.size(22.dp),
-            )
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White,
-                )
-                if (sub != null) {
-                    Text(
-                        text = sub,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MsColors.TextSecondary,
-                    )
-                }
-            }
-        }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(0.5.dp)
-                .background(Color(0xFF38383A)),
-        )
-    }
-}
-
 /** Mime type for the ACTION_VIEW intent, guessed from the file extension. */
 private fun mimeForFile(fileName: String): String {
     return when (fileName.substringAfterLast('.', "").lowercase()) {

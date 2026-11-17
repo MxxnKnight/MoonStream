@@ -2,6 +2,7 @@ package com.moon.moonstream.ui.components
 
 import com.moon.moonstream.index.tools.LibraryToolsRunner
 import com.moon.moonstream.ui.components.MsToast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
@@ -12,6 +13,10 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -1418,6 +1423,15 @@ fun IosActionSheet(
 ) {
     // Use Dialog so the sheet escapes parent layout bounds (fixes nested
     // action sheets rendering clipped/ghosting, moon's bug 2026-11-04).
+    // Fast iOS slide-up (moon's 2026-11-17): the sheet springs up in
+    // ~250ms and the scrim fades in behind it — the M3 bottom sheet's
+    // baked-in tween was the slow part, and M3 exposes no animation hook
+    // in 1.3.0, so this Dialog sheet is the fast path. No exit animation:
+    // the caller removes the sheet from composition on dismiss, so it
+    // leaves instantly (the exit specs below only apply if visibility is
+    // ever driven off while mounted).
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(
@@ -1425,15 +1439,36 @@ fun IosActionSheet(
         ),
     ) {
     Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.4f))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) { onDismiss() },
+        Modifier.fillMaxSize(),
         contentAlignment = Alignment.BottomCenter,
     ) {
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(150)),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.4f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onDismiss() },
+            )
+        }
+        AnimatedVisibility(
+            visible = visible,
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = spring(stiffness = 1200f, dampingRatio = 0.9f),
+            ),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = tween(200),
+            ),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -1520,6 +1555,7 @@ fun IosActionSheet(
                 )
             }
         }
+        } // sheet AnimatedVisibility
     }
     } // Dialog
 }
