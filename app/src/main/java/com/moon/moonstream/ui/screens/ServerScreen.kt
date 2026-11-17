@@ -1251,9 +1251,11 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
                 // Last 7 days as tiny bars (moon's 2026-11-11): the same
                 // chart as the stats screen, in one cheap row — 7 flat
                 // boxes and no animation, so the home screen stays light.
-                // Each slot has a faint full-height track (moon's 2026-11-16):
-                // without it, low days shrank to a 1.4dp sliver and the row
-                // read as one big bar floating in empty space.
+                // No track behind the bars (moon's 2026-11-17): the faint
+                // full-height track read as a low-color box behind each
+                // bar. A day with no watching shows nothing; a day with
+                // any watching gets at least a 7% strip so it stays
+                // visible next to the tallest day.
                 if (chart.any { it.second > 0f }) {
                     Row(
                         modifier = Modifier
@@ -1267,18 +1269,18 @@ private fun StatsSummaryCard(onOpenStats: () -> Unit) {
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .fillMaxHeight()
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(MsColors.Accent.copy(alpha = 0.12f)),
+                                    .fillMaxHeight(),
                                 contentAlignment = Alignment.BottomCenter,
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .fillMaxHeight((hours / max).coerceIn(0.07f, 1f))
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(MsColors.Accent.copy(alpha = 0.7f)),
-                                )
+                                if (hours > 0f) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .fillMaxHeight((hours / max).coerceIn(0.07f, 1f))
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(MsColors.Accent.copy(alpha = 0.7f)),
+                                    )
+                                }
                             }
                         }
                     }
