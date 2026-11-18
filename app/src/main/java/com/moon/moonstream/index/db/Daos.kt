@@ -667,24 +667,30 @@ interface WatchProgressDao {
     // Day math uses SQLite's 'localtime' so a "day" is the phone's
     // midnight-to-midnight, matching the old dayStart() grouping.
 
-    /** Hours watched (sum of positionMs) at/after :since; null = all time. */
-    @Query("SELECT COALESCE(SUM(positionMs), 0) FROM watch_progress WHERE :since IS NULL OR playedAt >= :since")
+    /** Hours watched at/after :since; null = all time. A finished file
+     *  counts its full duration — its saved position is 0, so summing
+     *  positionMs alone made every finish count 0 minutes (moon's
+     *  mark-as-watched, 2026-11-18). */
+    @Query("SELECT COALESCE(SUM(CASE WHEN finishedAt IS NOT NULL THEN durationMs ELSE positionMs END), 0) FROM watch_progress WHERE :since IS NULL OR playedAt >= :since")
     suspend fun sumPositionSince(since: Long?): Long
 
-    /** Hours watched between two cutoffs (the hero's previous window). */
-    @Query("SELECT COALESCE(SUM(positionMs), 0) FROM watch_progress WHERE playedAt >= :from AND playedAt < :to")
+    /** Hours watched between two cutoffs (the hero's previous window).
+     *  Finished files count their full duration, as above. */
+    @Query("SELECT COALESCE(SUM(CASE WHEN finishedAt IS NOT NULL THEN durationMs ELSE positionMs END), 0) FROM watch_progress WHERE playedAt >= :from AND playedAt < :to")
     suspend fun sumPositionBetween(from: Long, to: Long): Long
 
-    /** Files watched past 10s in range (episodes/files watched). */
-    @Query("SELECT COUNT(*) FROM watch_progress WHERE positionMs > 10000 AND (:since IS NULL OR playedAt >= :since)")
+    /** Files watched past 10s in range (episodes/files watched).
+     *  A finished file counts even though its position is 0. */
+    @Query("SELECT COUNT(*) FROM watch_progress WHERE (positionMs > 10000 OR finishedAt IS NOT NULL) AND (:since IS NULL OR playedAt >= :since)")
     suspend fun countEpisodesSince(since: Long?): Int
 
     /** Distinct titles played in range (started titles / coverage). */
     @Query("SELECT COUNT(DISTINCT mediaId) FROM watch_progress WHERE :since IS NULL OR playedAt >= :since")
     suspend fun countDistinctMediaSince(since: Long?): Int
 
-    /** Longest single file watched in range (position reached). */
-    @Query("SELECT COALESCE(MAX(positionMs), 0) FROM watch_progress WHERE :since IS NULL OR playedAt >= :since")
+    /** Longest single file watched in range (position reached; a
+     *  finished file counts its full duration). */
+    @Query("SELECT COALESCE(MAX(CASE WHEN finishedAt IS NOT NULL THEN durationMs ELSE positionMs END), 0) FROM watch_progress WHERE :since IS NULL OR playedAt >= :since")
     suspend fun maxPositionSince(since: Long?): Long
 
     /** Finished titles: distinct mediaIds with a finish in range
@@ -697,24 +703,28 @@ interface WatchProgressDao {
     @Query("SELECT COUNT(DISTINCT w.mediaId) FROM watch_progress w JOIN media_items m ON m.id = w.mediaId WHERE m.type = 'movie' AND (:since IS NULL OR w.playedAt >= :since)")
     suspend fun countMoviesWatchedSince(since: Long?): Int
 
-    /** Hours per local day in range ("yyyy-MM-dd" keys). */
-    @Query("SELECT date(playedAt / 1000, 'unixepoch', 'localtime') AS day, SUM(positionMs) AS ms FROM watch_progress WHERE :since IS NULL OR playedAt >= :since GROUP BY day")
+    /** Hours per local day in range ("yyyy-MM-dd" keys). Finished
+     *  files count their full duration, as in sumPositionSince. */
+    @Query("SELECT date(playedAt / 1000, 'unixepoch', 'localtime') AS day, SUM(CASE WHEN finishedAt IS NOT NULL THEN durationMs ELSE positionMs END) AS ms FROM watch_progress WHERE :since IS NULL OR playedAt >= :since GROUP BY day")
     suspend fun sumByDaySince(since: Long?): List<StatsDayRow>
 
     /** Distinct local play days, all time — for streaks. */
     @Query("SELECT DISTINCT date(playedAt / 1000, 'unixepoch', 'localtime') AS day FROM watch_progress")
     suspend fun distinctDays(): List<String>
 
-    /** Hours per weekday in range (0 = Sunday .. 6 = Saturday). */
-    @Query("SELECT CAST(strftime('%w', playedAt / 1000, 'unixepoch', 'localtime') AS INTEGER) AS weekday, SUM(positionMs) AS ms FROM watch_progress WHERE :since IS NULL OR playedAt >= :since GROUP BY weekday")
+    /** Hours per weekday in range (0 = Sunday .. 6 = Saturday).
+     *  Finished files count their full duration. */
+    @Query("SELECT CAST(strftime('%w', playedAt / 1000, 'unixepoch', 'localtime') AS INTEGER) AS weekday, SUM(CASE WHEN finishedAt IS NOT NULL THEN durationMs ELSE positionMs END) AS ms FROM watch_progress WHERE :since IS NULL OR playedAt >= :since GROUP BY weekday")
     suspend fun sumByWeekdaySince(since: Long?): List<StatsWeekdayRow>
 
-    /** Hours per month in range ("yyyy-MM" keys). */
-    @Query("SELECT strftime('%Y-%m', playedAt / 1000, 'unixepoch', 'localtime') AS month, SUM(positionMs) AS ms FROM watch_progress WHERE :since IS NULL OR playedAt >= :since GROUP BY month")
+    /** Hours per month in range ("yyyy-MM" keys). Finished files
+     *  count their full duration. */
+    @Query("SELECT strftime('%Y-%m', playedAt / 1000, 'unixepoch', 'localtime') AS month, SUM(CASE WHEN finishedAt IS NOT NULL THEN durationMs ELSE positionMs END) AS ms FROM watch_progress WHERE :since IS NULL OR playedAt >= :since GROUP BY month")
     suspend fun sumByMonthSince(since: Long?): List<StatsMonthRow>
 
-    /** Hours per hour of day in range (0-23, local time). */
-    @Query("SELECT CAST(strftime('%H', playedAt / 1000, 'unixepoch', 'localtime') AS INTEGER) AS hour, SUM(positionMs) AS ms FROM watch_progress WHERE :since IS NULL OR playedAt >= :since GROUP BY hour")
+    /** Hours per hour of day in range (0-23, local time). Finished
+     *  files count their full duration. */
+    @Query("SELECT CAST(strftime('%H', playedAt / 1000, 'unixepoch', 'localtime') AS INTEGER) AS hour, SUM(CASE WHEN finishedAt IS NOT NULL THEN durationMs ELSE positionMs END) AS ms FROM watch_progress WHERE :since IS NULL OR playedAt >= :since GROUP BY hour")
     suspend fun sumByHourSince(since: Long?): List<StatsHourRow>
 
     /** Top 5 titles by hours in range, media info joined. The title
@@ -722,7 +732,7 @@ interface WatchProgressDao {
      *  gone (orphan watch row). */
     @Query(
         """SELECT w.mediaId AS mediaId, COALESCE(m.title, MAX(w.title)) AS title,
-                  m.posterUrl AS posterUrl, SUM(w.positionMs) AS hoursMs,
+                  m.posterUrl AS posterUrl, SUM(CASE WHEN w.finishedAt IS NOT NULL THEN w.durationMs ELSE w.positionMs END) AS hoursMs,
                   COUNT(*) AS episodes, m.type AS type
            FROM watch_progress w LEFT JOIN media_items m ON m.id = w.mediaId
            WHERE :since IS NULL OR w.playedAt >= :since
@@ -759,7 +769,7 @@ interface WatchProgressDao {
     /** Hours per video quality of the files actually played in range.
      *  Files whose stream row is gone land in "Unknown", as before. */
     @Query(
-        """SELECT COALESCE(s.quality, 'Unknown') AS quality, SUM(w.positionMs) AS ms
+        """SELECT COALESCE(s.quality, 'Unknown') AS quality, SUM(CASE WHEN w.finishedAt IS NOT NULL THEN w.durationMs ELSE w.positionMs END) AS ms
            FROM watch_progress w LEFT JOIN stream_files s ON s.id = w.streamFileId
            WHERE :since IS NULL OR w.playedAt >= :since
            GROUP BY quality HAVING ms > 0"""
@@ -784,7 +794,7 @@ interface WatchProgressDao {
      *  this list instead of every media row. */
     @Query(
         """SELECT m.genres AS genres, m.originalLanguage AS originalLanguage,
-                  m.country AS country, m.year AS year, SUM(w.positionMs) AS hoursMs
+                  m.country AS country, m.year AS year, SUM(CASE WHEN w.finishedAt IS NOT NULL THEN w.durationMs ELSE w.positionMs END) AS hoursMs
            FROM watch_progress w JOIN media_items m ON m.id = w.mediaId
            WHERE :since IS NULL OR w.playedAt >= :since
            GROUP BY w.mediaId HAVING hoursMs > 0"""

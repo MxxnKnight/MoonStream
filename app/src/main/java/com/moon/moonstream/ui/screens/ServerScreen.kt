@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -25,6 +26,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -53,6 +55,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -61,6 +64,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -69,6 +73,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.alpha
@@ -93,6 +98,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.moon.moonstream.index.db.MsDatabase
+import com.moon.moonstream.index.db.ContinueWatchingItem
 import com.moon.moonstream.ui.components.MsCard
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.stats.StatsRange
@@ -1460,11 +1466,167 @@ private fun RecentlyAddedRow(
  * - Progress line always has a visible track, even before duration is known.
  */
 @Composable
+/** Hold time for mark-as-watched on a Continue Watching poster
+ *  (moon's 2026-11-18: a stock long-press fires at ~500ms, so the
+ *  2s timer is custom). */
+private const val MARK_WATCHED_HOLD_MS = 2000L
+
+/**
+ * One Continue Watching poster: tap opens Detail, holding 2s marks
+ * the file watched (for a series, that episode). The hold shows a
+ * scrim + a top fill line + a check fading in, so the 2s wait is
+ * visible; letting go early cancels it. Its own composable so the
+ * hold state is keyed per poster by the caller.
+ */
+@Composable
+private fun ContinueWatchingPoster(
+    w: ContinueWatchingItem,
+    onOpenDetail: (Long) -> Unit,
+    onMarkWatched: (ContinueWatchingItem) -> Unit,
+) {
+    val context = LocalContext.current
+    var holdProgress by remember { mutableFloatStateOf(0f) }
+    // Set when the hold fires, so the tap that follows the release
+    // doesn't open Detail right after marking.
+    var holdFired by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.width(110.dp)) {
+        Box(
+            modifier = Modifier
+                .width(110.dp)
+                .height(160.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(MsColors.SurfaceAlt)
+                .pointerInput(w.streamFileId) {
+                    detectTapGestures(
+                        onTap = { if (!holdFired) onOpenDetail(w.mediaId) },
+                        onPress = {
+                            holdFired = false
+                            val job = launch {
+                                animate(
+                                    0f, 1f,
+                                    animationSpec = tween(MARK_WATCHED_HOLD_MS.toInt()),
+                                ) { v, _ -> holdProgress = v }
+                                holdFired = true
+                                onMarkWatched(w)
+                            }
+                            try {
+                                awaitRelease()
+                            } finally {
+                                job.cancel()
+                                holdProgress = 0f
+                            }
+                        },
+                    )
+                },
+        ) {
+            if (!w.posterUrl.isNullOrBlank()) {
+                coil.compose.AsyncImage(
+                    model = com.moon.moonstream.util.PosterStyle.displayUrl(
+                        w.posterUrl, w.imdbId,
+                        com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
+                        com.moon.moonstream.index.scan.ScanPrefs.getPosterTemplate(context),
+                    ),
+                    contentDescription = w.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        w.title.take(1).uppercase(),
+                        style = MaterialTheme.typography.headlineLarge.copy(fontFamily = Doto),
+                        color = MsColors.TextSecondary,
+                    )
+                }
+            }
+            // SxxExx chip, top-left of the poster (moon's design
+            // 2026-11-04; it used to be a grey line under the
+            // title, where it was easy to miss).
+            val ep = w.episodeLabel
+            if (!ep.isNullOrBlank()) {
+                Text(
+                    ep,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Black.copy(alpha = 0.72f))
+                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                )
+            }
+            // Progress line at the bottom of the poster. Track is
+            // white 0.30 alpha so it's visible on dark posters
+            // (moon's 2026-11-05: black track was invisible).
+            // 4dp thick, accent fill shows watched fraction.
+            val progress = if (w.durationMs > 0L) {
+                (w.positionMs.toFloat() / w.durationMs.toFloat()).coerceIn(0f, 1f)
+            } else 0f
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(Color.White.copy(alpha = 0.30f)),
+            ) {
+                if (progress > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress)
+                            .fillMaxHeight()
+                            .background(MsColors.Accent),
+                    )
+                }
+            }
+            // Hold-to-mark-watched cue, driven by the hold timer:
+            // scrim + a top fill line + a check fading in.
+            if (holdProgress > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.45f * holdProgress)),
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .fillMaxWidth(holdProgress)
+                        .height(3.dp)
+                        .background(MsColors.Accent),
+                )
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(36.dp)
+                        .alpha(holdProgress),
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            w.title,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MsColors.TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 private fun ContinueWatchingRow(
     onOpenDetail: (Long) -> Unit,
 ) {
     val context = LocalContext.current
     val db = remember(context) { com.moon.moonstream.index.db.MsDatabase.get(context) }
+    val scope = rememberCoroutineScope()
     val rows by remember(db) {
         db.watchProgressDao().observeContinueWatching()
     }.collectAsState(initial = emptyList())
@@ -1499,88 +1661,35 @@ private fun ContinueWatchingRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items.forEach { w ->
-                Column(modifier = Modifier.width(110.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .width(110.dp)
-                            .height(160.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MsColors.SurfaceAlt)
-                            .clickable(onClick = { onOpenDetail(w.mediaId) }),
-                    ) {
-                        if (!w.posterUrl.isNullOrBlank()) {
-                            coil.compose.AsyncImage(
-                                model = com.moon.moonstream.util.PosterStyle.displayUrl(
-                                    w.posterUrl, w.imdbId,
-                                    com.moon.moonstream.index.scan.ScanPrefs.getPosterStyle(context),
-                                    com.moon.moonstream.index.scan.ScanPrefs.getPosterTemplate(context),
-                                ),
-                                contentDescription = w.title,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    w.title.take(1).uppercase(),
-                                    style = MaterialTheme.typography.headlineLarge.copy(fontFamily = Doto),
-                                    color = MsColors.TextSecondary,
-                                )
+                // Keyed so the hold state stays on the right poster
+                // when an item leaves the row.
+                key(w.streamFileId) {
+                    ContinueWatchingPoster(
+                        w = w,
+                        onOpenDetail = onOpenDetail,
+                        onMarkWatched = { item ->
+                            scope.launch(Dispatchers.IO) {
+                                val now = System.currentTimeMillis()
+                                try {
+                                    // Same end state as the player at >=90%:
+                                    // resume cleared (leaves Continue
+                                    // Watching), finish stamped (stats see
+                                    // it), playedAt bumped so it lands in
+                                    // the current stats range.
+                                    db.watchProgressDao().updatePosition(
+                                        item.streamFileId, 0L, item.durationMs, now,
+                                    )
+                                    db.watchProgressDao().markFinished(item.streamFileId, now)
+                                    withContext(Dispatchers.Main) {
+                                        MsToast.show("Marked as watched")
+                                    }
+                                } catch (e: Exception) {
+                                    com.moon.moonstream.util.AppLog.e(
+                                        "CW", "markWatched FAILED: ${e.message}",
+                                    )
+                                }
                             }
-                        }
-                        // SxxExx chip, top-left of the poster (moon's design
-                        // 2026-11-04; it used to be a grey line under the
-                        // title, where it was easy to miss).
-                        val ep = w.episodeLabel
-                        if (!ep.isNullOrBlank()) {
-                            Text(
-                                ep,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White,
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .padding(6.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color.Black.copy(alpha = 0.72f))
-                                    .padding(horizontal = 5.dp, vertical = 2.dp),
-                            )
-                        }
-                        // Progress line at the bottom of the poster. Track is
-                        // white 0.30 alpha so it's visible on dark posters
-                        // (moon's 2026-11-05: black track was invisible).
-                        // 4dp thick, accent fill shows watched fraction.
-                        val progress = if (w.durationMs > 0L) {
-                            (w.positionMs.toFloat() / w.durationMs.toFloat()).coerceIn(0f, 1f)
-                        } else 0f
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .height(4.dp)
-                                .background(Color.White.copy(alpha = 0.30f)),
-                        ) {
-                            if (progress > 0f) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth(progress)
-                                        .fillMaxHeight()
-                                        .background(MsColors.Accent),
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        w.title,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MsColors.TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        },
                     )
                 }
             }
