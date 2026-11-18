@@ -12,6 +12,7 @@ import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.index.db.SubtitleFileEntity
 import com.moon.moonstream.index.StremioIds
 import com.moon.moonstream.index.parse.SplitFiles
+import com.moon.moonstream.index.parse.ZipStream
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStream
@@ -382,8 +383,39 @@ class MoonStreamServer(
 
         val isSplit = sequence.size > 1
         val partsList = if (isSplit) sequence else listOf(targetFile)
-        val total = partsList.sumOf { it.fileSize }
-        if (total <= 0) { sendJson(output, 502, errJson("Unknown file size").toString(), headOnly); return }
+        val joinedTotal = partsList.sumOf { it.fileSize }
+        if (joinedTotal <= 0) { sendJson(output, 502, errJson("Unknown file size").toString(), headOnly); return }
+
+        // Zip-aware playback (moon's 2026-11-18): a STORED .zip's video
+        // streams from its data offset inside the joined archive — the same
+        // probe the in-app player uses. The client (Nuvio, mpvRx, Stremio)
+        // sees only the video: its size, its MIME, its byte ranges.
+        // Compressed/unreadable zips serve plain, as today.
+        var zipOffset = 0L
+        var total = joinedTotal
+        var innerMime: String? = null
+        if (ZipStream.isZipArchive(SplitFiles.baseName(targetFile.fileName))) {
+            val first = partsList.first()
+            val key = "${first.channelId}:${first.messageId}:$joinedTotal"
+            val probe = try {
+                ZipStream.probeCached(key, joinedTotal, partsList.map { it.fileSize }) { off, len ->
+                    readJoinedRange(partsList, off, len)
+                }
+            } catch (e: Exception) {
+                AppLog.w("SERVER", "zip probe failed for ${targetFile.fileName}: ${e.message}")
+                ZipStream.Probe.Unreadable
+            }
+            if (probe is ZipStream.Probe.Playable) {
+                zipOffset = probe.info.dataOffset
+                total = probe.info.videoSize
+                innerMime = mimeFor(probe.info.innerName)
+                AppLog.i(
+                    "SERVER",
+                    "zip stream '${targetFile.fileName}': inner '${probe.info.innerName}' " +
+                        "at +$zipOffset, ${total / (1024 * 1024)} MB",
+                )
+            }
+        }
 
         val range = parseRange(headers["range"], total)
         val start = range?.first ?: 0L
@@ -394,13 +426,14 @@ class MoonStreamServer(
             return
         }
         val length = (end - start + 1).coerceAtMost(total - start)
-        val mime = mimeFor(targetFile.fileName)
+        val mime = innerMime ?: mimeFor(targetFile.fileName)
         // Detailed stream log (moon's pick #2).
         AppLog.i(
             "STREAM",
             "Serving '${targetFile.fileName}' " +
                 "bytes $start-$end/${total} (${length / 1024 / 1024} MB) " +
                 (if (isSplit) "[split x${partsList.size}] " else "") +
+                (if (zipOffset > 0) "[zip +$zipOffset] " else "") +
                 "mime=$mime",
         )
         val extra = mutableMapOf(
@@ -421,14 +454,17 @@ class MoonStreamServer(
             val header = buildHeader(status.first, status.second, mime, length, extra)
             output.write(header.toString().toByteArray(Charsets.UTF_8))
 
-            // Helper to read bytes across split boundaries
+            // Helper to read bytes across split boundaries. globalOffset is
+            // a VIRTUAL (video) offset — the zip offset shifts it into the
+            // joined archive's real coordinates (0 for non-zips).
             fun readGlobalRange(globalOffset: Long, requestSize: Int): ByteArray {
+                val realOffset = globalOffset + zipOffset
                 var currentGlobal = 0L
                 for (p in partsList) {
                     val partStart = currentGlobal
                     val partEnd = currentGlobal + p.fileSize
-                    if (globalOffset >= partStart && globalOffset < partEnd) {
-                        val offsetInPart = globalOffset - partStart
+                    if (realOffset >= partStart && realOffset < partEnd) {
+                        val offsetInPart = realOffset - partStart
                         val availableInPart = (p.fileSize - offsetInPart).coerceAtMost(requestSize.toLong()).toInt()
                         val bytes = runBlocking {
                             backend.readFileRange(p.channelId, p.messageId, offsetInPart, availableInPart)
@@ -716,6 +752,43 @@ class MoonStreamServer(
         "ass", "ssa" -> "text/plain"
         "vtt" -> "text/vtt"
         else -> "application/octet-stream"
+    }
+
+    /**
+     * Reads the JOINED parts at a REAL global offset (zip probing: the
+     * probe reads the archive's own bytes, before any video offset
+     * applies). Loops across part boundaries and short reads; returns what
+     * it got (short at EOF, empty on a backend failure).
+     */
+    private fun readJoinedRange(parts: List<StreamFileEntity>, offset: Long, size: Int): ByteArray {
+        val out = ByteArray(size)
+        var filled = 0
+        var at = offset
+        val starts = LongArray(parts.size)
+        var acc = 0L
+        parts.forEachIndexed { i, p -> starts[i] = acc; acc += p.fileSize }
+        while (filled < size) {
+            if (at < 0) break
+            var idx = starts.size - 1
+            while (idx > 0 && at < starts[idx]) idx--
+            if (idx >= parts.size) break
+            val p = parts[idx]
+            val inPart = at - starts[idx]
+            val avail = p.fileSize - inPart
+            if (avail <= 0) break
+            val want = minOf((size - filled).toLong(), avail).toInt()
+            val bytes = try {
+                runBlocking { backend.readFileRange(p.channelId, p.messageId, inPart, want) }
+            } catch (e: Exception) {
+                break
+            }
+            if (bytes.isEmpty()) break
+            val n = minOf(bytes.size, size - filled)
+            bytes.copyInto(out, filled, 0, n)
+            filled += n
+            at += n
+        }
+        return if (filled == size) out else out.copyOf(filled)
     }
 
     /**

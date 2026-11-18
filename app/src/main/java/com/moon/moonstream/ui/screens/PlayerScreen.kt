@@ -1468,6 +1468,9 @@ fun PlayerScreen(
                     raw.contains("audio/ac3", ignoreCase = true)) {
                     "This audio format (Dolby EAC3) isn't supported by your phone. " +
                     "Try a different audio track from the Audio button — look for AAC or MP3."
+                } else if (raw.contains("compressed zip", ignoreCase = true)) {
+                    "This file is packed in a compressed zip, so it can't stream. " +
+                    "Extract the video out of the zip first to watch it."
                 } else {
                     raw
                 }

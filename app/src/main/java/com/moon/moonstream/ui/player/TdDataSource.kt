@@ -11,6 +11,7 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.TransferListener
 import com.moon.moonstream.cache.TdStreamCache
 import com.moon.moonstream.index.parse.SplitFiles
+import com.moon.moonstream.index.parse.ZipStream
 import com.moon.moonstream.util.AppLog
 import java.io.IOException
 
@@ -145,6 +146,12 @@ object TdStreamUri {
  * boundary in one call — Media3 just calls read() again and lands in the
  * next part. Each window keeps its own chunk dir, prefetch and rate limit,
  * so the per-file machinery is untouched.
+ *
+ * Split ZIP archives (`.zip.001`, … — moon's 2026-11-18): a STORED zip's
+ * video streams from its data offset inside the joined archive (see
+ * [ZipStream]). [position] and [fileSize] are then VIRTUAL (video)
+ * coordinates — virtual position P reads joined position P + [zipOffset] —
+ * so ExoPlayer sees a clean video with the right size and MIME.
  */
 @UnstableApi
 class TdDataSource(private val context: Context) : BaseDataSource(true) {
@@ -159,6 +166,13 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
     private var uri: Uri? = null
     private var headers: Map<String, List<String>> = emptyMap()
     private var fileSize = -1L
+
+    /**
+     * Zip offset: virtual position P reads joined position P + zipOffset.
+     * 0 for a normal file; the video's data offset inside the joined
+     * archive for a stored .zip (see [ZipStream]).
+     */
+    private var zipOffset = 0L
 
     /** Which part holds this virtual position (parts are few — linear scan). */
     private fun partIndexFor(pos: Long): Int {
@@ -181,12 +195,16 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
         if (size <= 0L || durationMs <= 0L) return null
         val playheadByte = (playheadMs.toDouble() / durationMs * size)
             .toLong().coerceIn(0L, size)
-        var idx = partIndexFor(playheadByte.coerceAtMost(size - 1))
-        var localFrom = playheadByte - partStarts[idx]
+        // Positions are virtual (video) coordinates; the windows live in
+        // real (joined archive) coordinates, shifted by the zip offset.
+        val joinedTotal = partStarts.last() + parts.last().size
+        val realPlayhead = (playheadByte + zipOffset).coerceIn(0L, joinedTotal - 1)
+        var idx = partIndexFor(realPlayhead)
+        var localFrom = realPlayhead - partStarts[idx]
         var virtualEnd = playheadByte
         while (idx < ws.size) {
             val runEnd = ws[idx].downloadedAheadBytes(localFrom)
-            virtualEnd = partStarts[idx] + runEnd
+            virtualEnd = partStarts[idx] + runEnd - zipOffset
             if (runEnd < parts[idx].size) break
             idx++
             localFrom = 0L
@@ -215,22 +233,11 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
         val parsed = TdStreamUri.parse(dataSpec.uri)
             ?: throw IOException("Not a tdfile:// stream: ${dataSpec.uri}")
         uri = dataSpec.uri
-        headers = TdStreamUri.contentMimeFor(parsed.fileName)
-            ?.let { mapOf("Content-Type" to listOf(it)) }
-            ?: emptyMap()
         aheadAt = -1L
         aheadLength = 0
+        zipOffset = 0L
 
         val size = parsed.fileSize
-        if (dataSpec.position >= size) {
-            // Past EOF: report an empty source rather than an error, so a
-            // container probe at the end of the file stays harmless.
-            position = size
-            bytesRemaining = 0L
-            transferStarted(dataSpec)
-            return 0L
-        }
-
         val parts = parsed.parts
         parts.forEach { TdStreamCache.markActive(it.channelId, it.messageId) }
         windows = parts.map { TdByteWindow(context, it.channelId, it.messageId, it.size) }
@@ -240,21 +247,101 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
             parts.forEachIndexed { i, p -> arr[i] = acc; acc += p.size }
         }
         fileSize = size
+
+        // Zip-aware playback (moon's 2026-11-18): a STORED .zip's video
+        // streams from its data offset inside the joined archive, so the
+        // virtual file becomes just the video — its size, its MIME. The
+        // probe reads the header from the first chunk playback fetches
+        // anyway, and caches, so a seek re-open costs nothing. A compressed
+        // zip can't stream by offset: fail with a clear message instead of
+        // a cryptic extractor error. Anything unparseable falls through to
+        // plain joined playback, as today.
+        var innerMime: String? = null
+        if (ZipStream.isZipArchive(SplitFiles.baseName(parsed.fileName))) {
+            val first = parts.first()
+            val key = "${first.channelId}:${first.messageId}:$size"
+            val probe = try {
+                ZipStream.probeCached(key, size, parts.map { it.size }) { off, len ->
+                    readJoinedAt(off, len)
+                }
+            } catch (e: Exception) {
+                AppLog.w("TDLOCAL", "zip probe failed for ${parsed.fileName}: ${e.message}")
+                ZipStream.Probe.Unreadable
+            }
+            when (probe) {
+                is ZipStream.Probe.Playable -> {
+                    zipOffset = probe.info.dataOffset
+                    fileSize = probe.info.videoSize
+                    innerMime = TdStreamUri.contentMimeFor(probe.info.innerName)
+                    AppLog.i(
+                        "TDLOCAL",
+                        "zip stream: inner '${probe.info.innerName}' at +$zipOffset, " +
+                            "${fileSize / (1024 * 1024)} MB",
+                    )
+                }
+                ZipStream.Probe.Compressed -> throw IOException(
+                    "This file is a compressed zip, so it can't stream. " +
+                        "Extract the video out of the zip first to watch it.",
+                )
+                ZipStream.Probe.Unreadable -> { /* plain joined playback, as today */ }
+            }
+        }
+        headers = (innerMime ?: TdStreamUri.contentMimeFor(parsed.fileName))
+            ?.let { mapOf("Content-Type" to listOf(it)) }
+            ?: emptyMap()
+
+        if (dataSpec.position >= fileSize) {
+            // Past EOF: report an empty source rather than an error, so a
+            // container probe at the end of the file stays harmless.
+            position = fileSize
+            bytesRemaining = 0L
+            transferStarted(dataSpec)
+            return 0L
+        }
+
         current = this
         position = dataSpec.position
         bytesRemaining = if (dataSpec.length == C.LENGTH_UNSET.toLong()) {
-            size - position
+            fileSize - position
         } else {
-            minOf(dataSpec.length, size - position)
+            minOf(dataSpec.length, fileSize - position)
         }
         transferStarted(dataSpec)
         AppLog.i(
             "TDLOCAL",
             "opening direct stream msg=${parsed.messageId} from ${position}B " +
-                "of ${size / (1024 * 1024)} MB" +
-                if (parts.size > 1) " (${parts.size} split parts)" else "",
+                "of ${fileSize / (1024 * 1024)} MB" +
+                if (parts.size > 1) " (${parts.size} split parts)" else "" +
+                if (zipOffset > 0) " [zip +$zipOffset]" else "",
         )
         return bytesRemaining
+    }
+
+    /**
+     * Reads the joined parts at a REAL global offset (zip probing: the
+     * probe reads the archive's own bytes, before any video offset
+     * applies). Loops across part boundaries; returns what it got (short
+     * at EOF). Throws on a window failure — the probe treats that as
+     * unreadable and playback falls back to plain bytes.
+     */
+    private fun readJoinedAt(offset: Long, size: Int): ByteArray {
+        val out = ByteArray(size)
+        var filled = 0
+        var at = offset
+        while (filled < size) {
+            if (at < 0) break
+            val idx = partIndexFor(at)
+            if (idx >= parts.size) break
+            val inPart = at - partStarts[idx]
+            val availInPart = parts[idx].size - inPart
+            if (availInPart <= 0) break
+            val want = minOf((size - filled).toLong(), availInPart).toInt()
+            val n = windows[idx].read(inPart, out, filled, want)
+            if (n <= 0) break
+            filled += n
+            at += n
+        }
+        return if (filled == size) out else out.copyOf(filled)
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
@@ -293,9 +380,16 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
         if (windows.isEmpty()) return -1
         // Never read past the holding part's end in one call — the next
         // read() lands in the following part (see the class comment).
-        val idx = partIndexFor(position)
-        val inPart = position - partStarts[idx]
-        val capped = minOf(length.toLong(), parts[idx].size - inPart).toInt()
+        // position is VIRTUAL (video) coordinates; the zip offset shifts
+        // it into the joined archive's real coordinates (0 for non-zips).
+        val real = position + zipOffset
+        val idx = partIndexFor(real)
+        val inPart = real - partStarts[idx]
+        // Cap by bytesRemaining too: for a zip, the archive continues past
+        // the video (central directory), and a read past the video's end
+        // would hand the extractor zip bytes. (Also fixes a latent
+        // over-read for bounded DataSpecs on plain files.)
+        val capped = minOf(length.toLong(), bytesRemaining, parts[idx].size - inPart).toInt()
         if (capped <= 0) return -1
         return try {
             windows[idx].read(inPart, dest, destOffset, capped)
@@ -325,6 +419,7 @@ class TdDataSource(private val context: Context) : BaseDataSource(true) {
         aheadAt = -1L
         aheadLength = 0
         fileSize = -1L
+        zipOffset = 0L
         transferEnded()
     }
 
