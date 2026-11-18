@@ -47,7 +47,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -1647,36 +1646,34 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     }
 
     if (showWhatsNew) {
-        AlertDialog(
-            onDismissRequest = { showWhatsNew = false },
-            title = {
-                Text(
-                    "What's New in ${BuildConfig.VERSION_NAME}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MsColors.TextPrimary,
-                )
+        // iOS dialog (moon's 2026-11-18): the old Material AlertDialog was
+        // the last non-iOS popup, and its text was stale — it advertised
+        // start on boot, auto sleep and live-search filters, all removed.
+        // Content scrolls like the update changelog (280dp cap).
+        IosDialog(
+            onDismiss = { showWhatsNew = false },
+            title = "What's New in ${BuildConfig.VERSION_NAME}",
+            buttons = listOf(
+                IosSheetButton(label = "Nice", onClick = { showWhatsNew = false }),
+            ),
+            content = {
+                Box(
+                    Modifier
+                        .heightIn(max = 280.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        "• Library filters that work: audio language and Dub, plus subtitle language from captions\n" +
+                            "• Double-tap the middle of the player to pause and play — optional, in In-app player settings\n" +
+                            "• Latest and Popular rows in Stremio and Nuvio\n" +
+                            "• Custom entries no longer vanish after a scan\n" +
+                            "• Settings cleaned up: every switch now does what it says\n" +
+                            "• Update popup shows the real changelog, and it scrolls",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MsColors.TextSecondary,
+                    )
+                }
             },
-            text = {
-                Text(
-                    "• Library card: total size moved to the top-right, episode count never cut off\n" +
-                        "• New Account section with profile and logout\n" +
-                        "• New Metadata section: provider order, API keys, poster styles, anime numbering\n" +
-                        "• More scanning options and live-search filters\n" +
-                        "• Dead-link and duplicate finders\n" +
-                        "• Telegram backup, export and import\n" +
-                        "• Server: start on boot, auto sleep, remote access\n" +
-                        "• Early beta access toggle",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MsColors.TextSecondary,
-                )
-            },
-            confirmButton = {
-                LimePillButton(text = "Nice", fontSize = 14, onClick = { showWhatsNew = false })
-            },
-            containerColor = MsColors.Surface,
-            titleContentColor = MsColors.TextPrimary,
-            textContentColor = MsColors.TextSecondary,
         )
     }
 
