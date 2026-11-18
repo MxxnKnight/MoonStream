@@ -701,7 +701,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     Spacer(Modifier.width(10.dp))
                     MsOutlinePill(
                         text = if (verifyingTmdb) "Checking…" else "Verify",
-                        fontSize = 13,
+                        fontSize = 12,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
                         onClick = { verifyTmdb() },
                     )
                     if (tmdbVerified) {
@@ -727,7 +728,12 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(10.dp))
-                    MsOutlinePill(text = "Verify", fontSize = 13, onClick = { fakeVerify() })
+                    MsOutlinePill(
+                        text = "Verify",
+                        fontSize = 12,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
+                        onClick = { fakeVerify() },
+                    )
                 }
             }
             SettingBlock(
@@ -744,7 +750,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     Spacer(Modifier.width(10.dp))
                     MsOutlinePill(
                         text = "Save",
-                        fontSize = 13,
+                        fontSize = 12,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
                         onClick = { ScanPrefs.setOmdbKey(context, omdbKey); MsToast.show("Saved") },
                     )
                 }
@@ -763,7 +770,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     Spacer(Modifier.width(10.dp))
                     MsOutlinePill(
                         text = "Save",
-                        fontSize = 13,
+                        fontSize = 12,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
                         onClick = { ScanPrefs.setAnimeSkipClientId(context, animeSkipClientId); MsToast.show("Saved") },
                     )
                 }
@@ -817,7 +825,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     Spacer(Modifier.width(10.dp))
                     MsOutlinePill(
                         text = "Save",
-                        fontSize = 13,
+                        fontSize = 12,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
                         onClick = {
                             val t = posterTemplate.trim()
                             if (t.isEmpty()) {
@@ -847,7 +856,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     Spacer(Modifier.width(10.dp))
                     MsOutlinePill(
                         text = "Save",
-                        fontSize = 13,
+                        fontSize = 12,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
                         onClick = {
                             ScanPrefs.setFanartKey(context, fanartKey)
                             fanartKeySaved = fanartKey.trim()
@@ -1289,7 +1299,8 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     Spacer(Modifier.width(10.dp))
                     MsOutlinePill(
                         text = "Save",
-                        fontSize = 13,
+                        fontSize = 12,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
                         onClick = {
                             ScanPrefs.setGistToken(context, gistToken)
                             gistTokenSaved = gistToken.trim()
@@ -2039,7 +2050,8 @@ private fun CacheStorageBlock() {
             )
             MsOutlinePill(
                 text = "Clear Cache",
-                fontSize = 13,
+                fontSize = 12,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
                 onClick = {
                     scope.launch(Dispatchers.IO) {
                         // 1. App cache (works now).
