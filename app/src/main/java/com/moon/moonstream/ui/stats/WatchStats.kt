@@ -276,7 +276,7 @@ object WatchStatsLoader {
         val topLanguages = langHours.entries
             .sortedByDescending { it.value }
             .take(5)
-            .map { LangCount(it.key, LANGUAGE_NAMES[it.key] ?: it.key.uppercase(), it.value) }
+            .map { LangCount(it.key, LANGUAGE_NAMES[it.key] ?: it.key, it.value) }
 
         // Top countries: hours per country (v16).
         val countryHours = mutableMapOf<String, Long>()
@@ -287,7 +287,7 @@ object WatchStatsLoader {
         val topCountries = countryHours.entries
             .sortedByDescending { it.value }
             .take(5)
-            .map { CountryCount(it.key, COUNTRY_NAMES[it.key] ?: it.key.uppercase(), it.value) }
+            .map { CountryCount(it.key, COUNTRY_NAMES[it.key] ?: it.key, it.value) }
 
         // Top decades: hours per release decade, from the title year.
         val decadeHours = mutableMapOf<String, Long>()

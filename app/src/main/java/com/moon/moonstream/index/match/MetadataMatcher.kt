@@ -103,6 +103,69 @@ object MetadataMatcher {
         val lang = obj.optString("original_language").takeIf { it.isNotBlank() } ?: return null
         return LANGUAGE_TO_COUNTRY[lang]
     }
+
+    // ---- Name → ISO code normalizers (moon's 2026-11-18) ----
+    // TMDB stores ISO codes ("en", "US") and the stats screen + drama
+    // detection expect codes — but Cinemeta/TVmaze/OMDb return full
+    // names ("English", "United States"). Normalize at the matcher so
+    // every provider stores the same shape. Unknown names pass through
+    // as-is (the stats display shows them verbatim).
+    private val LANGUAGE_NAME_TO_ISO = mapOf(
+        "malayalam" to "ml", "english" to "en", "hindi" to "hi",
+        "tamil" to "ta", "telugu" to "te", "kannada" to "kn",
+        "bengali" to "bn", "marathi" to "mr", "korean" to "ko",
+        "japanese" to "ja", "chinese" to "zh", "mandarin" to "zh",
+        "cantonese" to "zh", "thai" to "th", "spanish" to "es",
+        "french" to "fr", "german" to "de", "italian" to "it",
+        "portuguese" to "pt", "russian" to "ru", "turkish" to "tr",
+        "arabic" to "ar", "persian" to "fa", "farsi" to "fa",
+        "indonesian" to "id", "malay" to "ms", "vietnamese" to "vi",
+        "filipino" to "tl", "punjabi" to "pa", "gujarati" to "gu",
+        "dutch" to "nl", "swedish" to "sv", "danish" to "da",
+        "norwegian" to "no", "finnish" to "fi", "polish" to "pl",
+        "ukrainian" to "uk", "hebrew" to "he", "urdu" to "ur",
+    )
+    private val COUNTRY_NAME_TO_ISO = mapOf(
+        "india" to "IN", "united states" to "US", "usa" to "US",
+        "united states of america" to "US", "south korea" to "KR",
+        "korea" to "KR", "japan" to "JP", "china" to "CN",
+        "united kingdom" to "GB", "uk" to "GB", "great britain" to "GB",
+        "england" to "GB", "thailand" to "TH", "spain" to "ES",
+        "france" to "FR", "germany" to "DE", "italy" to "IT",
+        "brazil" to "BR", "russia" to "RU", "turkey" to "TR",
+        "egypt" to "EG", "iran" to "IR", "indonesia" to "ID",
+        "malaysia" to "MY", "vietnam" to "VN", "philippines" to "PH",
+        "canada" to "CA", "australia" to "AU", "mexico" to "MX",
+        "netherlands" to "NL", "sweden" to "SE", "norway" to "NO",
+        "denmark" to "DK", "finland" to "FI", "poland" to "PL",
+        "ukraine" to "UA", "pakistan" to "PK", "bangladesh" to "BD",
+        "sri lanka" to "LK", "nepal" to "NP", "taiwan" to "TW",
+        "hong kong" to "HK", "singapore" to "SG", "new zealand" to "NZ",
+        "south africa" to "ZA", "nigeria" to "NG", "kenya" to "KE",
+        "argentina" to "AR", "chile" to "CL", "colombia" to "CO",
+        "peru" to "PE", "portugal" to "PT", "greece" to "GR",
+        "israel" to "IL", "iraq" to "IQ", "afghanistan" to "AF",
+        "cambodia" to "KH", "laos" to "LA", "myanmar" to "MM",
+        "burma" to "MM", "mongolia" to "MN",
+    )
+    /** Full language name ("English") → ISO 639-1 ("en"); a code or unknown name passes through. */
+    private fun isoLanguage(name: String?): String? {
+        val n = name?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        if (n.length == 2) return n.lowercase()
+        return LANGUAGE_NAME_TO_ISO[n.lowercase()] ?: n
+    }
+    /** Full country name ("United States") → ISO 3166-1 ("US"); a code or unknown name passes through. */
+    private fun isoCountry(name: String?): String? {
+        val n = name?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        if (n.length == 2) return n.uppercase()
+        return COUNTRY_NAME_TO_ISO[n.lowercase()] ?: n
+    }
+    /** A JSON array of genre name strings → list, or null when empty. */
+    private fun jsonGenres(obj: JSONObject, key: String = "genres"): List<String>? {
+        val arr = obj.optJSONArray(key) ?: return null
+        return (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }
+            .takeIf { it.isNotEmpty() }
+    }
     private const val TAG = "MetadataMatcher"
     private const val UA = "MoonStream/1.0"
     /** A title this similar is a clear match — a wrong filename year must not veto it. */
@@ -373,6 +436,11 @@ object MetadataMatcher {
             backdropUrl = root.optString("background").takeIf { it.isNotBlank() },
             imdbId = imdbId,
             tmdbId = null,
+            // Stats fields (moon's 2026-11-18): Cinemeta's meta response
+            // carries genres + country — the old code never read them, so
+            // the play-time refresh "filled" nothing for IMDb-id entries.
+            genres = jsonGenres(root),
+            country = isoCountry(root.optString("country")),
             confidence = 1.0, // direct ID lookup = highest confidence
         )
     }
@@ -589,6 +657,13 @@ object MetadataMatcher {
                     ?.replace(Regex("<[^>]*>"), "")?.trim()?.takeIf { it.isNotBlank() }
                 val imdb = show.optJSONObject("externals")?.optString("imdb")
                     ?.takeIf { it.startsWith("tt") }
+                // Stats fields (moon's 2026-11-18): TVmaze sends genres,
+                // language ("English") and network country — read them so
+                // series plays fill the stats breakdowns.
+                val tvCountryObj = show.optJSONObject("network")?.optJSONObject("country")
+                    ?: show.optJSONObject("webChannel")?.optJSONObject("country")
+                val tvCountry = tvCountryObj?.optString("code")?.takeIf { it.isNotBlank() }
+                    ?: isoCountry(tvCountryObj?.optString("name"))
                 best = EnrichedMeta(
                     title = name,
                     year = candYear?.toString(),
@@ -597,6 +672,9 @@ object MetadataMatcher {
                     backdropUrl = null,
                     imdbId = imdb,
                     tmdbId = null,
+                    genres = jsonGenres(show),
+                    originalLanguage = isoLanguage(show.optString("language")),
+                    country = tvCountry,
                     confidence = score.coerceIn(0.0, 1.0),
                 )
             }
@@ -685,6 +763,13 @@ object MetadataMatcher {
                     val poster = images?.optString("large_image_url")?.takeIf { it.isNotBlank() }
                         ?: images?.optString("image_url")?.takeIf { it.isNotBlank() }
                     val y = item.optInt("year", -1).takeIf { it > 0 }?.toString()
+                    // Stats fields (moon's 2026-11-18): Jikan sends genres;
+                    // anime is Japanese by definition (same as Kitsu).
+                    val jikanGenres = item.optJSONArray("genres")?.let { arr ->
+                        (0 until arr.length()).mapNotNull {
+                            arr.optJSONObject(it)?.optString("name")?.takeIf { s -> s.isNotBlank() }
+                        }.takeIf { it.isNotEmpty() }
+                    }
                     best = EnrichedMeta(
                         title = bestTitle,
                         year = y,
@@ -693,6 +778,9 @@ object MetadataMatcher {
                         backdropUrl = null,
                         imdbId = null,
                         tmdbId = null,
+                        genres = jikanGenres,
+                        originalLanguage = "ja",
+                        country = "JP",
                         confidence = s.coerceIn(0.0, 1.0),
                     )
                 }
@@ -722,6 +810,19 @@ object MetadataMatcher {
         val plot = root.optString("Plot").takeIf { it.isNotBlank() && it != "N/A" }
         // OMDb series years can be a range ("2019–2023") — take the start.
         val y = root.optString("Year").take(4).toIntOrNull()?.toString() ?: year?.take(4)
+        // Stats fields (moon's 2026-11-18): OMDb sends Genre/Language/
+        // Country as comma lists — genres all of them, language + country
+        // the first (primary) one, normalized to ISO codes.
+        val omdbGenres = root.optString("Genre").takeIf { it.isNotBlank() && it != "N/A" }
+            ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.takeIf { it.isNotEmpty() }
+        val omdbLang = isoLanguage(
+            root.optString("Language").takeIf { it.isNotBlank() && it != "N/A" }
+                ?.split(",")?.firstOrNull(),
+        )
+        val omdbCountry = isoCountry(
+            root.optString("Country").takeIf { it.isNotBlank() && it != "N/A" }
+                ?.split(",")?.firstOrNull(),
+        )
         return EnrichedMeta(
             title = name,
             year = y,
@@ -730,6 +831,9 @@ object MetadataMatcher {
             backdropUrl = null,
             imdbId = imdb,
             tmdbId = null,
+            genres = omdbGenres,
+            originalLanguage = omdbLang,
+            country = omdbCountry,
             confidence = sim.coerceIn(0.0, 1.0),
         )
     }

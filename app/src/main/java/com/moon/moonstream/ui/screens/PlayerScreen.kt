@@ -1032,6 +1032,9 @@ fun PlayerScreen(
                     imdbId = m.imdbId, omdbKey = omdbKey,
                 )?.let { MetadataMatcher.enrichFromCinemeta(it, m.type) }
                     ?: return@withContext
+                val newGenres = full.genres?.takeIf { it.isNotEmpty() }?.joinToString(",") ?: m.genres
+                val newLang = full.originalLanguage ?: m.originalLanguage
+                val newCountry = full.country ?: m.country
                 db.mediaDao().updateMetadata(
                     id = m.id,
                     title = full.title,
@@ -1048,12 +1051,23 @@ fun PlayerScreen(
                         full.imdbId ?: m.imdbId,
                     ),
                     type = m.type,
-                    genres = full.genres?.takeIf { it.isNotEmpty() }?.joinToString(",") ?: m.genres,
-                    originalLanguage = full.originalLanguage ?: m.originalLanguage,
-                    country = full.country ?: m.country,
+                    genres = newGenres,
+                    originalLanguage = newLang,
+                    country = newCountry,
                     now = System.currentTimeMillis(),
                 )
-                AppLog.i("PLAYER", "Auto-refresh filled stats metadata for '${m.title}'")
+                // Honest log (moon's 2026-11-18): the old line claimed
+                // "filled" even when the lookup returned no stats fields.
+                val filled = listOfNotNull(
+                    "genres".takeIf { m.genres.isNullOrBlank() && !newGenres.isNullOrBlank() },
+                    "language".takeIf { m.originalLanguage.isNullOrBlank() && !newLang.isNullOrBlank() },
+                    "country".takeIf { m.country.isNullOrBlank() && !newCountry.isNullOrBlank() },
+                )
+                if (filled.isNotEmpty()) {
+                    AppLog.i("PLAYER", "Auto-refresh filled ${filled.joinToString(", ")} for '${m.title}'")
+                } else {
+                    AppLog.i("PLAYER", "Auto-refresh found no new stats metadata for '${m.title}'")
+                }
             } catch (e: Exception) {
                 AppLog.i("PLAYER", "Auto-refresh skipped: ${e.message}")
             }
