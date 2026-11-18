@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -1775,14 +1776,22 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     // Changelog (moon's request 2026-11-03): show release notes,
                     // not install instructions. No separate changelog button needed.
+                    // Scrollable (moon's 2026-11-18): the full notes show, capped
+                    // in height so the Download/Install buttons stay visible —
+                    // the 800-char cut is gone. Progress/status rows below stay
+                    // outside the scroll area, always visible.
                     if (info.notes.isNotBlank()) {
-                        Text(
-                            // The release body is the changelog (moon's 2026-11-18) —
-                            // show it in full when it fits, with an ellipsis when cut.
-                            if (info.notes.length > 800) info.notes.take(800).trimEnd() + "…" else info.notes,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MsColors.TextPrimary,
-                        )
+                        Box(
+                            Modifier
+                                .heightIn(max = 280.dp)
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            Text(
+                                info.notes,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MsColors.TextPrimary,
+                            )
+                        }
                     }
                     if (updateState is UpdateState.Downloading) {
                         val p = (updateState as UpdateState.Downloading).progress
