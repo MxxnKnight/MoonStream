@@ -13,6 +13,7 @@ import com.moon.moonstream.index.db.SubtitleFileEntity
 import com.moon.moonstream.index.StremioIds
 import com.moon.moonstream.index.parse.SplitFiles
 import com.moon.moonstream.index.parse.ZipStream
+import com.moon.moonstream.index.scan.ScanPrefs
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStream
@@ -184,12 +185,28 @@ class MoonStreamServer(
 
     private fun buildManifest(): JSONObject {
         val catalogs = JSONArray()
-        catalogs.put(catalogJson("movie", "moonstream_movies", "MoonStream Movies"))
-        catalogs.put(catalogJson("series", "moonstream_series", "MoonStream Series"))
-        catalogs.put(catalogJson("series", "moonstream_anime", "MoonStream Anime"))
-        catalogs.put(catalogJson("series", "moonstream_dramas", "MoonStream Dramas"))
-        catalogs.put(catalogJson("movie", "moonstream_custom_movies", "MoonStream Custom Movies"))
-        catalogs.put(catalogJson("series", "moonstream_custom_series", "MoonStream Custom Shows"))
+        // Show catalogs toggle (moon's 2026-11-18): when off, the addon
+        // offers no browsable rows — search still works (each catalog
+        // declares the search extra, and search doesn't need the manifest
+        // to list it). Clients cache the manifest, so a toggle change
+        // needs the addon re-added in Stremio/Nuvio to show.
+        if (ScanPrefs.showCatalogs(appContext)) {
+            catalogs.put(catalogJson("movie", "moonstream_movies", "MoonStream Movies"))
+            catalogs.put(catalogJson("series", "moonstream_series", "MoonStream Series"))
+            catalogs.put(catalogJson("series", "moonstream_anime", "MoonStream Anime"))
+            catalogs.put(catalogJson("series", "moonstream_dramas", "MoonStream Dramas"))
+            catalogs.put(catalogJson("movie", "moonstream_custom_movies", "MoonStream Custom Movies"))
+            catalogs.put(catalogJson("series", "moonstream_custom_series", "MoonStream Custom Shows"))
+            // Latest and Popular rows (moon's 2026-11-18): newest first by
+            // updatedAt, most-played first by watch count. Typed per
+            // Stremio's one-type-per-catalog rule.
+            if (ScanPrefs.showLatestPopular(appContext)) {
+                catalogs.put(catalogJson("movie", "moonstream_latest_movies", "MoonStream Latest Movies"))
+                catalogs.put(catalogJson("series", "moonstream_latest_series", "MoonStream Latest Series"))
+                catalogs.put(catalogJson("movie", "moonstream_popular_movies", "MoonStream Popular Movies"))
+                catalogs.put(catalogJson("series", "moonstream_popular_series", "MoonStream Popular Series"))
+            }
+        }
         return JSONObject()
             .put("id", "org.moonstream.addon")
             .put("version", BuildConfig.VERSION_NAME)
@@ -231,6 +248,14 @@ class MoonStreamServer(
             ?.removePrefix("search=")
             ?.trim()
             .orEmpty()
+        val isLatest = id == "moonstream_latest_movies" || id == "moonstream_latest_series"
+        val isPopular = id == "moonstream_popular_movies" || id == "moonstream_popular_series"
+        // Popular order comes from play counts; Latest rides listVisible's
+        // updatedAt DESC order. Both capped at 100 — a "latest" row with
+        // 20k entries is no row at all.
+        val popularIds = if (isPopular) {
+            runBlocking { db.watchProgressDao().popularMediaIds(100) }
+        } else emptyList()
         val items = runBlocking {
             db.mediaDao().listVisible().filter { m ->
                 val inCatalog = when (id) {
@@ -240,10 +265,21 @@ class MoonStreamServer(
                     "moonstream_dramas" -> isDrama(m)
                     "moonstream_custom_movies" -> m.isCustom && m.type == "movie"
                     "moonstream_custom_series" -> m.isCustom && m.type != "movie"
+                    "moonstream_latest_movies" -> m.type == "movie"
+                    "moonstream_latest_series" -> m.type != "movie"
+                    "moonstream_popular_movies" -> m.type == "movie"
+                    "moonstream_popular_series" -> m.type != "movie"
                     // Fallback for old clients that request by type only:
                     else -> if (type == "series") (m.type == "series" || m.type == "anime") else m.type == "movie"
                 }
                 inCatalog && matchesSearch(m.title, search)
+            }.let { list ->
+                when {
+                    isPopular -> list.filter { it.id in popularIds }
+                        .sortedBy { popularIds.indexOf(it.id) }
+                    isLatest -> list.take(100)
+                    else -> list
+                }
             }
         }
         val metas = JSONArray()

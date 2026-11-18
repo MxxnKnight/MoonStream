@@ -143,13 +143,9 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
 
     // --- Scanning & Matching state ---
     var autoScan by remember { mutableStateOf(ScanPrefs.isAutoScan(context)) }
-    var scanInterval by remember { mutableStateOf("30") }
-    var animeMode by remember { mutableStateOf(true) }
-    var showCatalogs by remember { mutableStateOf(true) }
-    var latestPopular by remember { mutableStateOf(true) }
-    var indexNew by remember { mutableStateOf(true) }
-    var replaceSameQuality by remember { mutableStateOf(true) }
-    var liveSearchFallback by remember { mutableStateOf(true) }
+    var showCatalogs by remember { mutableStateOf(ScanPrefs.showCatalogs(context)) }
+    var latestPopular by remember { mutableStateOf(ScanPrefs.showLatestPopular(context)) }
+    var replaceSameQuality by remember { mutableStateOf(ScanPrefs.replaceSameQuality(context)) }
 
     // --- Metadata state (persisted via ScanPrefs so the scanner uses them) ---
     var tmdbKey by remember { mutableStateOf(ScanPrefs.getTmdbKey(context)) }
@@ -695,54 +691,29 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
             ) {
                 MsToggle(checked = autoScan, onCheckedChange = { autoScan = it; ScanPrefs.setAutoScan(context, it); MsToast.show("Saved") })
             }
-            SettingRow(
-                title = "Scan interval (seconds)",
-                info = "How often the app checks channels for new files. Lower is fresher but uses more battery and data.",
-            ) {
-                MsTextField(
-                    value = scanInterval,
-                    onValueChange = { scanInterval = it },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(120.dp),
-                )
-            }
             // v0.3.1: the "Match confidence" slider was removed — moon noted no
             // other app has it; matching strictness is handled internally.
-            SettingRow(
-                title = "Anime handling",
-                info = "When on, channels marked as anime use episode-number matching (like episode 1123) instead of season/episode matching.",
-            ) {
-                MsToggle(checked = animeMode, onCheckedChange = { animeMode = it; MsToast.show("Saved") })
-            }
+            // 2026-11-18: Scan interval, Anime handling, Index new posts and
+            // Live search fallback were removed — they were never wired to
+            // anything (moon's audit). Anime handling lives in the per-channel
+            // anime tag + Anime numbering under Metadata.
             SettingRow(
                 title = "Show catalogs in Stremio",
-                info = "Lists your library as browsable rows (catalogs) inside Stremio and Nuvio, not just through search.",
+                info = "Lists your library as browsable rows (catalogs) inside Stremio and Nuvio, not just through search. When off, search still works — re-add the addon to see the change.",
             ) {
-                MsToggle(checked = showCatalogs, onCheckedChange = { showCatalogs = it; MsToast.show("Saved") })
+                MsToggle(checked = showCatalogs, onCheckedChange = { showCatalogs = it; ScanPrefs.setShowCatalogs(context, it); MsToast.show("Saved") })
             }
             SettingRow(
                 title = "Latest and Popular rows",
-                info = "Adds 'Latest' and 'Popular' rows at the top of your catalogs in Stremio, based on what was indexed recently.",
+                info = "Adds Latest and Popular rows to your catalogs in Stremio and Nuvio — Latest is what was added most recently, Popular is what you play most. Re-add the addon to see new rows.",
             ) {
-                MsToggle(checked = latestPopular, onCheckedChange = { latestPopular = it; MsToast.show("Saved") })
-            }
-            SettingRow(
-                title = "Index new posts automatically",
-                info = "Adds files to the library the moment they appear in your channels, without waiting for the next scan.",
-            ) {
-                MsToggle(checked = indexNew, onCheckedChange = { indexNew = it; MsToast.show("Saved") })
+                MsToggle(checked = latestPopular, onCheckedChange = { latestPopular = it; ScanPrefs.setShowLatestPopular(context, it); MsToast.show("Saved") })
             }
             SettingRow(
                 title = "Replace same quality",
                 info = "When the same file appears again in the same quality, the newer copy replaces the older one in the library. Your Telegram files are never deleted.",
             ) {
-                MsToggle(checked = replaceSameQuality, onCheckedChange = { replaceSameQuality = it; MsToast.show("Saved") })
-            }
-            SettingRow(
-                title = "Live search fallback",
-                info = "When a title isn't in your library, search Telegram live instead of giving up — slower, but finds more.",
-            ) {
-                MsToggle(checked = liveSearchFallback, onCheckedChange = { liveSearchFallback = it; MsToast.show("Saved") })
+                MsToggle(checked = replaceSameQuality, onCheckedChange = { replaceSameQuality = it; ScanPrefs.setReplaceSameQuality(context, it); MsToast.show("Saved") })
             }
             // "Skip exact duplicates" not added: "Duplicate protection" in
             // Appearance & Library already does exactly this.

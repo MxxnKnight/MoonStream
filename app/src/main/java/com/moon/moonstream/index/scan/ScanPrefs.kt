@@ -13,6 +13,11 @@ object ScanPrefs {
     private const val KEY_TVDB = "tvdb_key"
     private const val KEY_ANIME_NUMBERING = "anime_numbering" // 0 = seasonal, 1 = absolute
     private const val KEY_AUTO_SCAN = "auto_scan_on_open" // scan on app open (moon's pick 2026-11-06)
+    // Scanning & Matching toggles wired 2026-11-18 (moon's audit): catalogs
+    // on/off, Latest/Popular rows, and same-quality replacement.
+    private const val KEY_SHOW_CATALOGS = "show_catalogs"
+    private const val KEY_LATEST_POPULAR = "latest_popular_rows"
+    private const val KEY_REPLACE_SAME_QUALITY = "replace_same_quality"
     // Poster style (moon's 2026-11-06 — free providers only, RPDB removed):
     // 0 = Provider (TMDB / Cinemeta / Kitsu), 1 = BetterPosters (btttr.cc,
     // free, no key, IMDb id only), 2 = Fanart.tv (free key required).
@@ -118,5 +123,26 @@ object ScanPrefs {
 
     fun setAutoScan(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_AUTO_SCAN, value).apply()
+    }
+
+    fun showCatalogs(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_SHOW_CATALOGS, true)
+
+    fun setShowCatalogs(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SHOW_CATALOGS, value).apply()
+    }
+
+    fun showLatestPopular(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_LATEST_POPULAR, true)
+
+    fun setShowLatestPopular(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_LATEST_POPULAR, value).apply()
+    }
+
+    fun replaceSameQuality(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_REPLACE_SAME_QUALITY, true)
+
+    fun setReplaceSameQuality(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_REPLACE_SAME_QUALITY, value).apply()
     }
 }

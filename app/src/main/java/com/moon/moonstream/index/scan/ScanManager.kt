@@ -15,6 +15,7 @@ import com.moon.moonstream.index.match.EnrichedMeta
 import com.moon.moonstream.index.match.MetadataMatcher
 import com.moon.moonstream.index.parse.FilenameParser
 import com.moon.moonstream.index.parse.ParsedMedia
+import com.moon.moonstream.index.parse.SplitFiles
 import com.moon.moonstream.index.parse.normalizeTitle
 import kotlinx.coroutines.delay
 
@@ -106,6 +107,9 @@ object ScanManager {
         // Anime numbering mode (moon's 2026-11-06 setting): Absolute counts
         // One Piece 1..1012, Seasonal uses S/E. Read once per run.
         val absoluteAnime = ScanPrefs.isAnimeAbsolute(context)
+        // Replace same quality (moon's 2026-11-18): a re-uploaded file
+        // takes over the old row instead of duplicating it. Read once per run.
+        val replaceSameQuality = ScanPrefs.replaceSameQuality(context)
         // Poster style (moon's 2026-11-06): read once per run. Fanart
         // lookups are cached per run too, keyed by TMDB id.
         val posterStyle = ScanPrefs.getPosterStyle(context)
@@ -123,7 +127,7 @@ object ScanManager {
         try {
             targets.forEachIndexed { index, target ->
                 try {
-                    scanOneChannel(db, backend, target, mode, tmdbKey, omdbKey, metaCache, animeCache, absoluteAnime, posterStyle, fanartKey, fanartCache)
+                    scanOneChannel(db, backend, target, mode, tmdbKey, omdbKey, metaCache, animeCache, absoluteAnime, posterStyle, fanartKey, fanartCache, replaceSameQuality)
                 } catch (e: Exception) {
                     Log.e(TAG, "channel ${target.channelId} failed: ${e.message}")
                     com.moon.moonstream.util.AppLog.e("SCAN", "Channel ${target.title} failed: ${e.message}")
@@ -192,6 +196,7 @@ object ScanManager {
         val fanartCache = mutableMapOf<Int, String?>()
         val metaCache = mutableMapOf<String, EnrichedMeta?>()
         val animeCache = mutableMapOf<String, Boolean>()
+        val replaceSameQuality = ScanPrefs.replaceSameQuality(context)
 
         com.moon.moonstream.util.AppLog.i("SCAN", "Re-checking ${rows.size} unmatched file(s)")
         ScanUiState.beginRecheck(rows.size)
@@ -246,7 +251,7 @@ object ScanManager {
                         val done = if (localHit != null) {
                             attachToEntry(
                                 db, localHit.id, target, row.messageId,
-                                row.fileName, row.fileSize, parsed,
+                                row.fileName, row.fileSize, parsed, replaceSameQuality,
                             )
                             true
                         } else {
@@ -258,7 +263,7 @@ object ScanManager {
                                 db, target, row.messageId, row.fileName,
                                 row.fileSize, row.caption, parsed, tmdbKey,
                                 omdbKey, metaCache, animeCache, posterStyle,
-                                fanartKey, fanartCache,
+                                fanartKey, fanartCache, replaceSameQuality,
                             )
                             if (metaCache.size > cacheBefore) delay(RECHECK_PROVIDER_DELAY_MS)
                             ok
@@ -327,6 +332,7 @@ object ScanManager {
         fileName: String,
         fileSize: Long,
         parsed: ParsedMedia,
+        replaceSameQuality: Boolean,
     ) {
         // Packs are not episodes (moon's 2026-11-09): "Complete S01",
         // "Season 1", "S01 EP 1-5" describe a batch, so they must not be
@@ -344,6 +350,35 @@ object ScanManager {
                     "-${parsed.episodeEnd ?: "?"}) → Other bucket",
             )
         }
+        val season = if (isPack) null else parsed.season
+        val episode = if (isPack) null else parsed.episode
+        // Replace same quality (moon's 2026-11-18): when the toggle is on
+        // and a whole file re-appears for the same entry + episode in the
+        // same quality, the new copy takes over the old row in place — same
+        // row id, so resume positions and watch history keep working. The
+        // quality badge already carries the audio languages ("1080p • Mal"),
+        // so a Malayalam copy never replaces a Hindi one. Split parts and
+        // packs are never replaced: a .002 part must not eat its .001, and
+        // packs share the null episode slot.
+        if (replaceSameQuality && !isPack && !SplitFiles.isSplitPart(fileName)) {
+            val existing = db.streamDao().listByMedia(mediaId).filter { old ->
+                old.season == season && old.episode == episode &&
+                    old.quality == parsed.qualityBadge &&
+                    !SplitFiles.isSplitPart(old.fileName)
+            }
+            if (existing.isNotEmpty()) {
+                val keep = existing.first()
+                db.streamDao().repointFile(keep.id, target.channelId, messageId, fileName, fileSize)
+                // Drop any further duplicates from when the toggle was off.
+                for (extra in existing.drop(1)) db.streamDao().deleteById(extra.id)
+                com.moon.moonstream.util.AppLog.i(
+                    "SCAN",
+                    "replaced same-quality '${keep.fileName}' with '$fileName'",
+                )
+                db.mediaDao().refreshAggregates(mediaId, System.currentTimeMillis())
+                return
+            }
+        }
         db.streamDao().insert(
             StreamFileEntity(
                 mediaId = mediaId,
@@ -351,8 +386,8 @@ object ScanManager {
                 messageId = messageId,
                 fileName = fileName,
                 fileSize = fileSize,
-                season = if (isPack) null else parsed.season,
-                episode = if (isPack) null else parsed.episode,
+                season = season,
+                episode = episode,
                 episodeEnd = if (isPack) null else parsed.episodeEnd,
                 quality = parsed.qualityBadge,
             ),
@@ -373,6 +408,7 @@ object ScanManager {
         posterStyle: Int,
         fanartKey: String,
         fanartCache: MutableMap<Int, String?>,
+        replaceSameQuality: Boolean,
     ) {
         val channelId = target.channelId
 
@@ -451,7 +487,7 @@ object ScanManager {
                             db.streamDao().deleteByMessage(channelId, msg.id)
                             db.subtitleDao().deleteByMessage(channelId, msg.id)
                             db.unmatchedDao().deleteByMessage(channelId, msg.id)
-                            if (handleMessage(db, target, msg, absoluteAnime, tmdbKey, omdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache) == Outcome.INDEXED) {
+                            if (handleMessage(db, target, msg, absoluteAnime, tmdbKey, omdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache, replaceSameQuality) == Outcome.INDEXED) {
                                 indexed++
                             } else {
                                 unmatched++
@@ -473,7 +509,7 @@ object ScanManager {
                     existing++
                     continue
                 }
-                if (handleMessage(db, target, msg, absoluteAnime, tmdbKey, omdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache) == Outcome.INDEXED) {
+                if (handleMessage(db, target, msg, absoluteAnime, tmdbKey, omdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache, replaceSameQuality) == Outcome.INDEXED) {
                     indexed++
                 } else {
                     unmatched++
@@ -565,6 +601,7 @@ object ScanManager {
         posterStyle: Int,
         fanartKey: String,
         fanartCache: MutableMap<Int, String?>,
+        replaceSameQuality: Boolean,
     ): Outcome {
         val channelId = target.channelId
         // Subtitle files take the subtitle path, not the video path.
@@ -608,7 +645,7 @@ object ScanManager {
             )
             return Outcome.UNMATCHED
         }
-        val matched = indexFile(db, target, msg.id, msg.fileName, msg.fileSize, msg.caption, parsed, tmdbKey, omdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache)
+        val matched = indexFile(db, target, msg.id, msg.fileName, msg.fileSize, msg.caption, parsed, tmdbKey, omdbKey, metaCache, animeCache, posterStyle, fanartKey, fanartCache, replaceSameQuality)
         if (matched) {
             db.streamDao().setEditDate(channelId, msg.id, msg.editDate)
             return Outcome.INDEXED
@@ -636,6 +673,7 @@ object ScanManager {
         posterStyle: Int,
         fanartKey: String,
         fanartCache: MutableMap<Int, String?>,
+        replaceSameQuality: Boolean,
     ): Boolean {
         val norm = normalizeTitle(parsed.title)
         // Manual channel (moon's 2026-11-09): no online lookup at all — not
@@ -784,7 +822,7 @@ object ScanManager {
         // Only reached for files whose metadata matched with confidence
         // ≥ 0.75 (the gate above) — low-confidence files never reach an
         // entry at all.
-        attachToEntry(db, mediaId, target, messageId, fileName, fileSize, parsed)
+        attachToEntry(db, mediaId, target, messageId, fileName, fileSize, parsed, replaceSameQuality)
         return true
     }
 

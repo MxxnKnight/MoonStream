@@ -302,6 +302,11 @@ interface StreamDao {
     @Query("DELETE FROM stream_files WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    /** Repoint a file row at a newer copy of the same file (replace-same-quality):
+     *  same row id, so resume positions and watch history keep working. */
+    @Query("UPDATE stream_files SET channelId = :channelId, messageId = :messageId, fileName = :fileName, fileSize = :fileSize WHERE id = :id")
+    suspend fun repointFile(id: Long, channelId: Long, messageId: Long, fileName: String, fileSize: Long)
+
     @Query("UPDATE stream_files SET mediaId = :newMediaId WHERE mediaId = :oldMediaId")
     suspend fun moveAllToMedia(oldMediaId: Long, newMediaId: Long)
 
@@ -548,6 +553,10 @@ interface WatchProgressDao {
 
     @Query("SELECT * FROM watch_progress ORDER BY playedAt DESC LIMIT :limit")
     suspend fun recent(limit: Int = 15): List<WatchProgressEntity>
+
+    /** Media ids by play count (most files played first) — the Popular catalogs. */
+    @Query("SELECT mediaId FROM watch_progress GROUP BY mediaId ORDER BY COUNT(*) DESC, MAX(playedAt) DESC LIMIT :limit")
+    suspend fun popularMediaIds(limit: Int): List<Long>
 
     /**
      * Live data for the Home "Continue watching" strip (fix 2026-11-05).
