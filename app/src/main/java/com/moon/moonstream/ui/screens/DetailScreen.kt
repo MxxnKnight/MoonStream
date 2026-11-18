@@ -1240,11 +1240,6 @@ fun DetailScreen(
     }
 }
 
-/**
- * One row in the "Move to" sheet (moon's 2026-11-15): icon + label,
- * iOS action-sheet style with a hairline divider underneath.
- */
-@Composable
 /** Mime type for the ACTION_VIEW intent, guessed from the file extension. */
 private fun mimeForFile(fileName: String): String {
     return when (fileName.substringAfterLast('.', "").lowercase()) {
