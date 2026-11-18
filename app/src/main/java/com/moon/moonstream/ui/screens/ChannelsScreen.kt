@@ -563,7 +563,10 @@ fun ChannelsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "Unmatched content (${filteredUnmatched.size})",
+                        // Short title (moon's 2026-11-18): "Unmatched content"
+                        // pushed the count off the edge next to Re-check +
+                        // Select — "Unmatched (1838)" leaves room for it.
+                        "Unmatched (${filteredUnmatched.size})",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MsColors.TextPrimary,
