@@ -391,6 +391,43 @@ object FilenameParser {
         return if (end > start) end else null
     }
 
+    /** Parser 3-letter language code → ISO 639-1, for matching metadata (which stores ISO). */
+    private val parserCodeToIso = mapOf(
+        "Mal" to "ml", "Eng" to "en", "Hin" to "hi", "Tam" to "ta",
+        "Tel" to "te", "Kan" to "kn", "Ben" to "bn", "Mar" to "mr",
+        "Kor" to "ko", "Jap" to "ja", "Chi" to "zh", "Tha" to "th",
+        "Spa" to "es", "Fre" to "fr", "Ger" to "de", "Ita" to "it",
+        "Por" to "pt", "Rus" to "ru", "Tur" to "tr", "Ara" to "ar",
+        "Urd" to "ur", "Ori" to "or", "Asm" to "as", "Pun" to "pa",
+        "Guj" to "gu", "Dut" to "nl",
+    )
+
+    fun isoForParserCode(code: String): String? = parserCodeToIso[code]
+
+    /**
+     * Languages tagged in a file name ("Movie.2024.Malayalam.Dubbed.mkv"
+     * -> ["Mal"]) — the same detection the full parse uses, split off so
+     * the Library audio-language filter can run it over stored filenames
+     * without a full parse (moon's 2026-11-18). No caption here: captions
+     * aren't stored per file, so filter-time detection is filename-only;
+     * index time still sees the caption through parse().
+     */
+    fun detectLanguages(rawFileName: String): List<String> {
+        val cleaned = clean(imdbRe.replace(rawFileName, " "))
+        val noSplit = cleaned.replace(Regex("""(?i)\.(?:(?:mkv|mp4|avi|webm)\.)?0*\d{1,3}$"""), "")
+        val base = splitFusedYearLang(noSplit.replace(Regex("""\.[a-zA-Z0-9]{2,4}$"""), ""))
+        return base.lowercase()
+            .split(Regex("""[\s._\-+\[\](),]+"""))
+            .mapNotNull { languageMap[it] }
+            .distinct()
+    }
+
+    /** True when a file name says the audio is dubbed ("Dubbed", "Dub", "Dual Audio", "Multi Audio"). */
+    fun isDubbedName(rawFileName: String): Boolean {
+        val tokens = rawFileName.lowercase().split(Regex("""[\s._\-+\[\](),]+"""))
+        return tokens.any { it == "dub" || it == "dubbed" || it == "dual" || it == "multi" }
+    }
+
     /**
      * @param absoluteAnime honours the Settings "Anime numbering" switch:
      *  true = Absolute (One Piece counts 1..1012), false = Seasonal (S/E).
@@ -442,10 +479,7 @@ object FilenameParser {
         val quality = qualityPatterns.firstOrNull { it.first.containsMatchIn(base) }?.second
             ?: "1080p"
 
-        val languages = base.lowercase()
-            .split(Regex("""[\s._\-+\[\](),]+"""))
-            .mapNotNull { languageMap[it] }
-            .distinct()
+        val languages = detectLanguages(name)
 
         // Remove machine tags before title extraction.
         var work = crcRe.replace(base, "")

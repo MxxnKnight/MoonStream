@@ -3,6 +3,7 @@ package com.moon.moonstream.ui.screens
 import android.widget.Toast
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.components.IosBottomSheet
+import com.moon.moonstream.index.parse.FilenameParser
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExitTransition
@@ -128,6 +129,8 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
     var quality by remember { mutableStateOf("Any") }
     var subFilter by remember { mutableStateOf("Any") }
     var subLangFilter by remember { mutableStateOf("Any") }
+    var audioLang by remember { mutableStateOf("Any") }
+    var dubFilter by remember { mutableStateOf("Any") }
     var sort by remember { mutableStateOf("Recently added") }
 
     // Multi-select state — Select button or long-press; bottom action bar.
@@ -159,11 +162,61 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
         subLangIds = if (subLangFilter == "Any") null
         else subLangCodes[subLangFilter]?.let { db.subtitleDao().mediaIdsWithSubtitleLang(it).toSet() }
     }
+    // Audio-language + Dub id-sets (moon's 2026-11-18): metadata AND
+    // filename understanding, per his rule — a title matches a language
+    // when its metadata says so OR any of its files is tagged with it,
+    // and counts as dubbed when a file says Dub/Dubbed/Dual/Multi or
+    // its audio language differs from the original language. Computed
+    // from stored filenames, so it works on the library as it is — no
+    // rescan, no migration. Runs only while one of the two filters is
+    // active, off the main thread (tens of thousands of names).
+    val audioLangCodes = mapOf(
+        "Malayalam" to "ml", "English" to "en", "Hindi" to "hi",
+        "Tamil" to "ta", "Telugu" to "te",
+    )
+    var audioLangIds by remember { mutableStateOf<Set<Long>?>(null) }
+    var dubIds by remember { mutableStateOf<Set<Long>?>(null) }
+    var origIds by remember { mutableStateOf<Set<Long>?>(null) }
+    LaunchedEffect(audioLang, dubFilter, allItems) {
+        if (audioLang == "Any" && dubFilter == "Any") {
+            audioLangIds = null
+            dubIds = null
+            origIds = null
+            return@LaunchedEffect
+        }
+        val (audio, dub, orig) = withContext(Dispatchers.IO) {
+            val metaLang = allItems.associate { it.id to it.originalLanguage }
+            val byIso = mutableMapOf<String, MutableSet<Long>>()
+            val dubbed = mutableSetOf<Long>()
+            val original = mutableSetOf<Long>()
+            for (r in db.streamDao().allMediaFileNames()) {
+                val isoLangs = FilenameParser.detectLanguages(r.fileName)
+                    .mapNotNull { FilenameParser.isoForParserCode(it) }
+                for (iso in isoLangs) byIso.getOrPut(iso) { mutableSetOf() } += r.mediaId
+                val origLang = metaLang[r.mediaId]
+                val isDub = FilenameParser.isDubbedName(r.fileName) ||
+                    (origLang != null && isoLangs.isNotEmpty() && isoLangs.none { it == origLang })
+                if (isDub) dubbed += r.mediaId else original += r.mediaId
+            }
+            // Metadata side: a title whose ORIGINAL language is X counts
+            // for audio X even when its files carry no language tag.
+            for (t in allItems) {
+                t.originalLanguage?.let { byIso.getOrPut(it) { mutableSetOf() } += t.id }
+            }
+            val audioSet = if (audioLang == "Any") null
+                else audioLangCodes[audioLang]?.let { byIso[it].orEmpty() }
+            Triple(audioSet, dubbed, original)
+        }
+        audioLangIds = audio
+        dubIds = dub
+        origIds = orig
+    }
 
     // remember(...): filtering/sorting the whole library used to re-run on EVERY
     // recomposition (scrolling, animations). Now only when an input changes.
     val filtered = remember(
-        allItems, segment, query, qualityIds, subFilter, subIds, subLangIds, sort,
+        allItems, segment, query, qualityIds, subFilter, subIds, subLangIds,
+        audioLangIds, dubFilter, dubIds, origIds, sort,
     ) { allItems.filter { t ->
         // Hide is gone (moon's 2026-11-14): the HIDDEN tab is now CUSTOM.
         val matchesSegment = when (segment) {
@@ -182,7 +235,14 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             else -> true
         }
         val matchesSubLang = subLangIds?.contains(t.id) ?: true
-        matchesSegment && matchesQuery && matchesQuality && matchesSubs && matchesSubLang
+        val matchesAudioLang = audioLangIds?.contains(t.id) ?: true
+        val matchesDub = when (dubFilter) {
+            "Dubbed" -> dubIds?.contains(t.id) == true
+            "Original audio" -> origIds?.contains(t.id) == true
+            else -> true
+        }
+        matchesSegment && matchesQuery && matchesQuality && matchesSubs && matchesSubLang &&
+            matchesAudioLang && matchesDub
     }.let { list ->
         when (sort) {
             "Title A–Z" -> list.sortedBy { it.title.lowercase() }
@@ -592,6 +652,8 @@ fun LibraryScreen(onOpenDetail: (Long) -> Unit) {
             quality = quality, onQuality = { quality = it },
             subFilter = subFilter, onSubFilter = { subFilter = it },
             subLangFilter = subLangFilter, onSubLangFilter = { subLangFilter = it },
+            audioLang = audioLang, onAudioLang = { audioLang = it },
+            dubFilter = dubFilter, onDubFilter = { dubFilter = it },
             sort = sort, onSort = { sort = it },
             onDismiss = { showFilters = false },
         )
@@ -749,6 +811,8 @@ private fun FilterSheet(
     quality: String, onQuality: (String) -> Unit,
     subFilter: String, onSubFilter: (String) -> Unit,
     subLangFilter: String, onSubLangFilter: (String) -> Unit,
+    audioLang: String, onAudioLang: (String) -> Unit,
+    dubFilter: String, onDubFilter: (String) -> Unit,
     sort: String, onSort: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -763,6 +827,12 @@ private fun FilterSheet(
                 listOf("Any", "Malayalam", "English", "Hindi", "Tamil", "Telugu"),
                 subLangFilter, onSubLangFilter,
             )
+            FilterRow(
+                "Audio language",
+                listOf("Any", "Malayalam", "English", "Hindi", "Tamil", "Telugu"),
+                audioLang, onAudioLang,
+            )
+            FilterRow("Dub", listOf("Any", "Dubbed", "Original audio"), dubFilter, onDubFilter)
             FilterRow("Sort", listOf("Recently added", "Title A–Z", "Year", "Size"), sort, onSort)
             LimePillButton(
                 text = "Apply filters",

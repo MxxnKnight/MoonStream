@@ -372,6 +372,10 @@ interface StreamDao {
     /** Media ids having at least one file whose quality label contains [q]. */
     @Query("SELECT DISTINCT mediaId FROM stream_files WHERE quality LIKE '%' || :q || '%'")
     suspend fun mediaIdsWithQuality(q: String): List<Long>
+
+    /** Every stream file's media id + name, for the Library audio-language / Dub filters. */
+    @Query("SELECT mediaId, fileName FROM stream_files")
+    suspend fun allMediaFileNames(): List<MediaFileNameRow>
 }
 
 @Dao
@@ -529,6 +533,9 @@ data class StatsFinishedRow(
 
 /** By-type slice: display type ("movie"/"series"/"anime"/"drama") + count. */
 data class StatsTypeRow(val type: String, val count: Int)
+
+/** One stream file's owner + name (Library audio-language / Dub filters). */
+data class MediaFileNameRow(val mediaId: Long, val fileName: String)
 
 @Dao
 interface WatchProgressDao {

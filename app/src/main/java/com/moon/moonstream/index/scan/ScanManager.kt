@@ -569,7 +569,7 @@ object ScanManager {
         val channelId = target.channelId
         // Subtitle files take the subtitle path, not the video path.
         if (isSubtitleFile(msg.fileName)) {
-            indexSubtitle(db, target, msg.id, msg.fileName, msg.fileSize, absoluteAnime)
+            indexSubtitle(db, target, msg.id, msg.fileName, msg.fileSize, absoluteAnime, msg.caption)
             db.subtitleDao().setEditDate(channelId, msg.id, msg.editDate)
             return Outcome.INDEXED
         }
@@ -802,9 +802,21 @@ object ScanManager {
         fileName: String,
         fileSize: Long,
         absoluteAnime: Boolean,
+        // Caption (moon's 2026-11-18): subtitle files often carry no
+        // language word in the name — the caption says it ("Malayalam
+        // subtitles"). The old code parsed with "" so those all stored
+        // "unknown" and the Subtitle language filter found nothing.
+        caption: String = "",
     ) {
-        val parsed = FilenameParser.parse(fileName, target.isAnime, "", absoluteAnime)
+        val parsed = FilenameParser.parse(fileName, target.isAnime, caption, absoluteAnime)
         val norm = normalizeTitle(parsed.title)
+        // Caption fallback (moon's 2026-11-18): when the filename carries no
+        // language word, the caption often says it ("Malayalam subtitles").
+        // parse() only reads the caption when it looks like a release name,
+        // so a short language caption needs this direct check.
+        val subLang = parsed.languages.firstOrNull()
+            ?: FilenameParser.detectLanguages(caption).firstOrNull()
+            ?: "unknown"
         // Subtitles are the exception in a manual channel (moon's 2026-11-09):
         // subtitle-only channels carry no video, so a well-named SRT should
         // still reach its show from wherever that show was indexed. They are
@@ -828,7 +840,7 @@ object ScanManager {
                 mediaId = mediaId,
                 season = parsed.season,
                 episode = parsed.episode,
-                language = parsed.languages.firstOrNull() ?: "unknown",
+                language = subLang,
             ),
         )
     }
