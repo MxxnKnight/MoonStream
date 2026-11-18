@@ -102,6 +102,17 @@ val Redaction35 = FontFamily(
     Font(R.font.redaction35_bold, FontWeight.Bold),
 )
 
+// Subtitle typefaces (moon's 2026-11-18): preview families for the
+// player's subtitle font picker. Single-weight families — the
+// picker buttons show the actual subtitle weight.
+val NotoSerif = FontFamily(
+    Font(R.font.noto_serif_semibold, FontWeight.SemiBold),
+)
+
+val Manjari = FontFamily(
+    Font(R.font.manjari_bold, FontWeight.Bold),
+)
+
 /** Public extension: apply Doto display font to any TextStyle. */
 fun TextStyle.doto() = copy(fontFamily = Doto)
 

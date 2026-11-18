@@ -77,6 +77,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.content.res.ResourcesCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.C
@@ -117,7 +118,10 @@ import com.moon.moonstream.ui.player.TdDataSource
 import com.moon.moonstream.ui.player.TdStreamUri
 import com.moon.moonstream.ui.player.TdSubUri
 import com.moon.moonstream.ui.state.LanguagePrefs
+import com.moon.moonstream.R
 import com.moon.moonstream.ui.theme.Inter
+import com.moon.moonstream.ui.theme.Manjari
+import com.moon.moonstream.ui.theme.NotoSerif
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.index.StremioIds
 import com.moon.moonstream.index.match.MetadataMatcher
@@ -385,6 +389,18 @@ fun PlayerScreen(
     var subPosition by remember {
         mutableFloatStateOf(SubDelayPrefs.getPosition(context, mediaId))
     }
+    // Subtitle typeface (moon's 2026-11-18): GLOBAL, not per-title.
+    var subFont by remember { mutableStateOf(SubDelayPrefs.getFont(context)) }
+    // Loaded once per font pick — getFont reads the file each call.
+    val subTypeface = remember(subFont) {
+        subtitleTypefaceRes(subFont)?.let { res ->
+            try {
+                ResourcesCompat.getFont(context, res)
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
 
     /** Push the appearance prefs into the player's SubtitleView. */
     fun applySubtitleStyle() {
@@ -398,7 +414,7 @@ fun PlayerScreen(
         sv.setStyle(
             CaptionStyleCompat(
                 subTextColor, android.graphics.Color.TRANSPARENT,
-                android.graphics.Color.TRANSPARENT, edge, subStrokeColor, null,
+                android.graphics.Color.TRANSPARENT, edge, subStrokeColor, subTypeface,
             )
         )
         sv.setFractionalTextSize(subTextSize)
@@ -410,7 +426,7 @@ fun PlayerScreen(
     // Re-apply when the view arrives or any appearance pref changes.
     LaunchedEffect(
         playerViewRef, subTextSize, subStrokeOn, subTextColor, subStrokeColor,
-        subPosition
+        subPosition, subFont
     ) {
         applySubtitleStyle()
     }
@@ -2748,6 +2764,66 @@ fun PlayerScreen(
                                         modifier = Modifier.weight(1.6f),
                                     )
                                 }
+                                // Font (moon's 2026-11-18): subtitles used
+                                // the system font — pick one of the bundled
+                                // typefaces. Each button previews its own
+                                // font. 2x2 grid: four names don't fit one
+                                // row next to the label.
+                                Column(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(vertical = 6.dp),
+                                ) {
+                                    Text(
+                                        "Font",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MsColors.TextPrimary,
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        FontOptionBtn(
+                                            "system", "System", subFont == "system",
+                                            Modifier.weight(1f),
+                                        ) {
+                                            subFont = "system"
+                                            SubDelayPrefs.setFont(context, "system")
+                                            applySubtitleStyle()
+                                        }
+                                        FontOptionBtn(
+                                            "inter", "Inter", subFont == "inter",
+                                            Modifier.weight(1f),
+                                        ) {
+                                            subFont = "inter"
+                                            SubDelayPrefs.setFont(context, "inter")
+                                            applySubtitleStyle()
+                                        }
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        FontOptionBtn(
+                                            "serif", "Serif", subFont == "serif",
+                                            Modifier.weight(1f),
+                                        ) {
+                                            subFont = "serif"
+                                            SubDelayPrefs.setFont(context, "serif")
+                                            applySubtitleStyle()
+                                        }
+                                        FontOptionBtn(
+                                            "malayalam", "Malayalam", subFont == "malayalam",
+                                            Modifier.weight(1f),
+                                        ) {
+                                            subFont = "malayalam"
+                                            SubDelayPrefs.setFont(context, "malayalam")
+                                            applySubtitleStyle()
+                                        }
+                                    }
+                                }
+
                                 Row(
                                     modifier = Modifier.fillMaxWidth()
                                         .padding(vertical = 6.dp),
@@ -3879,11 +3955,51 @@ private fun UnlockSlider(
     }
 }
 
+/** Subtitle typeface id -> bundled font resource. "system" (and any
+ *  unknown id) is null: the SubtitleView keeps its default, which is
+ *  the system font. */
+private fun subtitleTypefaceRes(fontId: String): Int? = when (fontId) {
+    "inter" -> R.font.inter_semibold
+    "serif" -> R.font.noto_serif_semibold
+    "malayalam" -> R.font.manjari_bold
+    else -> null
+}
+
+/** Preview family for the font picker buttons. */
+private fun subtitleFontFamily(fontId: String): FontFamily = when (fontId) {
+    "inter" -> Inter
+    "serif" -> NotoSerif
+    "malayalam" -> Manjari
+    else -> FontFamily.Default
+}
+
+/** A font picker button: the label previews its own typeface. */
+@Composable
+private fun FontOptionBtn(
+    fontId: String,
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    SheetOptionBtn(
+        label, selected, onClick,
+        fontFamily = subtitleFontFamily(fontId),
+        modifier = modifier,
+    )
+}
+
 /** Small pill option button for the player sheets (size, stroke on/off). */
 @Composable
-private fun SheetOptionBtn(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun SheetOptionBtn(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    fontFamily: FontFamily? = null,
+    modifier: Modifier = Modifier,
+) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .padding(horizontal = 4.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (selected) MsColors.Accent else MsColors.Bg)
@@ -3895,6 +4011,7 @@ private fun SheetOptionBtn(label: String, selected: Boolean, onClick: () -> Unit
             label,
             color = if (selected) Color.Black else MsColors.TextPrimary,
             style = MaterialTheme.typography.bodyMedium,
+            fontFamily = fontFamily,
         )
     }
 }

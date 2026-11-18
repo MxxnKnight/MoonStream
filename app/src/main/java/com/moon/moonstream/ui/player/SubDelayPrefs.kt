@@ -59,4 +59,16 @@ object SubDelayPrefs {
     fun setPosition(ctx: Context, mediaId: Long, v: Float) {
         prefs(ctx).edit().putFloat("sub_pos_$mediaId", v).apply()
     }
+
+    /**
+     * Subtitle typeface id ("system" / "inter" / "serif" /
+     * "malayalam"). GLOBAL, not per-title: a typeface is taste, not
+     * a per-title tweak like delay or position (moon's 2026-11-18).
+     */
+    fun getFont(ctx: Context): String =
+        prefs(ctx).getString("sub_font", "system") ?: "system"
+
+    fun setFont(ctx: Context, fontId: String) {
+        prefs(ctx).edit().putString("sub_font", fontId).apply()
+    }
 }
