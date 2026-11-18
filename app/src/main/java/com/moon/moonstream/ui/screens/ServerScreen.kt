@@ -1465,7 +1465,6 @@ private fun RecentlyAddedRow(
  * - SxxExx moved onto the poster (top-left chip), as designed.
  * - Progress line always has a visible track, even before duration is known.
  */
-@Composable
 /** Hold time for mark-as-watched on a Continue Watching poster
  *  (moon's 2026-11-18: a stock long-press fires at ~500ms, so the
  *  2s timer is custom). */
@@ -1485,6 +1484,7 @@ private fun ContinueWatchingPoster(
     onMarkWatched: (ContinueWatchingItem) -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var holdProgress by remember { mutableFloatStateOf(0f) }
     // Set when the hold fires, so the tap that follows the release
     // doesn't open Detail right after marking.
@@ -1501,7 +1501,11 @@ private fun ContinueWatchingPoster(
                         onTap = { if (!holdFired) onOpenDetail(w.mediaId) },
                         onPress = {
                             holdFired = false
-                            val job = launch {
+                            // scope.launch: onPress runs in a
+                            // PressGestureScope, which is NOT a
+                            // CoroutineScope, so a bare launch {}
+                            // doesn't resolve here.
+                            val job = scope.launch {
                                 animate(
                                     0f, 1f,
                                     animationSpec = tween(MARK_WATCHED_HOLD_MS.toInt()),
@@ -1621,6 +1625,7 @@ private fun ContinueWatchingPoster(
     }
 }
 
+@Composable
 private fun ContinueWatchingRow(
     onOpenDetail: (Long) -> Unit,
 ) {
