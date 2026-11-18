@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -1421,9 +1422,11 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 title = "Check for updates",
                 info = "Looks for a newer MoonStream release on GitHub and offers to install it.",
             ) {
+                // iOS .mini size, like the Library Filters button (moon's 2026-11-18).
                 MsOutlinePill(
                     text = if (checkingUpdate) "Checking…" else "Check",
-                    fontSize = 13,
+                    fontSize = 12,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
                     enabled = !checkingUpdate,
                     onClick = ::checkForUpdates,
                 )
@@ -1488,9 +1491,11 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 title = "Check for updates",
                 info = "Looks for a newer MoonStream release on GitHub and offers to install it.",
             ) {
+                // iOS .mini size, like the Library Filters button (moon's 2026-11-18).
                 MsOutlinePill(
                     text = if (checkingUpdate) "Checking…" else "Check",
-                    fontSize = 13,
+                    fontSize = 12,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
                     enabled = !checkingUpdate,
                     onClick = ::checkForUpdates,
                 )
@@ -1772,7 +1777,9 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     // not install instructions. No separate changelog button needed.
                     if (info.notes.isNotBlank()) {
                         Text(
-                            info.notes.take(800),
+                            // The release body is the changelog (moon's 2026-11-18) —
+                            // show it in full when it fits, with an ellipsis when cut.
+                            if (info.notes.length > 800) info.notes.take(800).trimEnd() + "…" else info.notes,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MsColors.TextPrimary,
                         )
