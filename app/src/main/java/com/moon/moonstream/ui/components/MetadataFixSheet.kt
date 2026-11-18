@@ -126,10 +126,14 @@ fun MetadataFixSheet(
     var query by remember { mutableStateOf(initialQuery.trim()) }
     var parseDone by remember { mutableStateOf(false) }
     var userEditedQuery by remember { mutableStateOf(false) }
-    LaunchedEffect(initialQuery, isAnime) {
+    LaunchedEffect(initialQuery, isAnime, caption) {
         val clean = try {
             withContext(Dispatchers.Default) {
-                FilenameParser.parse(initialQuery, isAnime, "").title.trim()
+                // Caption wins over a hash/garbage filename (moon's 2026-11-18:
+                // GDFlix names files "GDFlix.com <md5>.001" while the caption
+                // carries the real release name — the prefill used to pass ""
+                // here, so the search ran on the hash and found nothing).
+                FilenameParser.parse(initialQuery, isAnime, caption).title.trim()
                     .ifBlank { initialQuery.trim() }
             }
         } catch (e: Exception) {

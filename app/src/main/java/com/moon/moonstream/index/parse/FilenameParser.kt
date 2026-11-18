@@ -309,6 +309,12 @@ object FilenameParser {
     )
     /** Names our own backend invents when Telegram gave none (file_123, video_9.mp4) or hash-like names. */
     private val genericNameRe = Regex("""(?i)^(?:(?:file|video)_\d+|[0-9a-f]{16,}|\d{6,}|[A-Za-z0-9_-]{16,}\+[A-Za-z0-9_-]{11})(?:\.\w{2,4})?$""")
+    /** A long hex token (MD5/SHA fragment) inside a name — e.g. "GDFlix.com 2767f742cc189a… .001". */
+    private val hashTokenRe = Regex("""(?i)\b[0-9a-f]{16,}\b""")
+
+    /** True when a name carries no real title: a generated/garbage name, or a long hash token. */
+    private fun isGenericName(name: String): Boolean =
+        genericNameRe.matches(name) || hashTokenRe.containsMatchIn(name)
 
     /**
      * Title part of a caption line (moon's 2026-11-09, YouTube shorts):
@@ -353,7 +359,7 @@ object FilenameParser {
         val capText = lines.firstOrNull { videoExtRe.containsMatchIn(it) && epOrYearRe.containsMatchIn(it) }
             ?: lines.firstOrNull { mediaLikeRe.containsMatchIn(it) }
             ?: lines.joinToString(" ")
-        val fnIsGeneric = genericNameRe.matches(fn)
+        val fnIsGeneric = isGenericName(fn)
         // The caption must actually contain a title (letters before the first
         // quality/year tag) - "1080p WEB-DL" alone must not replace a good name.
         val head = capText.substring(0, mediaLikeRe.find(capText)?.range?.first ?: capText.length)
@@ -402,7 +408,10 @@ object FilenameParser {
         // A file with no real title must go to unmatched, never to a
         // guessed title. bestName already prefers a good caption, so if
         // the CHOSEN name is still generic, nothing real was found.
-        if (genericNameRe.matches(name)) {
+        // (2026-11-18: a hash token inside the name counts too — GDFlix
+        // names files "GDFlix.com <md5>.001", which the old whole-string
+        // regex never matched because of the site prefix.)
+        if (isGenericName(name)) {
             return ParsedMedia(
                 title = "",
                 type = "movie",
