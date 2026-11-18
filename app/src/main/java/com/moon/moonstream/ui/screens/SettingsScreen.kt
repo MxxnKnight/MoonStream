@@ -135,11 +135,6 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
 
     // --- Server state ---
     var portText by remember { mutableStateOf(AppUiState.port.toString()) }
-    var preferTailscale by remember { mutableStateOf(false) }
-    var publicHost by remember { mutableStateOf("") }
-    var startOnBoot by remember { mutableStateOf(false) }
-    var autoSleep by remember { mutableStateOf(false) }
-    var serverOffMode by remember { mutableStateOf(false) }
 
     // --- Scanning & Matching state ---
     var autoScan by remember { mutableStateOf(ScanPrefs.isAutoScan(context)) }
@@ -181,7 +176,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     var dtCenterPause by remember { mutableStateOf(LanguagePrefs.doubleTapCenterPause(context)) }
 
     // --- Appearance state ---
-    var dupProtection by remember { mutableStateOf(true) }
+    // (Duplicate protection removed 2026-11-18 — never wired; moon's audit.)
 
     // --- Backup state ---
     // backupToTelegram removed — Telegram is the only destination now.
@@ -623,55 +618,11 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     modifier = Modifier.width(120.dp),
                 )
             }
-            SettingRow(
-                title = "Start on boot",
-                info = "Starts the Stremio server automatically when your phone restarts, so you don't have to open the app and flip the switch yourself.",
-            ) {
-                MsToggle(checked = startOnBoot, onCheckedChange = { startOnBoot = it; MsToast.show("Saved") })
-            }
-            SettingRow(
-                title = "Auto Sleep",
-                info = "Turns the server off by itself after a while with no activity, to save battery. Any new request wakes it up again.",
-            ) {
-                MsToggle(checked = autoSleep, onCheckedChange = { autoSleep = it; MsToast.show("Saved") })
-            }
-            SettingRow(
-                title = "Server Off Mode",
-                info = "Extra quiet mode for when the server is off: stops background work too, so nothing runs until you switch the server back on.",
-            ) {
-                MsToggle(checked = serverOffMode, onCheckedChange = { serverOffMode = it; MsToast.show("Saved") })
-            }
-            SettingBlock(
-                title = "Public host",
-                info = "For access outside Wi-Fi: paste a Cloudflare Tunnel or Tailscale hostname here and the manifest link will use it instead of your local address.",
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    MsTextField(
-                        value = publicHost,
-                        onValueChange = { publicHost = it },
-                        hint = "auto",
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    MsOutlinePill(text = "Save", fontSize = 13, onClick = { MsToast.show("Saved") })
-                }
-            }
-            SettingRow(
-                title = "Prefer Tailscale",
-                info = "When on, the app advertises your Tailscale address instead of the local Wi-Fi address, so Stremio on another device can reach your phone from anywhere.",
-            ) {
-                MsToggle(checked = preferTailscale, onCheckedChange = { preferTailscale = it; MsToast.show("Saved") })
-            }
-            SettingRow(
-                title = "Use Tailscale address",
-                info = "Shows your Tailscale address here when Tailscale is detected on this phone, so other devices can reach the server over the internet.",
-            ) {
-                Text(
-                    "Tailscale not detected",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MsColors.TextSecondary,
-                )
-            }
+            // 2026-11-18: Start on boot, Auto Sleep, Server Off Mode, Public
+            // host, Prefer Tailscale and Use Tailscale address were removed —
+            // none was wired to anything (moon's audit). The boot permission
+            // is still in the manifest; a real start-on-boot needs a
+            // BootReceiver + service start, which was never built.
         }
     }
 
@@ -1185,12 +1136,6 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     checked = AppUiState.amoledCardBorders,
                     onCheckedChange = { AppUiState.setAmoledCardBorders(it, context) },
                 )
-            }
-            SettingRow(
-                title = "Duplicate protection",
-                info = "When on, the app ignores a file it has already indexed, even if it appears again in another channel.",
-            ) {
-                MsToggle(checked = dupProtection, onCheckedChange = { dupProtection = it; MsToast.show("Saved") })
             }
         }
     }
