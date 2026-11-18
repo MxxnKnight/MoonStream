@@ -539,6 +539,9 @@ fun PlayerScreen(
     val subSecond = remember { LanguagePrefs.subtitleSecond(context) }
     val audioFirst = remember { LanguagePrefs.audioFirst(context) }
     val audioSecond = remember { LanguagePrefs.audioSecond(context) }
+    // Double-tap center = pause/play (moon's 2026-11-18): optional toggle in
+    // Settings → In-app player. Off by default; read once when the player opens.
+    val dtCenterPause = remember { LanguagePrefs.doubleTapCenterPause(context) }
     // Per-entry remembered language (moon's pick 2026-11-10): the track
     // language picked once for this entry wins over the global Settings
     // choice on every later episode.
@@ -1237,6 +1240,8 @@ fun PlayerScreen(
     // with animation; consecutive double-taps accumulate (20>, 30>...).
     // Arrows, not +10s/-10s (moon's 2026-11-14).
     var seekFeedback by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
+    // Center double-tap pause/play feedback: true = now playing, false = paused.
+    var pauseFeedback by remember { mutableStateOf<Boolean?>(null) }
     var lastSeekTapTime by remember { mutableStateOf(0L) }
     var seekTapCount by remember { mutableStateOf(0) }
     // Double-tap timing (moon's 2026-11-16): the stock 300ms window was
@@ -1380,6 +1385,12 @@ fun PlayerScreen(
             delay(1000)
             seekFeedback = null
             seekTapCount = 0
+        }
+    }
+    LaunchedEffect(pauseFeedback) {
+        if (pauseFeedback != null) {
+            delay(1000)
+            pauseFeedback = null
         }
     }
 
@@ -1768,9 +1779,22 @@ fun PlayerScreen(
                     }
                     val secondUp = waitForUpOrCancellation()
                         ?: return@awaitEachGesture
+                    // Double-tap center = pause/play (moon's 2026-11-18,
+                    // optional toggle in Settings → In-app player). Middle
+                    // third pauses the moment the second tap lands; the
+                    // outer thirds still seek. Off = the old halves,
+                    // unchanged.
+                    val tapX = secondUp.position.x
+                    if (dtCenterPause && tapX >= size.width / 3 && tapX < size.width * 2 / 3) {
+                        val wasPlaying = player.isPlaying
+                        if (wasPlaying) player.pause() else player.play()
+                        pauseFeedback = !wasPlaying
+                        return@awaitEachGesture
+                    }
                     // Double-tap left/right: ∓10s with animated feedback.
                     // Consecutive double-taps accumulate (20>, 30>...).
-                    val forward = secondUp.position.x > size.width / 2
+                    val forward = if (dtCenterPause) tapX >= size.width * 2 / 3
+                        else tapX > size.width / 2
                     val now = System.currentTimeMillis()
                     seekTapCount =
                         if (now - lastSeekTapTime < DOUBLE_TAP_CHAIN_MS) seekTapCount + 1 else 1
@@ -2294,6 +2318,30 @@ fun PlayerScreen(
                             fontWeight = FontWeight.Bold,
                         ),
                         modifier = Modifier.padding(horizontal = 56.dp),
+                    )
+                }
+            }
+        }
+
+        // Center double-tap pause/play feedback: "Paused" / "Playing" text
+        // in the middle, same style as the seek feedback (moon's 2026-11-18).
+        AnimatedVisibility(
+            visible = pauseFeedback != null,
+            enter = fadeIn(animationSpec = tween(150)) +
+                scaleIn(initialScale = 0.85f, animationSpec = tween(150)),
+            exit = fadeOut(animationSpec = tween(300)),
+        ) {
+            pauseFeedback?.let { playing ->
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        if (playing) "Playing" else "Paused",
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                        ),
                     )
                 }
             }

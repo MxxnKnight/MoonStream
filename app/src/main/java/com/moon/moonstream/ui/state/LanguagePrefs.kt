@@ -22,6 +22,7 @@ object LanguagePrefs {
     private const val KEY_SUB_SECOND = "lang_sub_second"
     private const val KEY_AUDIO_FIRST = "lang_audio_first"
     private const val KEY_AUDIO_SECOND = "lang_audio_second"
+    private const val KEY_DOUBLE_TAP_CENTER_PAUSE = "player_dt_center_pause"
 
     fun subtitleFirst(context: Context): String =
         SettingsPrefs.getString(context, KEY_SUB_FIRST, "Mal")
@@ -46,6 +47,13 @@ object LanguagePrefs {
 
     fun setAudioSecond(context: Context, label: String) =
         SettingsPrefs.setString(context, KEY_AUDIO_SECOND, label)
+
+    /** Double-tap the middle of the video pauses/plays (moon's 2026-11-18). Off by default. */
+    fun doubleTapCenterPause(context: Context): Boolean =
+        SettingsPrefs.getBool(context, KEY_DOUBLE_TAP_CENTER_PAUSE, false)
+
+    fun setDoubleTapCenterPause(context: Context, enabled: Boolean) =
+        SettingsPrefs.setBool(context, KEY_DOUBLE_TAP_CENTER_PAUSE, enabled)
 
     /** ISO-639-2 code Media3 understands, or null for "no preference". */
     private val ISO = mapOf(

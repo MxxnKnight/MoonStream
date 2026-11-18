@@ -182,6 +182,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     var subLangSecond by remember { mutableStateOf(LanguagePrefs.subtitleSecond(context)) }
     var audioLangFirst by remember { mutableStateOf(LanguagePrefs.audioFirst(context)) }
     var audioLangSecond by remember { mutableStateOf(LanguagePrefs.audioSecond(context)) }
+    var dtCenterPause by remember { mutableStateOf(LanguagePrefs.doubleTapCenterPause(context)) }
 
     // --- Appearance state ---
     var dupProtection by remember { mutableStateOf(true) }
@@ -1089,7 +1090,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
     }
 
     @Composable
-    fun LanguagesSection() {
+    fun InAppPlayerSection() {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1098,6 +1099,16 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 .padding(bottom = 100.dp), // clear the floating nav pill
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            SettingRow(
+                title = "Double-tap center to pause",
+                info = "When on, double-tapping the middle third of the video pauses or plays at once. The left and right thirds still seek 10 seconds. When off, the whole screen seeks as before.",
+            ) {
+                MsToggle(checked = dtCenterPause, onCheckedChange = {
+                    dtCenterPause = it
+                    LanguagePrefs.setDoubleTapCenterPause(context, it)
+                    MsToast.show(if (it) "Center double-tap pauses" else "Center double-tap seeks")
+                })
+            }
             SettingBlock(
                 title = "Subtitle language",
                 info = "The in-app player turns on this subtitle by itself. If the title has no file in the first language, the second one is used. Anything else stays in the player's subtitle menu.",
@@ -1646,7 +1657,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                 IosNavRow("Metadata") { AppUiState.settingsRoute = "Metadata" }
                 IosNavRow("Streaming & Storage") { AppUiState.settingsRoute = "Streaming & Storage" }
                 IosNavRow("Playback") { AppUiState.settingsRoute = "Playback" }
-                IosNavRow("Languages") { AppUiState.settingsRoute = "Languages" }
+                IosNavRow("In-app player") { AppUiState.settingsRoute = "In-app player" }
                 IosNavRow("Appearance & Library") { AppUiState.settingsRoute = "Appearance & Library" }
                 IosNavRow("Library Tools") { AppUiState.settingsRoute = "Library Tools" }
                 IosNavRow("Cloud Backup") { AppUiState.settingsRoute = "Cloud Backup" }
@@ -1697,7 +1708,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     "Metadata" -> MetadataSection()
                     "Streaming & Storage" -> StreamingSection()
                     "Playback" -> PlaybackSection()
-                    "Languages" -> LanguagesSection()
+                    "In-app player" -> InAppPlayerSection()
                     "Appearance & Library" -> AppearanceSection()
                     "Library Tools" -> LibraryToolsSection()
                     "Cloud Backup" -> BackupSection()
