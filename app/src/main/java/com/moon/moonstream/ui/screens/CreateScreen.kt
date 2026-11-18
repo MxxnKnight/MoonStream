@@ -272,6 +272,13 @@ fun CreateScreen(
                                 quality = quality,
                             ),
                         )
+                        // Carry the edit stamp over from the unmatched row
+                        // (moon's 2026-11-18 bug): a 0 stamp makes the next
+                        // scan think the message was edited and delete the
+                        // file — and the entry with it.
+                        db.unmatchedDao().editDateFor(f.channelId, f.messageId)
+                            ?.takeIf { it != 0L }
+                            ?.let { db.streamDao().setEditDate(f.channelId, f.messageId, it) }
                         db.unmatchedDao().deleteByMessage(f.channelId, f.messageId)
                     }
                 }

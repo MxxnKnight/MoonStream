@@ -481,7 +481,15 @@ object ScanManager {
                     hitCursor = true
                     if (pagesPastCursor < EDIT_LOOKBACK_PAGES) {
                         val stored = db.streamDao().storedEditDate(channelId, msg.id)
-                        if (stored != null && stored != msg.editDate) {
+                        if (stored != null && stored == 0L && msg.editDate != 0L) {
+                            // Rows created outside the scan (custom entries,
+                            // custom streams) never recorded an edit stamp —
+                            // 0 means "unknown", not "unedited". Adopt the
+                            // live stamp instead of treating it as an edit,
+                            // or the next scan deletes the file and its
+                            // entry with it (moon's 2026-11-18 bug).
+                            db.streamDao().setEditDate(channelId, msg.id, msg.editDate)
+                        } else if (stored != null && stored != msg.editDate) {
                             db.streamDao().findByMessage(channelId, msg.id)
                                 ?.let { affectedMedia += it.mediaId }
                             db.streamDao().deleteByMessage(channelId, msg.id)

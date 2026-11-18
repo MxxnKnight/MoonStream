@@ -465,6 +465,9 @@ interface UnmatchedDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(u: UnmatchedFileEntity)
 
+    @Query("SELECT editDate FROM unmatched_files WHERE channelId = :channelId AND messageId = :messageId")
+    suspend fun editDateFor(channelId: Long, messageId: Long): Long?
+
     @Query("DELETE FROM unmatched_files WHERE id = :id")
     suspend fun delete(id: Long)
 
