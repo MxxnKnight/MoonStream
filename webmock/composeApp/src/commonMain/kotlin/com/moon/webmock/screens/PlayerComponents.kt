@@ -214,10 +214,11 @@ data class MockSeekSegment(
  * Same behaviour as the app otherwise: played/buffered/remaining shades,
  * NO thumb dot (moon's rule), seek lands once on finger lift. Rest/scrub
  * heights come from the look (Current: 4dp at rest, 10dp while scrubbing).
- * Per-look styling (round 3): Stremio's wave gradient + glow underlay,
- * Nuvio's violet-pink-peach gradient + tinted buffer. Gradient fills
- * are built over the FULL bar width (like the real apps), so the color
- * at the playhead depends on progress — not compressed into the fill.
+ * Per-look styling (round 3): a purple gradient + glow underlay for
+ * the Stremio-inspired look, Nuvio's real violet-pink-peach gradient
+ * + tinted buffer for the Nuvio look. Gradient fills are built over
+ * the FULL bar width (like Nuvio's real track), so the color at the
+ * playhead depends on progress — not compressed into the fill.
  * Defaults reproduce Current exactly.
  */
 @Composable
@@ -300,9 +301,9 @@ fun MockSeekBar(
             },
         contentAlignment = Alignment.Center,
     ) {
-        // Gradients span the full bar (startX 0 to full width), like the
-        // real Stremio/Nuvio tracks — the fill shows the gradient up to
-        // the playhead instead of a compressed copy of it.
+        // Gradients span the full bar (startX 0 to full width), like
+        // Nuvio's real track — the fill shows the gradient up to the
+        // playhead instead of a compressed copy of it.
         val fullW = constraints.maxWidth.toFloat().coerceAtLeast(1f)
         // Base track (remaining).
         Box(

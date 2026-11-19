@@ -98,8 +98,10 @@ import kotlin.math.abs
 // In portrait the player doesn't fit (it's landscape-only, like the app),
 // so portrait shows what changed + how to try it; rotate to play.
 // 2026-11-19: three looks (PlayerLooks.kt) — Current, Stremio, Nuvio —
-// three full DESIGNS in each app's real style (grounded in their
-// open-source player code); switch them in App.kt's Look row. The 13
+// three full DESIGNS: Current is the approved one, Nuvio is based on
+// the real NuvioMobile player source, Stremio is inspired by Stremio's
+// web player + its purple accent (our take on its style, not its code);
+// switch them in App.kt's Look row. The 13
 // functions never change — no speed, no PiP, no extras — but each look
 // has its own button treatments, icons and seekbar. Compact mode
 // (maxHeight < 480dp, phone landscape) shrinks the transport and pulls
@@ -115,23 +117,25 @@ private sealed interface MockHud {
     data class Volume(override val fraction: Float) : MockHud
 }
 
-// Stremio brand colors (stremio-native/stremio-android, core/theme/
-// Colors.kt + presentation/screens/player/PlayerControls.kt):
-// AccentPurple, the glass surface, the overflow-menu background, the
-// full-height scrim, the ModernTimeline "wave" gradient (+ its 15%
-// glow copy), and the play button's radial glow (violet while playing,
-// emerald while paused).
-private val stremioAccent = Color(0xFF7457F2)
+// Stremio-inspired colors. Only the purple accent is Stremio's real
+// one: --primary-accent-color in stremio-web App/styles.less is
+// rgb(123, 91, 245) = #7B5BF5. The REST is our take on its style, not
+// its code: Stremio's Android player is not open source, and its web
+// player (ControlBar.js/SeekBar.js) is a bottom bar with a SOLID
+// accent seekbar WITH a thumb. No top pill, no glass, no gradient in
+// Stremio's own code — the pill, the glowing play button and the
+// purple-gradient seekbar here are invented for this mockup.
+private val stremioAccent = Color(0xFF7B5BF5)
 private val stremioGlass = Color(0xB72A2935)
 private val stremioMenuBg = Color(0xEE141422)
 private val stremioScrim = Color(0xE60A0A14)
-private val stremioWave = listOf(Color(0xFF7457F2), Color(0xFFC084FC), Color(0xFFFF8A65))
-private val stremioWaveGlow = stremioWave.map { it.copy(alpha = 0.15f) }
+private val stremioGradient = listOf(Color(0xFF7B5BF5), Color(0xFFC084FC), Color(0xFFFF8A65))
+private val stremioGradientGlow = stremioGradient.map { it.copy(alpha = 0.15f) }
 private val stremioGlowPlaying = Color(0x338B5CF6)
 private val stremioGlowPaused = Color(0x3310B981)
 
-// Nuvio's default accent gradient (NuvioMedia/NuvioMobile,
-// CustomThemeColors.Default): violet -> pink -> peach. The timeline
+// Nuvio's accent gradient (NuvioMedia/NuvioMobile,
+// CustomThemeColors): violet -> pink -> peach. The timeline
 // fill is this gradient; the buffer is the first stop at 35%.
 private val nuvioGradient = listOf(Color(0xFFB75AFF), Color(0xFFEC70A9), Color(0xFFFFB37A))
 private val nuvioAccent = Color(0xFFB75AFF)
@@ -360,8 +364,9 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
     var volume by remember { mutableStateOf(0.6f) }
     var sheet by remember { mutableStateOf<MockSheet?>(null) }
     // Stremio look: the top pill's overflow menu (Subtitles, Audio and
-    // the rest live there, like the real app). Closes when the controls
-    // auto-hide, when a sheet opens, or when the look changes.
+    // the rest live there — Stremio's web player has the same kind of
+    // overflow menu). Closes when the controls auto-hide, when a sheet
+    // opens, or when the look changes.
     var stremioMenuOpen by remember { mutableStateOf(false) }
     var locked by remember { mutableStateOf(false) }
     var showUnlock by remember { mutableStateOf(false) }
@@ -862,10 +867,10 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
         }
     }
 
-    // -- Stremio look (ModernPlayerControls): a glass top pill, glass
-    // center buttons with a glowing play button, a glass bottom card
-    // holding only the wave seekbar, and the other tools in the pill's
-    // overflow menu — like the real app.
+    // -- Stremio-inspired look: a glass top pill, glass center
+    // buttons with a glowing play button, a glass bottom card holding
+    // only the purple-gradient seekbar, and the other tools in the
+    // pill's overflow menu (our take on its style, not its code).
 
     /** The glass top pill: back, title, more-menu button. */
     @Composable
@@ -1125,10 +1130,10 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
     }
 
     /**
-     * Stremio's bottom card: just the timeline (ModernTimeline) — the
-     * 4dp wave-gradient seekbar with its glow underlay, current time
+     * Stremio's bottom card: just the timeline — the 4dp
+     * purple-gradient seekbar with its glow underlay, current time
      * left and remaining time right below it. No thumb dot (moon's
-     * rule — the real app's handle stays out).
+     * rule — the real Stremio bar has a thumb; this one doesn't).
      */
     @Composable
     fun StremioBottomCard() {
@@ -1155,8 +1160,8 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
                     scrubHeight = 6.dp,
                     trackAlpha = 0.15f,
                     bufferAlpha = 0.30f,
-                    fillColors = stremioWave,
-                    glowColors = stremioWaveGlow,
+                    fillColors = stremioGradient,
+                    glowColors = stremioGradientGlow,
                 )
                 Row(
                     modifier = Modifier
@@ -1681,7 +1686,7 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
 
         // Bottom cluster — this is where the designs split:
         // Current: button row, then the seekbar row. Stremio: the glass
-        // card with the wave seekbar only. Nuvio: title + seekbar +
+        // card with the purple-gradient seekbar only. Nuvio: title + seekbar +
         // action row stacked at the bottom.
         AnimatedVisibility(
             visible = controlsVisible && !locked,
