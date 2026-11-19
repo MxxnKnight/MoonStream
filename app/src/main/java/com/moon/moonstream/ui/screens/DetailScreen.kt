@@ -727,7 +727,7 @@ fun DetailScreen(
                 }
             }
 
-            // Three equal pill buttons: Play / Copy Link / Add Subtitle.
+            // Three equal pill buttons: Play / Copy / Subtitle.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -741,7 +741,7 @@ fun DetailScreen(
                     icon = ImageVector.vectorResource(R.drawable.ic_lucide_circle_play),
                 )
                 MsOutlinePill(
-                    text = "Copy Link",
+                    text = "Copy",
                     onClick = {
                         val first = files.firstOrNull()
                         if (first != null) copyLink(first)
@@ -766,11 +766,10 @@ fun DetailScreen(
             }
 
             // Secondary actions (moon's 2026-11-07 + 2026-11-09 icons):
-            // Fix Metadata / Add Custom Stream share one row, the move-between-
-            // tabs pill gets its own full-width row. Three pill labels plus
-            // w icons cannot fit across a 360–410dp phone, and "Add Custom
-            // Stream" was already being clipped there, so this gives every
-            // label room instead of shrinking the text further.
+            // Fix Metadata / Add Stream share one row, the move-between-
+            // tabs pill gets its own full-width row. "Add Custom Stream"
+            // was clipped even here, so the label is "Add Stream" now
+            // (moon's 2026-11-19) — same for "Copy Link", now "Copy".
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -783,7 +782,7 @@ fun DetailScreen(
                     icon = Icons.Outlined.AutoFixHigh,
                 )
                 MsOutlinePill(
-                    text = "Add Custom Stream",
+                    text = "Add Stream",
                     onClick = { showAddStream = true },
                     modifier = Modifier.weight(1f),
                     fontSize = 13,
@@ -1089,6 +1088,11 @@ fun DetailScreen(
                                 db.streamDao().updateSeasonEpisode(
                                     f.id, season, episode
                                 )
+                                // Recalculate the stored counts (moon's
+                                // 2026-11-19: without this the header kept
+                                // the old episode count while the season
+                                // list counted live — 5 up top, 6 below).
+                                db.mediaDao().refreshAggregates(m.id, System.currentTimeMillis())
                                 withContext(Dispatchers.Main) {
                                     MsToast.show("Linked to S${season ?: 1} E$episode")
                                     setEpisodeFile = null

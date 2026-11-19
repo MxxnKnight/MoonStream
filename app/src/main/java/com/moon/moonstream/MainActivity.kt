@@ -168,6 +168,17 @@ class MainActivity : ComponentActivity() {
             val db = com.moon.moonstream.index.db.MsDatabase.get(this@MainActivity)
             val n = db.mediaDao().deleteEmpty()
             if (n > 0) com.moon.moonstream.util.AppLog.i("LIB", "deleted $n empty entries")
+            // One-time repair (moon's 2026-11-19): the Set-episode dialog
+            // saved episode numbers without refreshing the stored counts,
+            // so some entries show a stale episode count up top while the
+            // season list is right. Recompute every entry's aggregates
+            // once, then never again (the flag is set only on success, so
+            // a failed run retries next launch).
+            if (!com.moon.moonstream.ui.state.SettingsPrefs.getBool(this@MainActivity, "aggregates_repaired_20261119", false)) {
+                db.mediaDao().refreshAllAggregates()
+                com.moon.moonstream.ui.state.SettingsPrefs.setBool(this@MainActivity, "aggregates_repaired_20261119", true)
+                com.moon.moonstream.util.AppLog.i("LIB", "repaired stored aggregates (one-time)")
+            }
         } catch (e: Exception) {
             com.moon.moonstream.util.AppLog.w("LIB", "empty-entry cleanup failed: ${e.message}")
         }

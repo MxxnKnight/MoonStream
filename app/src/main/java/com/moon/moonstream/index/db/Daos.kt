@@ -234,6 +234,21 @@ interface MediaDao {
     )
     suspend fun refreshAggregates(mediaId: Long, now: Long)
 
+    /** Recomputes aggregates for EVERY entry at once — one-time repair
+     *  for entries whose stored counts went stale (moon's 2026-11-19:
+     *  the Set-episode dialog saved episode numbers without refreshing,
+     *  so the header count disagreed with the season list). Deliberately
+     *  leaves updatedAt alone: it drives Recently Added order, and a
+     *  mass bump would scramble it. */
+    @Query(
+        """UPDATE media_items SET
+               totalSize = (SELECT COALESCE(SUM(fileSize), 0) FROM stream_files WHERE mediaId = media_items.id),
+               fileCount = (SELECT COUNT(*) FROM stream_files WHERE mediaId = media_items.id),
+               episodeCount = (SELECT COUNT(DISTINCT season || 'x' || episode) FROM stream_files
+                               WHERE mediaId = media_items.id AND episode IS NOT NULL)""",
+    )
+    suspend fun refreshAllAggregates()
+
     @Query("DELETE FROM media_items WHERE channelId = :channelId")
     suspend fun deleteByChannel(channelId: Long)
 
