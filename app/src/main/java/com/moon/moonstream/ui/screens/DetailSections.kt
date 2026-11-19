@@ -91,6 +91,7 @@ import androidx.compose.ui.unit.sp
 import com.moon.moonstream.index.db.MediaItemEntity
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.index.db.SubtitleFileEntity
+import com.moon.moonstream.index.parse.SplitFiles
 import com.moon.moonstream.index.parse.normalizeTitle
 import com.moon.moonstream.ui.components.BareIconButton
 import com.moon.moonstream.ui.components.LimePillButton
@@ -310,6 +311,93 @@ private fun EpisodeCard(
     }
 }
 
+/** Split-file card (movies): one row per split file — filename +
+ *  Split tag + part count — expanding to its parts, like an episode
+ *  card. (moon's request 2026-11-19: six .001/.002 rows were six
+ *  streams.) */
+@Composable
+fun SplitFileCard(
+    parts: List<StreamFileEntity>,
+    onPlay: (StreamFileEntity) -> Unit,
+    onCopy: (StreamFileEntity) -> Unit,
+    onDelete: (StreamFileEntity) -> Unit,
+    onFixFile: (StreamFileEntity) -> Unit,
+    /** Open in an external video app (mpvRx, VLC…) via the addon server. */
+    onOpenExternal: (StreamFileEntity) -> Unit,
+    watchedAt: Map<Long, Long> = emptyMap(),
+    onSetEpisode: ((StreamFileEntity) -> Unit)? = null,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val first = parts.first()
+    val name = com.moon.moonstream.index.parse.FilenameParser.cleanDisplayName(
+        SplitFiles.baseName(first.fileName),
+    )
+
+    MsCard(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // No ripple on tap (moon's request 2026-11-01) — still expands.
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                    ) { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    // Tag on its own line so it never squeezes the
+                    // filename (moon's bug 2026-11-01).
+                    QualityChip("Split")
+                    Text(
+                        name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MsColors.TextPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "${parts.size} parts · ${formatBytes(parts.sumOf { it.fileSize })}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MsColors.TextSecondary,
+                    )
+                }
+                Icon(
+                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    tint = MsColors.TextSecondary,
+                )
+            }
+
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    parts.forEach { f ->
+                        FileRow(
+                            stream = f,
+                            onPlay = { onPlay(f) },
+                            onCopy = { onCopy(f) },
+                            onDelete = { onDelete(f) },
+                            onFixFile = { onFixFile(f) },
+                            onOpenExternal = { onOpenExternal(f) },
+                            watchedAt = watchedAt[f.id],
+                            onSetEpisode = onSetEpisode?.let { fn -> { fn(f) } },
+                            partNumber = SplitFiles.partNumber(f.fileName),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** One file row inside an expanded episode / movie list. */
 @Composable
 fun FileRow(
@@ -324,6 +412,8 @@ fun FileRow(
     watchedAt: Long? = null,
     /** Manual season/episode assignment (moon's pick 2026-11-02). Null = hide. */
     onSetEpisode: (() -> Unit)? = null,
+    /** Split part number — shows "Part N" before the size. Null = hide. */
+    partNumber: Int? = null,
 ) {
     val context = LocalContext.current
     Box(
@@ -357,7 +447,8 @@ fun FileRow(
                 QualityChip(stream.quality)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    formatBytes(stream.fileSize),
+                    if (partNumber != null) "Part $partNumber · ${formatBytes(stream.fileSize)}"
+                    else formatBytes(stream.fileSize),
                     style = MaterialTheme.typography.bodySmall,
                     color = MsColors.TextSecondary,
                     modifier = Modifier.weight(1f),

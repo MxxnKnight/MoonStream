@@ -49,4 +49,35 @@ object SplitFiles {
         )
         return if (seq.size > 1) seq else listOf(file)
     }
+
+    /**
+     * Groups [files] for the Detail screen: the parts of one split
+     * file (same base name + season + episode) become one group, in
+     * play order; everything else stays a group of one. Order is the
+     * input order — a group sits where its first part sat. A lone
+     * .001 (no siblings in the list) stays a single, like
+     * sequenceFor.
+     */
+    fun groupFiles(files: List<StreamFileEntity>): List<List<StreamFileEntity>> {
+        val runs = files.filter { isSplitPart(it.fileName) }
+            .groupBy { Triple(baseName(it.fileName), it.season, it.episode) }
+            .filterValues { it.size > 1 }
+            .mapValues { sortParts(it.value) }
+        val emitted = mutableSetOf<Triple<String, Int?, Int?>>()
+        val out = mutableListOf<List<StreamFileEntity>>()
+        for (f in files) {
+            if (!isSplitPart(f.fileName)) {
+                out.add(listOf(f))
+                continue
+            }
+            val key = Triple(baseName(f.fileName), f.season, f.episode)
+            val run = runs[key]
+            if (run == null) {
+                out.add(listOf(f)) // lone part, no siblings here
+                continue
+            }
+            if (emitted.add(key)) out.add(run)
+        }
+        return out
+    }
 }

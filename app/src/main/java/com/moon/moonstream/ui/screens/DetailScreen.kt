@@ -119,8 +119,10 @@ import kotlinx.coroutines.withContext
  *
  * Series/anime group streams by season: season pills → episode cards →
  * expandable file rows (copy link + delete per row). Movies keep the flat
- * file list. Subtitles indexed by the scanner show per episode/file with
- * their language; unlinked ones can be attached by hand.
+ * file list, except split files, which group into one expandable card
+ * per file (like an episode card). Subtitles indexed by the scanner show
+ * per episode/file with their language; unlinked ones can be attached
+ * by hand.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -844,17 +846,34 @@ fun DetailScreen(
                         color = MsColors.TextSecondary,
                     )
                 }
-                files.forEach { f ->
-                    StreamRow(
-                        stream = f,
-                        onPlay = { playInApp(f) },
-                        onCopy = { copyLink(f) },
-                        onDelete = { fileToDelete = f },
-                        onFixFile = { fixFile = f; fixMode = FixMode.FIX_FILE },
-                        onOpenExternal = { playExternal(f) },
-                        watchedAt = watchedAt[f.id],
-                        onSetEpisode = { setEpisodeFile = f },
-                    )
+                // Split files group into one expandable card per file
+                // (moon's request 2026-11-19); lone files stay flat rows.
+                val fileGroups = remember(files) { SplitFiles.groupFiles(files) }
+                fileGroups.forEach { group ->
+                    if (group.size > 1) {
+                        SplitFileCard(
+                            parts = group,
+                            onPlay = { playInApp(it) },
+                            onCopy = { copyLink(it) },
+                            onDelete = { fileToDelete = it },
+                            onFixFile = { fixFile = it; fixMode = FixMode.FIX_FILE },
+                            onOpenExternal = { playExternal(it) },
+                            watchedAt = watchedAt,
+                            onSetEpisode = { setEpisodeFile = it },
+                        )
+                    } else {
+                        val f = group[0]
+                        StreamRow(
+                            stream = f,
+                            onPlay = { playInApp(f) },
+                            onCopy = { copyLink(f) },
+                            onDelete = { fileToDelete = f },
+                            onFixFile = { fixFile = f; fixMode = FixMode.FIX_FILE },
+                            onOpenExternal = { playExternal(f) },
+                            watchedAt = watchedAt[f.id],
+                            onSetEpisode = { setEpisodeFile = f },
+                        )
+                    }
                 }
                 SubtitleSection(
                     title = "Subtitles",
