@@ -162,7 +162,7 @@ fun App() {
                         Spacer(Modifier.weight(1f))
                         ScreenPills()
                     }
-                    // Look picker (player only): same buttons, different layout.
+                    // Look picker (player only): three player designs.
                     if (screen == MockScreen.PLAYER) {
                         Row(
                             modifier = Modifier

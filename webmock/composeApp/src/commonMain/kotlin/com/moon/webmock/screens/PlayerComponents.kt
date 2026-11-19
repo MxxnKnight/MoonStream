@@ -58,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -136,6 +137,7 @@ fun MockPlayerIconButton(
     active: Boolean = false,
     fillAlpha: Float = 0.12f,
     border: Boolean = true,
+    borderAlpha: Float = 0.2f,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
@@ -145,7 +147,7 @@ fun MockPlayerIconButton(
         shape = CircleShape,
         color = Color.White.copy(alpha = fillAlpha),
         modifier = modifier.size(size).mockPressScale(),
-        border = if (border) BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)) else null,
+        border = if (border) BorderStroke(1.dp, Color.White.copy(alpha = borderAlpha)) else null,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -156,6 +158,41 @@ fun MockPlayerIconButton(
                 modifier = Modifier.size(iconSize),
             )
         }
+    }
+}
+
+/**
+ * Nuvio-style button: a bare white icon, no circle, no fill, no border
+ * (NuvioMobile's PlayerAction is a plain 48dp IconButton). The icon is
+ * the whole button — the press shrink is the only feedback.
+ */
+@Composable
+fun MockBareIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    size: Dp = 48.dp,
+    iconSize: Dp = 24.dp,
+    active: Boolean = false,
+    activeColor: Color = MsColors.Accent,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .mockPressScale()
+            .clip(CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = if (active) activeColor
+                else Color.White.copy(alpha = if (enabled) 1f else 0.35f),
+            modifier = Modifier.size(iconSize),
+        )
     }
 }
 
@@ -177,6 +214,11 @@ data class MockSeekSegment(
  * Same behaviour as the app otherwise: played/buffered/remaining shades,
  * NO thumb dot (moon's rule), seek lands once on finger lift. Rest/scrub
  * heights come from the look (Current: 4dp at rest, 10dp while scrubbing).
+ * Per-look styling (round 3): Stremio's wave gradient + glow underlay,
+ * Nuvio's violet-pink-peach gradient + tinted buffer. Gradient fills
+ * are built over the FULL bar width (like the real apps), so the color
+ * at the playhead depends on progress — not compressed into the fill.
+ * Defaults reproduce Current exactly.
  */
 @Composable
 fun MockSeekBar(
@@ -192,6 +234,14 @@ fun MockSeekBar(
     trimEndMs: Long? = null,
     restHeight: Dp = 4.dp,
     scrubHeight: Dp = 10.dp,
+    trackAlpha: Float = 0.20f,
+    bufferAlpha: Float = 0.62f,
+    /** Solid buffer color; when null the buffer is white at bufferAlpha. */
+    bufferTint: Color? = null,
+    /** Gradient for the played fill; when null it is the solid Accent. */
+    fillColors: List<Color>? = null,
+    /** Gradient for the taller glow underlay beneath the played fill. */
+    glowColors: List<Color>? = null,
 ) {
     var isScrubbing by remember { mutableStateOf(false) }
     var scrubMs by remember { mutableStateOf<Long?>(null) }
@@ -250,13 +300,17 @@ fun MockSeekBar(
             },
         contentAlignment = Alignment.Center,
     ) {
+        // Gradients span the full bar (startX 0 to full width), like the
+        // real Stremio/Nuvio tracks — the fill shows the gradient up to
+        // the playhead instead of a compressed copy of it.
+        val fullW = constraints.maxWidth.toFloat().coerceAtLeast(1f)
         // Base track (remaining).
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(barHeight)
                 .clip(RoundedCornerShape(50))
-                .background(Color.White.copy(alpha = 0.20f)),
+                .background(Color.White.copy(alpha = trackAlpha)),
         )
         // Buffer fill.
         if (bufferFrac > 0f) {
@@ -266,7 +320,25 @@ fun MockSeekBar(
                     .fillMaxWidth(bufferFrac.coerceIn(0f, 1f))
                     .height(barHeight)
                     .clip(RoundedCornerShape(50))
-                    .background(Color.White.copy(alpha = 0.62f)),
+                    .background(bufferTint ?: Color.White.copy(alpha = bufferAlpha)),
+            )
+        }
+        // Glow underlay (Stremio): a taller, faint copy of the gradient
+        // behind the played fill, so the bar glows around the playhead.
+        if (glowColors != null && displayFrac > 0f) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxWidth(displayFrac)
+                    .height(barHeight + 4.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = glowColors,
+                            startX = 0f,
+                            endX = fullW,
+                        ),
+                    ),
             )
         }
         // Played fill (follows the scrub preview while dragging).
@@ -277,7 +349,17 @@ fun MockSeekBar(
                     .fillMaxWidth(displayFrac)
                     .height(barHeight)
                     .clip(RoundedCornerShape(50))
-                    .background(MsColors.Accent),
+                    .background(
+                        if (fillColors != null) {
+                            Brush.horizontalGradient(
+                                colors = fillColors,
+                                startX = 0f,
+                                endX = fullW,
+                            )
+                        } else {
+                            SolidColor(MsColors.Accent)
+                        },
+                    ),
             )
         }
         // Segment markers (NEW): drawn above the played fill so they stay

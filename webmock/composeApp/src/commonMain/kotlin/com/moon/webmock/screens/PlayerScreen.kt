@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -21,6 +22,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,6 +43,7 @@ import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
@@ -48,6 +52,12 @@ import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.outlined.FastForward
+import androidx.compose.material.icons.outlined.FastRewind
+import androidx.compose.material.icons.rounded.Forward10
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Replay10
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -60,10 +70,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -84,13 +97,14 @@ import kotlin.math.abs
 // Borderland S1, 24:00, intro 0:00-1:30, outro 22:30-24:00.
 // In portrait the player doesn't fit (it's landscape-only, like the app),
 // so portrait shows what changed + how to try it; rotate to play.
-// 2026-11-19: three looks (PlayerLooks.kt) — Current, Tube, Rail —
-// same buttons, same styling, only the ARRANGEMENT differs; switch
-// them in App.kt's Look row. (The first round only restyled one layout;
-// moon rightly said they were all the same, so this round moves the
-// controls instead.) Compact mode (maxHeight < 480dp, phone landscape)
-// shrinks the transport and pulls the floating bits down so nothing
-// overlaps the top bar — the fixed desktop offsets collided there.
+// 2026-11-19: three looks (PlayerLooks.kt) — Current, Stremio, Nuvio —
+// three full DESIGNS in each app's real style (grounded in their
+// open-source player code); switch them in App.kt's Look row. The 13
+// functions never change — no speed, no PiP, no extras — but each look
+// has its own button treatments, icons and seekbar. Compact mode
+// (maxHeight < 480dp, phone landscape) shrinks the transport and pulls
+// the floating bits down so nothing overlaps the top bar — the fixed
+// desktop offsets collided there.
 // ---------------------------------------------------------------------------
 
 private enum class MockSheet { SUBS, AUDIO, EPISODES, SUBLINES, PLAYLIST }
@@ -100,6 +114,27 @@ private sealed interface MockHud {
     data class Brightness(override val fraction: Float) : MockHud
     data class Volume(override val fraction: Float) : MockHud
 }
+
+// Stremio brand colors (stremio-native/stremio-android, core/theme/
+// Colors.kt + presentation/screens/player/PlayerControls.kt):
+// AccentPurple, the glass surface, the overflow-menu background, the
+// full-height scrim, the ModernTimeline "wave" gradient (+ its 15%
+// glow copy), and the play button's radial glow (violet while playing,
+// emerald while paused).
+private val stremioAccent = Color(0xFF7457F2)
+private val stremioGlass = Color(0xB72A2935)
+private val stremioMenuBg = Color(0xEE141422)
+private val stremioScrim = Color(0xE60A0A14)
+private val stremioWave = listOf(Color(0xFF7457F2), Color(0xFFC084FC), Color(0xFFFF8A65))
+private val stremioWaveGlow = stremioWave.map { it.copy(alpha = 0.15f) }
+private val stremioGlowPlaying = Color(0x338B5CF6)
+private val stremioGlowPaused = Color(0x3310B981)
+
+// Nuvio's default accent gradient (NuvioMedia/NuvioMobile,
+// CustomThemeColors.Default): violet -> pink -> peach. The timeline
+// fill is this gradient; the buffer is the first stop at 35%.
+private val nuvioGradient = listOf(Color(0xFFB75AFF), Color(0xFFEC70A9), Color(0xFFFFB37A))
+private val nuvioAccent = Color(0xFFB75AFF)
 
 private val mockChanges = listOf(
     "Segment markers on the seekbar" to
@@ -189,9 +224,11 @@ private fun PlayerPortraitNotes(look: PlayerLook) {
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "Same buttons, same styling — just arranged three different " +
-                    "ways. Switch them in the Look row above the player. " +
-                    "Playback keeps going when you switch.",
+                "Three full player designs — the current one, one in " +
+                    "Stremio's style, one in Nuvio's. Same 13 buttons, no " +
+                    "extras, just each app's own look. Switch them in the " +
+                    "Look row above the player. Playback keeps going when " +
+                    "you switch.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MsColors.TextSecondary,
             )
@@ -322,6 +359,10 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
     var brightness by remember { mutableStateOf(0.7f) }
     var volume by remember { mutableStateOf(0.6f) }
     var sheet by remember { mutableStateOf<MockSheet?>(null) }
+    // Stremio look: the top pill's overflow menu (Subtitles, Audio and
+    // the rest live there, like the real app). Closes when the controls
+    // auto-hide, when a sheet opens, or when the look changes.
+    var stremioMenuOpen by remember { mutableStateOf(false) }
     var locked by remember { mutableStateOf(false) }
     var showUnlock by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }
@@ -432,11 +473,17 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
     }
     // Controls auto-hide 3s after the last interaction (while playing).
     // Not while trimming (the app keeps them up for the trimmer).
+    // The Stremio menu closes with them, so it never reappears stale.
     LaunchedEffect(interactNonce, isPlaying, scrubMs, showTrim) {
         if (isPlaying && controlsVisible && scrubMs == null && !showTrim) {
             delay(3000)
             controlsVisible = false
+            stremioMenuOpen = false
         }
+    }
+    // A look switch closes the Stremio menu (it only exists there).
+    LaunchedEffect(look) {
+        stremioMenuOpen = false
     }
     LaunchedEffect(seekFeedback) {
         if (seekFeedback != null) {
@@ -473,34 +520,52 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
         else -> "Arisu: This world... it's not the one we knew."
     }
 
-    // Per-look clearances: Current and Tube share the same bottom height
-    // (a button row + the seekbar row), so pills and subtitles sit at the
-    // same height in both; Rail's bottom is only the seekbar row, so they
-    // sit lower — and its right-side pills shift left, clear of the rail.
+    // Per-look clearances: the bottom block's height decides where the
+    // subtitle, pills and NextUp sit. Current: button row + seekbar row.
+    // Stremio: the glass card (~90dp). Nuvio: title + seekbar + action
+    // row (~160dp) — the tallest, so its bits sit highest; in compact
+    // mode Nuvio drops the release-info line to save 20dp.
     // Compact (phone landscape, ~215-280dp tall): shrink the fixed
     // offsets FIRST — that is what collided in moon's screenshot — and
     // the transport second. The 45dp buttons stay 45dp everywhere.
     val subClearance = when {
-        look == PlayerLook.RAIL && compact -> 48.dp
-        look == PlayerLook.RAIL -> 84.dp
+        look == PlayerLook.NUVIO && compact -> 140.dp
+        look == PlayerLook.NUVIO -> 184.dp
+        look == PlayerLook.STREMIO && compact -> 96.dp
+        look == PlayerLook.STREMIO -> 128.dp
         compact -> 96.dp
         else -> 132.dp
     }
     val pillBottom = when {
-        look == PlayerLook.RAIL && compact -> 48.dp
-        look == PlayerLook.RAIL -> 56.dp
+        look == PlayerLook.NUVIO && compact -> 136.dp
+        look == PlayerLook.NUVIO -> 188.dp
+        look == PlayerLook.STREMIO && compact -> 100.dp
+        look == PlayerLook.STREMIO -> 132.dp
         compact -> 96.dp
         else -> 104.dp
     }
-    val pillEnd = if (look == PlayerLook.RAIL) 84.dp else 16.dp
+    val pillEnd = 16.dp
     val nextUpBottom = when {
-        look == PlayerLook.RAIL && compact -> 104.dp
-        look == PlayerLook.RAIL -> 120.dp
+        look == PlayerLook.NUVIO && compact -> 196.dp
+        look == PlayerLook.NUVIO -> 248.dp
+        look == PlayerLook.STREMIO && compact -> 156.dp
+        look == PlayerLook.STREMIO -> 192.dp
         compact -> 152.dp
         else -> 168.dp
     }
-    val hudTop = if (compact) 68.dp else 76.dp
-    val toastBottom = if (compact) 120.dp else 160.dp
+    // Stremio's HUD sits below the top pill; Nuvio/Current keep the old spot.
+    val hudTop = when {
+        look == PlayerLook.STREMIO && compact -> 80.dp
+        look == PlayerLook.STREMIO -> 84.dp
+        compact -> 68.dp
+        else -> 76.dp
+    }
+    val toastBottom = when {
+        look == PlayerLook.NUVIO && compact -> 170.dp
+        look == PlayerLook.NUVIO -> 220.dp
+        compact -> 120.dp
+        else -> 160.dp
+    }
     val playSize = if (compact) 56.dp else 76.dp
     val playIconSize = if (compact) 28.dp else 38.dp
     val seek10Size = if (compact) 44.dp else 52.dp
@@ -510,10 +575,12 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
     val bottomTopPadding = if (compact) 6.dp else 8.dp
     val bottomBottomPadding = if (compact) 8.dp else 12.dp
 
-    // -- Control pieces, shared by all three layouts. Only the ARRANGEMENT
-    // differs per look (Current/Tube/Rail below); every button here keeps
-    // Current's styling — 45dp round buttons, same seekbar, same pills.
-    // Local composables so they share this scope's state and callbacks.
+    // -- Control pieces. The first group is Current's: 45dp round
+    // buttons, the title pill, the same seekbar and pills. Stremio and
+    // Nuvio get their own pieces below (glass pill + menu + glowing
+    // play; bare icons + bottom title block) — same 13 functions, each
+    // app's own styling. Local composables so they share this scope's
+    // state and callbacks.
     @Composable
     fun BackButton() {
         MockPlayerIconButton(
@@ -665,7 +732,7 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
         }
     }
 
-    /** The five top-bar tools as one row (Current + Tube top bars). */
+    /** The five top-bar tools as one row (Current's top bar). */
     @Composable
     fun TopCluster() {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -677,7 +744,7 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
         }
     }
 
-    /** Center transport: -10s / play-pause / +10s (Current + Rail). */
+    /** Center transport: -10s / play-pause / +10s (Current). */
     @Composable
     fun CenterTransport() {
         Row(
@@ -725,7 +792,7 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
         }
     }
 
-    /** Current time + seekbar + total time (all three bottom bars). */
+    /** Current time + seekbar + total time (Current's bottom bar). */
     @Composable
     fun SeekRow() {
         Row(
@@ -795,92 +862,550 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
         }
     }
 
-    /** Tube's bottom transport row: Play, -10, +10, Next | Subs, Audio, Aspect. */
+    // -- Stremio look (ModernPlayerControls): a glass top pill, glass
+    // center buttons with a glowing play button, a glass bottom card
+    // holding only the wave seekbar, and the other tools in the pill's
+    // overflow menu — like the real app.
+
+    /** The glass top pill: back, title, more-menu button. */
     @Composable
-    fun TransportRow() {
-        Row(
+    fun StremioTopPill() {
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = stremioGlass,
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
             modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier.padding(start = 6.dp, end = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MockPlayerIconButton(
+                    icon = Icons.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    onClick = { toast = "Back — closes the player in the app (mock)" },
+                    size = 40.dp,
+                    iconSize = 22.dp,
+                    fillAlpha = 0f,
+                    border = false,
+                )
+                Text(
+                    text = "Alice in Borderland — S1 E$episode",
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp)
+                        .clickable {
+                            stremioMenuOpen = false
+                            sheet = MockSheet.EPISODES
+                        },
+                )
+                MockPlayerIconButton(
+                    icon = Icons.Filled.MoreVert,
+                    contentDescription = "More",
+                    onClick = {
+                        stremioMenuOpen = !stremioMenuOpen
+                        poke()
+                    },
+                    size = 40.dp,
+                    iconSize = 22.dp,
+                    fillAlpha = 0f,
+                    border = false,
+                )
+            }
+        }
+    }
+
+    /** One row of the overflow menu: icon + label, closes on tap. */
+    @Composable
+    fun StremioMenuRow(
+        icon: ImageVector,
+        label: String,
+        onClick: () -> Unit,
+        active: Boolean = false,
+        enabled: Boolean = true,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(enabled = enabled) {
+                    stremioMenuOpen = false
+                    onClick()
+                }
+                .padding(horizontal = 12.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (active) stremioAccent
+                    else Color.White.copy(alpha = if (enabled) 1f else 0.35f),
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                label,
+                color = Color.White.copy(alpha = if (enabled) 1f else 0.35f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+
+    /**
+     * The overflow menu: every tool that isn't Back, the transport or
+     * the seekbar — Subtitles, Audio, Episodes, Playlist, Screenshot,
+     * Trim, Lock, Next episode, Aspect. Scrollable, so it fits a short
+     * phone screen too.
+     */
+    @Composable
+    fun StremioMenu() {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = stremioMenuBg,
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+            modifier = Modifier
+                .width(240.dp)
+                .heightIn(max = if (compact) 220.dp else 320.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(6.dp),
+            ) {
+                StremioMenuRow(
+                    icon = Icons.Filled.ClosedCaption,
+                    label = "Subtitles",
+                    onClick = { sheet = MockSheet.SUBS },
+                    active = subTrack != 0,
+                    enabled = !showTrim,
+                )
+                StremioMenuRow(
+                    icon = Icons.Filled.Audiotrack,
+                    label = "Audio",
+                    onClick = { sheet = MockSheet.AUDIO },
+                    enabled = !showTrim,
+                )
+                StremioMenuRow(
+                    icon = Icons.Filled.PlaylistPlay,
+                    label = "Episodes",
+                    onClick = { sheet = MockSheet.EPISODES },
+                    enabled = !showTrim,
+                )
+                StremioMenuRow(
+                    icon = Icons.Filled.List,
+                    label = "Playlist",
+                    onClick = { sheet = MockSheet.PLAYLIST },
+                    enabled = !showTrim,
+                )
+                StremioMenuRow(
+                    icon = Icons.Filled.PhotoCamera,
+                    label = "Screenshot",
+                    onClick = { toast = "Screenshot saved (mock)" },
+                    enabled = !showTrim,
+                )
+                StremioMenuRow(
+                    icon = Icons.Filled.ContentCut,
+                    label = "Trim clip",
+                    onClick = {
+                        showTrim = !showTrim
+                        if (!showTrim) trimLoop = false
+                    },
+                    active = showTrim,
+                )
+                StremioMenuRow(
+                    icon = Icons.Filled.Lock,
+                    label = "Lock controls",
+                    onClick = {
+                        locked = true
+                        controlsVisible = false
+                        showUnlock = true
+                    },
+                    enabled = !showTrim,
+                )
+                if (episode < 8) {
+                    StremioMenuRow(
+                        icon = Icons.Filled.SkipNext,
+                        label = "Next episode",
+                        onClick = { nextEpisode() },
+                        enabled = !showTrim,
+                    )
+                }
+                StremioMenuRow(
+                    icon = Icons.Filled.AspectRatio,
+                    label = "Aspect: ${aspects[aspectIndex]}",
+                    onClick = { aspectIndex = (aspectIndex + 1) % aspects.size },
+                    enabled = !showTrim,
+                )
+            }
+        }
+    }
+
+    /**
+     * Stremio's center: 38dp glass circles with OUTLINED rewind/forward
+     * icons, and the 58dp glass play button inside a 92dp radial glow —
+     * violet while playing, emerald while paused.
+     */
+    @Composable
+    fun StremioCenterTransport() {
+        val sideSize = if (compact) 36.dp else 38.dp
+        val playSizeS = if (compact) 52.dp else 58.dp
+        val glowSize = if (compact) 84.dp else 92.dp
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             MockPlayerIconButton(
+                icon = Icons.Outlined.FastRewind,
+                contentDescription = "Back 10s",
+                onClick = {
+                    seekBy(-10_000L)
+                    seekFeedback = false to 10
+                },
+                size = sideSize,
+                iconSize = 20.dp,
+                fillAlpha = 0.10f,
+                borderAlpha = 0.25f,
+            )
+            Box(
+                modifier = Modifier
+                    .size(glowSize)
+                    .drawBehind {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    if (isPlaying) stremioGlowPlaying else stremioGlowPaused,
+                                    Color.Transparent,
+                                ),
+                                center = center,
+                                radius = size.width / 2,
+                            ),
+                            radius = size.width / 2,
+                        )
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Surface(
+                    onClick = {
+                        isPlaying = !isPlaying
+                        poke()
+                    },
+                    shape = CircleShape,
+                    color = Color(0x16000000),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                    modifier = Modifier.size(playSizeS).mockPressScale(),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            if (isPlaying) "Pause" else "Play",
+                            tint = Color.White,
+                            modifier = Modifier.size(if (compact) 26.dp else 28.dp),
+                        )
+                    }
+                }
+            }
+            MockPlayerIconButton(
+                icon = Icons.Outlined.FastForward,
+                contentDescription = "Forward 10s",
+                onClick = {
+                    seekBy(10_000L)
+                    seekFeedback = true to 10
+                },
+                size = sideSize,
+                iconSize = 20.dp,
+                fillAlpha = 0.10f,
+                borderAlpha = 0.25f,
+            )
+        }
+    }
+
+    /**
+     * Stremio's bottom card: just the timeline (ModernTimeline) — the
+     * 4dp wave-gradient seekbar with its glow underlay, current time
+     * left and remaining time right below it. No thumb dot (moon's
+     * rule — the real app's handle stays out).
+     */
+    @Composable
+    fun StremioBottomCard() {
+        Surface(
+            shape = RoundedCornerShape(30.dp),
+            color = stremioGlass,
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
+                MockSeekBar(
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    bufferFrac = bufferFrac,
+                    segments = segments,
+                    onSeek = { positionMs = it; poke() },
+                    onScrubChange = { scrubMs = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    trimStartMs = trimStartMs,
+                    trimEndMs = trimEndMs,
+                    restHeight = 4.dp,
+                    scrubHeight = 6.dp,
+                    trackAlpha = 0.15f,
+                    bufferAlpha = 0.30f,
+                    fillColors = stremioWave,
+                    glowColors = stremioWaveGlow,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        mockFormatTime(scrubMs ?: positionMs),
+                        color = Color.White.copy(alpha = 0.76f),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        "-${mockFormatTime((durationMs - (scrubMs ?: positionMs)).coerceAtLeast(0L))}",
+                        color = Color.White.copy(alpha = 0.76f),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
+        }
+    }
+
+    // -- Nuvio look (PlayerControlsShell, modern layout): bare white
+    // icons with no circles, back + lock in a top-right toolbar, and
+    // the title, gradient seekbar and a scrollable action row stacked
+    // at the bottom. Next episode comes first in the row — and big.
+
+    /** Nuvio's top-right toolbar: lock, then back at the far right. */
+    @Composable
+    fun NuvioToolbar() {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MockBareIconButton(
+                icon = Icons.Rounded.Lock,
+                contentDescription = "Lock controls",
+                onClick = {
+                    locked = true
+                    controlsVisible = false
+                    showUnlock = true
+                },
+                enabled = !showTrim,
+            )
+            MockBareIconButton(
+                icon = Icons.Filled.ArrowBack,
+                contentDescription = "Back",
+                onClick = { toast = "Back — closes the player in the app (mock)" },
+            )
+        }
+    }
+
+    /**
+     * Nuvio's center: bare ROUNDED replay/forward icons and the
+     * play-pause, 34dp, 56dp apart, no circles anywhere. Lifted above
+     * the center at the call site, clear of the bottom block.
+     */
+    @Composable
+    fun NuvioCenterTransport() {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 40.dp else 56.dp),
+        ) {
+            MockBareIconButton(
+                icon = Icons.Rounded.Replay10,
+                contentDescription = "Back 10s",
+                onClick = {
+                    seekBy(-10_000L)
+                    seekFeedback = false to 10
+                },
+                size = if (compact) 52.dp else 54.dp,
+                iconSize = if (compact) 30.dp else 34.dp,
+            )
+            MockBareIconButton(
                 icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                 contentDescription = if (isPlaying) "Pause" else "Play",
                 onClick = {
                     isPlaying = !isPlaying
                     poke()
                 },
+                size = if (compact) 56.dp else 60.dp,
+                iconSize = if (compact) 30.dp else 34.dp,
             )
-            MockPlayerIconButton(
-                icon = Icons.Filled.Replay10,
-                contentDescription = "Back 10s",
-                onClick = {
-                    seekBy(-10_000L)
-                    seekFeedback = false to 10
-                },
-            )
-            MockPlayerIconButton(
-                icon = Icons.Filled.Forward10,
+            MockBareIconButton(
+                icon = Icons.Rounded.Forward10,
                 contentDescription = "Forward 10s",
                 onClick = {
                     seekBy(10_000L)
                     seekFeedback = true to 10
                 },
+                size = if (compact) 52.dp else 54.dp,
+                iconSize = if (compact) 30.dp else 34.dp,
             )
-            NextButton()
-            Spacer(Modifier.weight(1f))
-            SubtitlesButton()
-            AudioButton()
-            AspectPill()
         }
     }
 
     /**
-     * Rail's side capsule: all nine tools stacked top to bottom, centered
-     * on the right edge. Scrollable, so on a short phone screen every
-     * button stays reachable (on a tall screen it all fits at once).
-     * Aspect is icon + its current value underneath — the pill is too
-     * wide for the rail.
+     * Nuvio's bottom block (PlayerTimelineDetails + PlayerTimeline +
+     * PlayerControlActions): title, SxxExx, release info (dropped in
+     * compact mode to save height), the gradient seekbar — no thumb,
+     * 6dp at rest, 10dp while scrubbing — and the action row: Next
+     * first and big (40dp icon), then Subtitles, Audio, Episodes,
+     * Playlist, Screenshot, Trim, Aspect, with the runtime pinned at
+     * the right end (tap it to switch to remaining time).
      */
     @Composable
-    fun SideRail() {
-        Surface(
-            shape = RoundedCornerShape(50),
-            color = Color.Black.copy(alpha = 0.45f),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-            modifier = Modifier.fillMaxHeight(0.94f),
-        ) {
-            Column(
+    fun NuvioBottomBlock() {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "Alice in Borderland",
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = if (compact) 16.sp else 18.sp,
+                maxLines = 1,
+                modifier = Modifier.padding(horizontal = 2.dp),
+            )
+            Text(
+                "S1 E$episode",
+                color = Color.White.copy(alpha = 0.9f),
+                style = MaterialTheme.typography.bodyMedium,
+                fontSize = if (compact) 12.sp else 14.sp,
+                maxLines = 1,
+                modifier = Modifier.padding(horizontal = 2.dp),
+            )
+            if (!compact) {
+                Text(
+                    "${playlistEntries[qualityIndex].label} · ${playlistEntries[qualityIndex].size}",
+                    color = Color.White.copy(alpha = 0.68f),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    modifier = Modifier.padding(horizontal = 2.dp),
+                )
+            }
+            MockSeekBar(
+                positionMs = positionMs,
+                durationMs = durationMs,
+                bufferFrac = bufferFrac,
+                segments = segments,
+                onSeek = { positionMs = it; poke() },
+                onScrubChange = { scrubMs = it },
+                modifier = Modifier.fillMaxWidth(),
+                trimStartMs = trimStartMs,
+                trimEndMs = trimEndMs,
+                restHeight = 6.dp,
+                scrubHeight = 10.dp,
+                trackAlpha = 0.30f,
+                bufferTint = nuvioAccent.copy(alpha = 0.35f),
+                fillColors = nuvioGradient,
+            )
+            Row(
                 modifier = Modifier
-                    .fillMaxHeight()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+                    .fillMaxWidth()
+                    .padding(horizontal = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                EpisodesButton()
-                PlaylistButton()
-                ScreenshotButton()
-                TrimButton()
-                LockButton()
-                SubtitlesButton()
-                AudioButton()
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    MockPlayerIconButton(
-                        icon = Icons.Filled.AspectRatio,
-                        contentDescription = "Aspect ratio",
-                        onClick = { aspectIndex = (aspectIndex + 1) % aspects.size },
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (episode < 8) {
+                        MockBareIconButton(
+                            icon = Icons.Rounded.SkipNext,
+                            contentDescription = "Next episode",
+                            onClick = { nextEpisode() },
+                            iconSize = 40.dp,
+                            enabled = !showTrim,
+                        )
+                    }
+                    MockBareIconButton(
+                        icon = Icons.Filled.ClosedCaption,
+                        contentDescription = "Subtitles",
+                        onClick = { sheet = MockSheet.SUBS },
+                        active = subTrack != 0,
+                        activeColor = nuvioAccent,
                         enabled = !showTrim,
                     )
-                    Text(
-                        aspects[aspectIndex],
-                        color = Color.White.copy(alpha = 0.9f),
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                        ),
+                    MockBareIconButton(
+                        icon = Icons.Filled.Audiotrack,
+                        contentDescription = "Audio",
+                        onClick = { sheet = MockSheet.AUDIO },
+                        enabled = !showTrim,
                     )
+                    MockBareIconButton(
+                        icon = Icons.Filled.PlaylistPlay,
+                        contentDescription = "Episodes",
+                        onClick = { sheet = MockSheet.EPISODES },
+                        enabled = !showTrim,
+                    )
+                    MockBareIconButton(
+                        icon = Icons.Filled.List,
+                        contentDescription = "Playlist",
+                        onClick = { sheet = MockSheet.PLAYLIST },
+                        enabled = !showTrim,
+                    )
+                    MockBareIconButton(
+                        icon = Icons.Filled.PhotoCamera,
+                        contentDescription = "Screenshot",
+                        onClick = { toast = "Screenshot saved (mock)" },
+                        enabled = !showTrim,
+                    )
+                    MockBareIconButton(
+                        icon = Icons.Filled.ContentCut,
+                        contentDescription = "Trim clip",
+                        onClick = {
+                            showTrim = !showTrim
+                            if (!showTrim) trimLoop = false
+                        },
+                        active = showTrim,
+                        activeColor = nuvioAccent,
+                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        MockBareIconButton(
+                            icon = Icons.Filled.AspectRatio,
+                            contentDescription = "Aspect ratio",
+                            onClick = { aspectIndex = (aspectIndex + 1) % aspects.size },
+                            size = 40.dp,
+                            iconSize = 22.dp,
+                            enabled = !showTrim,
+                        )
+                        Text(
+                            aspects[aspectIndex],
+                            color = Color.White.copy(alpha = 0.9f),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                            ),
+                        )
+                    }
                 }
-                NextButton()
+                Text(
+                    if (showRemaining) {
+                        "−${mockFormatTime((durationMs - positionMs).coerceAtLeast(0L))}"
+                    } else {
+                        "${mockFormatTime(positionMs)} / ${mockFormatTime(durationMs)}"
+                    },
+                    color = Color.White.copy(alpha = 0.9f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    modifier = Modifier.clickable {
+                        showRemaining = !showRemaining
+                        poke()
+                    },
+                )
             }
         }
     }
@@ -894,6 +1419,10 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
                     onTap = {
                         if (locked) {
                             showUnlock = true
+                        } else if (stremioMenuOpen) {
+                            // A tap with the Stremio menu open closes
+                            // the menu instead of hiding the controls.
+                            stremioMenuOpen = false
                         } else if (sheet == null && !showTrim) {
                             if (controlsVisible) controlsVisible = false else poke()
                         }
@@ -961,6 +1490,64 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
     ) {
         MockVideoScene()
 
+        // Per-look scrims (Stremio: one full-height navy gradient;
+        // Nuvio: a 160dp top fade + a 260dp bottom fade). Current keeps
+        // its own gradients on the top bar and bottom cluster.
+        if (look == PlayerLook.STREMIO || look == PlayerLook.NUVIO) {
+            AnimatedVisibility(
+                visible = controlsVisible && !locked,
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (look == PlayerLook.STREMIO) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            stremioScrim,
+                                            Color.Transparent,
+                                            stremioScrim,
+                                        ),
+                                    ),
+                                ),
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                                .align(Alignment.TopCenter)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color.Black.copy(alpha = 0.7f),
+                                            Color.Transparent,
+                                        ),
+                                    ),
+                                ),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(260.dp)
+                                .align(Alignment.BottomCenter)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = 0.8f),
+                                        ),
+                                    ),
+                                ),
+                        )
+                    }
+                }
+            }
+        }
+
         // Subtitle line (mock text; Malayalam when that track is picked).
         // Appearance comes from the subtitle sheet, live: size, stroke,
         // colors, position.
@@ -984,46 +1571,85 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
             )
         }
 
-        // Top bar: Current and Tube share it (back + title + cluster);
-        // Rail keeps only back + title — the cluster lives in the rail.
+        // Top bar: Current keeps back + title pill + cluster; Stremio
+        // gets the glass pill (back + title + menu); Nuvio gets the
+        // top-right toolbar (lock + back) — its title lives at the
+        // bottom.
         AnimatedVisibility(
             visible = controlsVisible && !locked,
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = 0.65f), Color.Transparent),
-                        ),
-                    )
-                    .padding(horizontal = 16.dp, vertical = topBarVPadding),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                BackButton()
-                Spacer(Modifier.width(12.dp))
-                TitlePill()
-                if (look != PlayerLook.RAIL) {
-                    Spacer(Modifier.weight(1f))
-                    TopCluster()
+            when (look) {
+                PlayerLook.CURRENT -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color.Black.copy(alpha = 0.65f), Color.Transparent),
+                                ),
+                            )
+                            .padding(horizontal = 16.dp, vertical = topBarVPadding),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        BackButton()
+                        Spacer(Modifier.width(12.dp))
+                        TitlePill()
+                        Spacer(Modifier.weight(1f))
+                        TopCluster()
+                    }
+                }
+                PlayerLook.STREMIO -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = 18.dp,
+                                vertical = if (compact) 12.dp else 18.dp,
+                            ),
+                    ) {
+                        StremioTopPill()
+                    }
+                }
+                PlayerLook.NUVIO -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = 20.dp,
+                                vertical = if (compact) 8.dp else 12.dp,
+                            ),
+                        contentAlignment = Alignment.CenterEnd,
+                    ) {
+                        NuvioToolbar()
+                    }
                 }
             }
         }
 
-        // Center transport (Current + Rail): -10s / play-pause / +10s.
-        // Tube has an EMPTY center — its transport lives in the bottom
-        // bar instead (double-tap -10s/+10s still works: it is a gesture,
-        // not a button).
-        if (look != PlayerLook.TUBE) {
-            AnimatedVisibility(
-                visible = controlsVisible && !locked,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.Center),
-            ) {
-                CenterTransport()
+        // Center transport: Current's round buttons, Stremio's glass +
+        // glowing play, Nuvio's bare icons lifted above the center so
+        // they clear the tall bottom block (36dp on a short screen —
+        // the subtitle sits between the block and the transport there).
+        AnimatedVisibility(
+            visible = controlsVisible && !locked,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(
+                    y = if (look == PlayerLook.NUVIO) {
+                        if (compact) -36.dp else -28.dp
+                    } else {
+                        0.dp
+                    },
+                ),
+        ) {
+            when (look) {
+                PlayerLook.CURRENT -> CenterTransport()
+                PlayerLook.STREMIO -> StremioCenterTransport()
+                PlayerLook.NUVIO -> NuvioCenterTransport()
             }
         }
 
@@ -1053,60 +1679,78 @@ private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
             )
         }
 
-        // Bottom cluster — this is where the layouts split:
-        // Current: button row, then the seekbar row. Tube: transport
-        // row (Play, -10, +10, Next | Subs, Audio, Aspect), then the
-        // seekbar row. Rail: the seekbar row only, stopping short of
-        // the rail (end padding); its buttons live in the rail.
+        // Bottom cluster — this is where the designs split:
+        // Current: button row, then the seekbar row. Stremio: the glass
+        // card with the wave seekbar only. Nuvio: title + seekbar +
+        // action row stacked at the bottom.
         AnimatedVisibility(
             visible = controlsVisible && !locked,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)),
-                        ),
-                    )
-                    .padding(
-                        start = 16.dp,
-                        end = if (look == PlayerLook.RAIL) 84.dp else 16.dp,
-                    )
-                    .padding(top = bottomTopPadding, bottom = bottomBottomPadding),
-            ) {
-                when (look) {
-                    PlayerLook.CURRENT -> {
+            when (look) {
+                PlayerLook.CURRENT -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)),
+                                ),
+                            )
+                            .padding(horizontal = 16.dp)
+                            .padding(top = bottomTopPadding, bottom = bottomBottomPadding),
+                    ) {
                         BottomButtonRow()
                         Spacer(Modifier.height(4.dp))
                         SeekRow()
                     }
-                    PlayerLook.TUBE -> {
-                        TransportRow()
-                        Spacer(Modifier.height(4.dp))
-                        SeekRow()
+                }
+                PlayerLook.STREMIO -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .padding(bottom = if (compact) 12.dp else 20.dp),
+                    ) {
+                        StremioBottomCard()
                     }
-                    PlayerLook.RAIL -> SeekRow()
+                }
+                PlayerLook.NUVIO -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .padding(bottom = if (compact) 12.dp else 16.dp),
+                    ) {
+                        NuvioBottomBlock()
+                    }
                 }
             }
         }
 
-        // Rail (Rail only): the side capsule, vertically centered on
-        // the right edge. Drawn after the bottom cluster so it stays
-        // on top where they meet.
-        if (look == PlayerLook.RAIL) {
-            AnimatedVisibility(
-                visible = controlsVisible && !locked,
-                enter = fadeIn(),
-                exit = fadeOut(),
+        // Stremio's overflow menu: a tap below the pill closes it (the
+        // pill itself stays tappable, so the more button can close it
+        // too); a row runs its action and closes. Only while the
+        // controls are up, drawn after the bottom cluster so it stays
+        // on top.
+        if (look == PlayerLook.STREMIO && stremioMenuOpen && controlsVisible && !locked) {
+            Box(
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 12.dp),
+                    .fillMaxSize()
+                    .padding(top = if (compact) 64.dp else 76.dp)
+                    .clickable { stremioMenuOpen = false },
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(
+                        top = if (compact) 64.dp else 76.dp,
+                        end = 18.dp,
+                    ),
             ) {
-                SideRail()
+                StremioMenu()
             }
         }
 
