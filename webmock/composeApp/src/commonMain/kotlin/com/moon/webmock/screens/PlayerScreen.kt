@@ -88,7 +88,9 @@ import kotlin.math.abs
 // same buttons, same styling, only the ARRANGEMENT differs; switch
 // them in App.kt's Look row. (The first round only restyled one layout;
 // moon rightly said they were all the same, so this round moves the
-// controls instead.)
+// controls instead.) Compact mode (maxHeight < 480dp, phone landscape)
+// shrinks the transport and pulls the floating bits down so nothing
+// overlaps the top bar — the fixed desktop offsets collided there.
 // ---------------------------------------------------------------------------
 
 private enum class MockSheet { SUBS, AUDIO, EPISODES, SUBLINES, PLAYLIST }
@@ -136,7 +138,10 @@ fun PlayerScreen(look: PlayerLook = PlayerLooks.current) {
         if (maxWidth < maxHeight) {
             PlayerPortraitNotes(look)
         } else {
-            PlayerLandscapeMock(look)
+            // Short screen (phone landscape): compact mode shrinks the
+            // transport and pulls the floating bits down, so nothing
+            // overlaps the top bar (moon's 2026-11-19 screenshot).
+            PlayerLandscapeMock(look, compact = maxHeight < 480.dp)
         }
     }
 }
@@ -271,7 +276,7 @@ private fun PlayerPortraitNotes(look: PlayerLook) {
 }
 
 @Composable
-private fun PlayerLandscapeMock(look: PlayerLook) {
+private fun PlayerLandscapeMock(look: PlayerLook, compact: Boolean) {
     // Demo episode.
     val durationMs = 1_440_000L // 24:00
     val segments = remember {
@@ -472,10 +477,38 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
     // (a button row + the seekbar row), so pills and subtitles sit at the
     // same height in both; Rail's bottom is only the seekbar row, so they
     // sit lower — and its right-side pills shift left, clear of the rail.
-    val subClearance = if (look == PlayerLook.RAIL) 84.dp else 132.dp
-    val pillBottom = if (look == PlayerLook.RAIL) 56.dp else 104.dp
+    // Compact (phone landscape, ~215-280dp tall): shrink the fixed
+    // offsets FIRST — that is what collided in moon's screenshot — and
+    // the transport second. The 45dp buttons stay 45dp everywhere.
+    val subClearance = when {
+        look == PlayerLook.RAIL && compact -> 48.dp
+        look == PlayerLook.RAIL -> 84.dp
+        compact -> 96.dp
+        else -> 132.dp
+    }
+    val pillBottom = when {
+        look == PlayerLook.RAIL && compact -> 48.dp
+        look == PlayerLook.RAIL -> 56.dp
+        compact -> 96.dp
+        else -> 104.dp
+    }
     val pillEnd = if (look == PlayerLook.RAIL) 84.dp else 16.dp
-    val nextUpBottom = if (look == PlayerLook.RAIL) 120.dp else 168.dp
+    val nextUpBottom = when {
+        look == PlayerLook.RAIL && compact -> 104.dp
+        look == PlayerLook.RAIL -> 120.dp
+        compact -> 152.dp
+        else -> 168.dp
+    }
+    val hudTop = if (compact) 68.dp else 76.dp
+    val toastBottom = if (compact) 120.dp else 160.dp
+    val playSize = if (compact) 56.dp else 76.dp
+    val playIconSize = if (compact) 28.dp else 38.dp
+    val seek10Size = if (compact) 44.dp else 52.dp
+    val seek10IconSize = if (compact) 26.dp else 32.dp
+    val centerSpacing = if (compact) 40.dp else 64.dp
+    val topBarVPadding = if (compact) 8.dp else 12.dp
+    val bottomTopPadding = if (compact) 6.dp else 8.dp
+    val bottomBottomPadding = if (compact) 8.dp else 12.dp
 
     // -- Control pieces, shared by all three layouts. Only the ARRANGEMENT
     // differs per look (Current/Tube/Rail below); every button here keeps
@@ -649,7 +682,7 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
     fun CenterTransport() {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(64.dp),
+            horizontalArrangement = Arrangement.spacedBy(centerSpacing),
         ) {
             MockPlayerIconButton(
                 icon = Icons.Filled.Replay10,
@@ -658,8 +691,8 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
                     seekBy(-10_000L)
                     seekFeedback = false to 10
                 },
-                size = 52.dp,
-                iconSize = 32.dp,
+                size = seek10Size,
+                iconSize = seek10IconSize,
             )
             Surface(
                 onClick = {
@@ -668,14 +701,14 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
                 },
                 shape = CircleShape,
                 color = Color.White.copy(alpha = 0.14f),
-                modifier = Modifier.size(76.dp).mockPressScale(),
+                modifier = Modifier.size(playSize).mockPressScale(),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                         if (isPlaying) "Pause" else "Play",
                         tint = Color.White,
-                        modifier = Modifier.size(38.dp),
+                        modifier = Modifier.size(playIconSize),
                     )
                 }
             }
@@ -686,8 +719,8 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
                     seekBy(10_000L)
                     seekFeedback = true to 10
                 },
-                size = 52.dp,
-                iconSize = 32.dp,
+                size = seek10Size,
+                iconSize = seek10IconSize,
             )
         }
     }
@@ -966,7 +999,7 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
                             listOf(Color.Black.copy(alpha = 0.65f), Color.Transparent),
                         ),
                     )
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp, vertical = topBarVPadding),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 BackButton()
@@ -1043,7 +1076,7 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
                         start = 16.dp,
                         end = if (look == PlayerLook.RAIL) 84.dp else 16.dp,
                     )
-                    .padding(top = 8.dp, bottom = 12.dp),
+                    .padding(top = bottomTopPadding, bottom = bottomBottomPadding),
             ) {
                 when (look) {
                     PlayerLook.CURRENT -> {
@@ -1135,7 +1168,7 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
                         is MockHud.Volume -> Icons.Filled.VolumeUp
                     },
                     fraction = it.fraction,
-                    modifier = Modifier.padding(top = if (controlsVisible) 76.dp else 16.dp),
+                    modifier = Modifier.padding(top = if (controlsVisible) hudTop else 16.dp),
                 )
             }
         }
@@ -1291,7 +1324,7 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
                     color = Color.White,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier
-                        .padding(bottom = 160.dp)
+                        .padding(bottom = toastBottom)
                         .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(50))
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                 )
