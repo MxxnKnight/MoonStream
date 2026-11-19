@@ -11,6 +11,7 @@ import com.moon.moonstream.cache.TdStreamCache
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.player.PlayerUrls
 import com.moon.moonstream.ui.player.StreamWarmer
+import com.moon.moonstream.util.AppLog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -424,6 +425,7 @@ fun DetailScreen(
             // Same as a move (moon's 2026-11-10): don't leave an entry
             // with zero files behind.
             db.mediaDao().deleteIfEmpty(m.id)
+            AppLog.i("DETAIL", "Delete file: '${file.fileName}' from '${m.title}'")
             MsToast.show("File removed")
         }
     }
@@ -447,6 +449,7 @@ fun DetailScreen(
             db.streamDao().deleteById(file.id)
             db.mediaDao().refreshAggregates(m.id, System.currentTimeMillis())
             db.mediaDao().deleteIfEmpty(m.id)
+            AppLog.i("DETAIL", "Move to unmatched: '${file.fileName}' from '${m.title}'")
             withContext(Dispatchers.Main) {
                 MsToast.show("Moved to unmatched")
             }
@@ -489,6 +492,7 @@ fun DetailScreen(
                 country = full?.country ?: m.country,
                 now = System.currentTimeMillis(),
             )
+            AppLog.i("DETAIL", "Fix Metadata: '${m.title}' -> '${full?.title ?: picked.title}' (${full?.imdbId ?: picked.imdbId ?: "no id"})")
             withContext(Dispatchers.Main) {
                 MsToast.show(
                     if (targetType != m.type) "Metadata updated — now listed as ${targetType.replaceFirstChar { it.uppercase() }}"
@@ -542,6 +546,7 @@ fun DetailScreen(
                 country = full.country ?: m.country,
                 now = System.currentTimeMillis(),
             )
+            AppLog.i("DETAIL", "Refresh metadata: '${m.title}' (re-matched as '${full.title}')")
             withContext(Dispatchers.Main) {
                 refreshing = false
                 MsToast.show("Metadata refreshed")
@@ -557,6 +562,7 @@ fun DetailScreen(
         if (newType == m.type) return
         scope.launch(Dispatchers.IO) {
             db.mediaDao().updateType(m.id, newType)
+            AppLog.i("DETAIL", "Move to: '${m.title}' ${m.type} -> $newType")
             withContext(Dispatchers.Main) {
                 MsToast.show("Moved to ${newType.replaceFirstChar { it.uppercase() }}")
             }
@@ -571,6 +577,7 @@ fun DetailScreen(
     fun makeLocal() {
         scope.launch(Dispatchers.IO) {
             db.mediaDao().convertToLocal(m.id, System.currentTimeMillis())
+            AppLog.i("DETAIL", "Move to Custom: '${m.title}'")
             withContext(Dispatchers.Main) {
                 MsToast.show("Moved to Custom — use the pencil to set your poster")
             }
@@ -631,6 +638,7 @@ fun DetailScreen(
             // only stream, the old entry stayed in the library with zero
             // files. Drop entries left empty by the move.
             db.mediaDao().deleteEmpty()
+            AppLog.i("DETAIL", "Move file: '${file.fileName}' '${m.title}' -> '${target.title}'")
             withContext(Dispatchers.Main) {
                 MsToast.show("File moved to ${target.title}")
             }
@@ -1138,6 +1146,8 @@ fun DetailScreen(
                                 // the old episode count while the season
                                 // list counted live — 5 up top, 6 below).
                                 db.mediaDao().refreshAggregates(m.id, System.currentTimeMillis())
+                                val oldEp = if (f.season != null && f.episode != null) "S${f.season}E${f.episode}" else "unset"
+                                AppLog.i("DETAIL", "Set episode: '${f.fileName}' $oldEp -> S${season ?: 1}E$episode")
                                 withContext(Dispatchers.Main) {
                                     MsToast.show("Linked to S${season ?: 1} E$episode")
                                     setEpisodeFile = null
@@ -1230,6 +1240,7 @@ fun DetailScreen(
                         ),
                     )
                     db.mediaDao().refreshAggregates(m.id, System.currentTimeMillis())
+                    AppLog.i("DETAIL", "Add Stream: '${m.title}' <- '${name.ifBlank { "Custom stream $msgId" }}'")
                     withContext(Dispatchers.Main) {
                         MsToast.show("Custom stream added")
                         showAddStream = false
@@ -1283,6 +1294,7 @@ fun DetailScreen(
                             language = language,
                         ),
                     )
+                    AppLog.i("DETAIL", "Add Subtitle: '${m.title}' <- '$fileName' ($language)")
                     withContext(Dispatchers.Main) {
                         MsToast.show("Subtitle added")
                         showAddSubtitle = false
@@ -1300,6 +1312,7 @@ fun DetailScreen(
             onAttach = { season, episode ->
                 scope.launch {
                     db.subtitleDao().attach(sub.id, m.id, season, episode)
+                    AppLog.i("DETAIL", "Attach Subtitle: '${sub.fileName}' -> '${m.title}'")
                     MsToast.show("Subtitle attached")
                     attachSub = null
                 }

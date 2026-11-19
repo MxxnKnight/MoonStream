@@ -63,6 +63,7 @@ import com.moon.moonstream.ui.model.CreatePrefill
 import com.moon.moonstream.ui.model.PrefillFile
 import com.moon.moonstream.ui.theme.MsColors
 import com.moon.moonstream.ui.theme.MsRadii
+import com.moon.moonstream.util.AppLog
 import java.util.Calendar
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -303,6 +304,7 @@ fun CreateScreen(
                 // with zero files. The new entry's aggregates are already
                 // refreshed above, so it has files and is safe here.
                 db.mediaDao().deleteEmpty()
+                AppLog.i("DETAIL", "Custom content: created '${title.trim()}' (${if (isSeries) "series" else "movie"}, ${files.size} file(s))")
                 withContext(Dispatchers.Main) {
                     MsToast.show("Entry created")
                     onDone(mediaId)
