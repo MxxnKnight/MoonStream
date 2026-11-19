@@ -6,6 +6,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -82,8 +84,11 @@ import kotlin.math.abs
 // Borderland S1, 24:00, intro 0:00-1:30, outro 22:30-24:00.
 // In portrait the player doesn't fit (it's landscape-only, like the app),
 // so portrait shows what changed + how to try it; rotate to play.
-// 2026-11-19: three looks (PlayerLooks.kt) — Current, Air, Bar — same
-// buttons, look only; switch them in App.kt's Look row.
+// 2026-11-19: three looks (PlayerLooks.kt) — Current, Tube, Rail —
+// same buttons, same styling, only the ARRANGEMENT differs; switch
+// them in App.kt's Look row. (The first round only restyled one layout;
+// moon rightly said they were all the same, so this round moves the
+// controls instead.)
 // ---------------------------------------------------------------------------
 
 private enum class MockSheet { SUBS, AUDIO, EPISODES, SUBLINES, PLAYLIST }
@@ -179,9 +184,9 @@ private fun PlayerPortraitNotes(look: PlayerLook) {
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "Same buttons, just a different face — switch them in the " +
-                    "Look row above the player. Playback keeps going when " +
-                    "you switch.",
+                "Same buttons, same styling — just arranged three different " +
+                    "ways. Switch them in the Look row above the player. " +
+                    "Playback keeps going when you switch.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MsColors.TextSecondary,
             )
@@ -463,6 +468,390 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
         else -> "Arisu: This world... it's not the one we knew."
     }
 
+    // Per-look clearances: Current and Tube share the same bottom height
+    // (a button row + the seekbar row), so pills and subtitles sit at the
+    // same height in both; Rail's bottom is only the seekbar row, so they
+    // sit lower — and its right-side pills shift left, clear of the rail.
+    val subClearance = if (look == PlayerLook.RAIL) 84.dp else 132.dp
+    val pillBottom = if (look == PlayerLook.RAIL) 56.dp else 104.dp
+    val pillEnd = if (look == PlayerLook.RAIL) 84.dp else 16.dp
+    val nextUpBottom = if (look == PlayerLook.RAIL) 120.dp else 168.dp
+
+    // -- Control pieces, shared by all three layouts. Only the ARRANGEMENT
+    // differs per look (Current/Tube/Rail below); every button here keeps
+    // Current's styling — 45dp round buttons, same seekbar, same pills.
+    // Local composables so they share this scope's state and callbacks.
+    @Composable
+    fun BackButton() {
+        MockPlayerIconButton(
+            icon = Icons.Filled.ArrowBack,
+            contentDescription = "Back",
+            onClick = { toast = "Back — closes the player in the app (mock)" },
+        )
+    }
+
+    @Composable
+    fun TitlePill() {
+        Surface(
+            onClick = { sheet = MockSheet.EPISODES },
+            shape = RoundedCornerShape(50),
+            color = Color.Black.copy(alpha = 0.45f),
+        ) {
+            Text(
+                text = "Alice in Borderland — S1 E$episode",
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                modifier = Modifier
+                    .widthIn(max = 320.dp)
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
+            )
+        }
+    }
+
+    @Composable
+    fun EpisodesButton() {
+        MockPlayerIconButton(
+            icon = Icons.Filled.PlaylistPlay,
+            contentDescription = "Episodes",
+            onClick = { sheet = MockSheet.EPISODES },
+            enabled = !showTrim,
+        )
+    }
+
+    @Composable
+    fun PlaylistButton() {
+        MockPlayerIconButton(
+            icon = Icons.Filled.List,
+            contentDescription = "Playlist",
+            onClick = { sheet = MockSheet.PLAYLIST },
+            enabled = !showTrim,
+        )
+    }
+
+    @Composable
+    fun ScreenshotButton() {
+        MockPlayerIconButton(
+            icon = Icons.Filled.PhotoCamera,
+            contentDescription = "Screenshot",
+            onClick = { toast = "Screenshot saved (mock)" },
+            enabled = !showTrim,
+        )
+    }
+
+    @Composable
+    fun TrimButton() {
+        MockPlayerIconButton(
+            icon = Icons.Filled.ContentCut,
+            contentDescription = "Trim clip",
+            onClick = {
+                showTrim = !showTrim
+                if (!showTrim) trimLoop = false
+            },
+            active = showTrim,
+        )
+    }
+
+    @Composable
+    fun LockButton() {
+        MockPlayerIconButton(
+            icon = Icons.Filled.Lock,
+            contentDescription = "Lock controls",
+            onClick = {
+                locked = true
+                controlsVisible = false
+                showUnlock = true
+            },
+            enabled = !showTrim,
+        )
+    }
+
+    @Composable
+    fun SubtitlesButton() {
+        MockPlayerIconButton(
+            icon = Icons.Filled.ClosedCaption,
+            contentDescription = "Subtitles",
+            onClick = { sheet = MockSheet.SUBS },
+            active = subTrack != 0,
+            enabled = !showTrim,
+        )
+    }
+
+    @Composable
+    fun AudioButton() {
+        MockPlayerIconButton(
+            icon = Icons.Filled.Audiotrack,
+            contentDescription = "Audio",
+            onClick = { sheet = MockSheet.AUDIO },
+            enabled = !showTrim,
+        )
+    }
+
+    @Composable
+    fun NextButton() {
+        if (episode < 8) {
+            MockPlayerIconButton(
+                icon = Icons.Filled.SkipNext,
+                contentDescription = "Next episode",
+                onClick = { nextEpisode() },
+                enabled = !showTrim,
+            )
+        }
+    }
+
+    @Composable
+    fun AspectPill() {
+        Surface(
+            onClick = { aspectIndex = (aspectIndex + 1) % aspects.size },
+            enabled = !showTrim,
+            shape = RoundedCornerShape(50),
+            color = Color.White.copy(alpha = 0.12f),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+            modifier = Modifier.height(45.dp).mockPressScale(),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 14.dp),
+            ) {
+                Icon(
+                    Icons.Filled.AspectRatio,
+                    contentDescription = "Aspect ratio",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    aspects[aspectIndex],
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                )
+            }
+        }
+    }
+
+    /** The five top-bar tools as one row (Current + Tube top bars). */
+    @Composable
+    fun TopCluster() {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            EpisodesButton()
+            PlaylistButton()
+            ScreenshotButton()
+            TrimButton()
+            LockButton()
+        }
+    }
+
+    /** Center transport: -10s / play-pause / +10s (Current + Rail). */
+    @Composable
+    fun CenterTransport() {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(64.dp),
+        ) {
+            MockPlayerIconButton(
+                icon = Icons.Filled.Replay10,
+                contentDescription = "Back 10s",
+                onClick = {
+                    seekBy(-10_000L)
+                    seekFeedback = false to 10
+                },
+                size = 52.dp,
+                iconSize = 32.dp,
+            )
+            Surface(
+                onClick = {
+                    isPlaying = !isPlaying
+                    poke()
+                },
+                shape = CircleShape,
+                color = Color.White.copy(alpha = 0.14f),
+                modifier = Modifier.size(76.dp).mockPressScale(),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        if (isPlaying) "Pause" else "Play",
+                        tint = Color.White,
+                        modifier = Modifier.size(38.dp),
+                    )
+                }
+            }
+            MockPlayerIconButton(
+                icon = Icons.Filled.Forward10,
+                contentDescription = "Forward 10s",
+                onClick = {
+                    seekBy(10_000L)
+                    seekFeedback = true to 10
+                },
+                size = 52.dp,
+                iconSize = 32.dp,
+            )
+        }
+    }
+
+    /** Current time + seekbar + total time (all three bottom bars). */
+    @Composable
+    fun SeekRow() {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                mockFormatTime(scrubMs ?: positionMs),
+                color = Color.White.copy(alpha = 0.9f),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                ),
+                modifier = Modifier.width(64.dp),
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 2.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                MockSeekBar(
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    bufferFrac = bufferFrac,
+                    segments = segments,
+                    onSeek = { positionMs = it; poke() },
+                    onScrubChange = { scrubMs = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    trimStartMs = trimStartMs,
+                    trimEndMs = trimEndMs,
+                )
+            }
+            Text(
+                if (showRemaining) {
+                    "-${mockFormatTime((durationMs - positionMs).coerceAtLeast(0L))}"
+                } else {
+                    mockFormatTime(durationMs)
+                },
+                color = Color.White.copy(alpha = 0.9f),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                ),
+                textAlign = TextAlign.End,
+                modifier = Modifier
+                    .width(64.dp)
+                    .clickable { showRemaining = !showRemaining },
+            )
+        }
+    }
+
+    /** Current's bottom button row: Subs + Audio, Next + Aspect. */
+    @Composable
+    fun BottomButtonRow() {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SubtitlesButton()
+                AudioButton()
+            }
+            Spacer(Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                NextButton()
+                AspectPill()
+            }
+        }
+    }
+
+    /** Tube's bottom transport row: Play, -10, +10, Next | Subs, Audio, Aspect. */
+    @Composable
+    fun TransportRow() {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            MockPlayerIconButton(
+                icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                onClick = {
+                    isPlaying = !isPlaying
+                    poke()
+                },
+            )
+            MockPlayerIconButton(
+                icon = Icons.Filled.Replay10,
+                contentDescription = "Back 10s",
+                onClick = {
+                    seekBy(-10_000L)
+                    seekFeedback = false to 10
+                },
+            )
+            MockPlayerIconButton(
+                icon = Icons.Filled.Forward10,
+                contentDescription = "Forward 10s",
+                onClick = {
+                    seekBy(10_000L)
+                    seekFeedback = true to 10
+                },
+            )
+            NextButton()
+            Spacer(Modifier.weight(1f))
+            SubtitlesButton()
+            AudioButton()
+            AspectPill()
+        }
+    }
+
+    /**
+     * Rail's side capsule: all nine tools stacked top to bottom, centered
+     * on the right edge. Scrollable, so on a short phone screen every
+     * button stays reachable (on a tall screen it all fits at once).
+     * Aspect is icon + its current value underneath — the pill is too
+     * wide for the rail.
+     */
+    @Composable
+    fun SideRail() {
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = Color.Black.copy(alpha = 0.45f),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+            modifier = Modifier.fillMaxHeight(0.94f),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+            ) {
+                EpisodesButton()
+                PlaylistButton()
+                ScreenshotButton()
+                TrimButton()
+                LockButton()
+                SubtitlesButton()
+                AudioButton()
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    MockPlayerIconButton(
+                        icon = Icons.Filled.AspectRatio,
+                        contentDescription = "Aspect ratio",
+                        onClick = { aspectIndex = (aspectIndex + 1) % aspects.size },
+                        enabled = !showTrim,
+                    )
+                    Text(
+                        aspects[aspectIndex],
+                        color = Color.White.copy(alpha = 0.9f),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                        ),
+                    )
+                }
+                NextButton()
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -556,13 +945,14 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = if (controlsVisible) look.subBottomPadding else 36.dp)
+                    .padding(bottom = if (controlsVisible) subClearance else 36.dp)
                     .padding(bottom = (subPosition * 300).dp)
                     .padding(horizontal = 48.dp),
             )
         }
 
-        // Top bar: back + title pill (Inter, borderless — NEW) + cluster.
+        // Top bar: Current and Tube share it (back + title + cluster);
+        // Rail keeps only back + title — the cluster lives in the rail.
         AnimatedVisibility(
             visible = controlsVisible && !locked,
             enter = fadeIn(),
@@ -573,164 +963,34 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
                     .fillMaxWidth()
                     .background(
                         Brush.verticalGradient(
-                            listOf(
-                                Color.Black.copy(alpha = look.topScrimAlpha),
-                                Color.Transparent,
-                            ),
+                            listOf(Color.Black.copy(alpha = 0.65f), Color.Transparent),
                         ),
                     )
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                MockPlayerIconButton(
-                    icon = Icons.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    onClick = { toast = "Back — closes the player in the app (mock)" },
-                    size = look.buttonSize,
-                    iconSize = look.buttonIconSize,
-                    fillAlpha = look.buttonFillAlpha,
-                    border = look.buttonBorder,
-                )
+                BackButton()
                 Spacer(Modifier.width(12.dp))
-                Surface(
-                    onClick = { sheet = MockSheet.EPISODES },
-                    shape = RoundedCornerShape(50),
-                    color = Color.Black.copy(alpha = look.titlePillAlpha),
-                ) {
-                    Text(
-                        text = "Alice in Borderland — S1 E$episode",
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        modifier = Modifier
-                            .widthIn(max = 320.dp)
-                            .padding(horizontal = 16.dp, vertical = 9.dp),
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                Row(horizontalArrangement = Arrangement.spacedBy(look.topSpacing)) {
-                    MockPlayerIconButton(
-                        icon = Icons.Filled.PlaylistPlay,
-                        contentDescription = "Episodes",
-                        onClick = { sheet = MockSheet.EPISODES },
-                        size = look.buttonSize,
-                        iconSize = look.buttonIconSize,
-                        fillAlpha = look.buttonFillAlpha,
-                        border = look.buttonBorder,
-                        enabled = !showTrim,
-                    )
-                    MockPlayerIconButton(
-                        icon = Icons.Filled.List,
-                        contentDescription = "Playlist",
-                        onClick = { sheet = MockSheet.PLAYLIST },
-                        size = look.buttonSize,
-                        iconSize = look.buttonIconSize,
-                        fillAlpha = look.buttonFillAlpha,
-                        border = look.buttonBorder,
-                        enabled = !showTrim,
-                    )
-                    MockPlayerIconButton(
-                        icon = Icons.Filled.PhotoCamera,
-                        contentDescription = "Screenshot",
-                        onClick = { toast = "Screenshot saved (mock)" },
-                        size = look.buttonSize,
-                        iconSize = look.buttonIconSize,
-                        fillAlpha = look.buttonFillAlpha,
-                        border = look.buttonBorder,
-                        enabled = !showTrim,
-                    )
-                    MockPlayerIconButton(
-                        icon = Icons.Filled.ContentCut,
-                        contentDescription = "Trim clip",
-                        onClick = {
-                            showTrim = !showTrim
-                            if (!showTrim) trimLoop = false
-                        },
-                        size = look.buttonSize,
-                        iconSize = look.buttonIconSize,
-                        active = showTrim,
-                        fillAlpha = look.buttonFillAlpha,
-                        border = look.buttonBorder,
-                    )
-                    MockPlayerIconButton(
-                        icon = Icons.Filled.Lock,
-                        contentDescription = "Lock controls",
-                        onClick = {
-                            locked = true
-                            controlsVisible = false
-                            showUnlock = true
-                        },
-                        size = look.buttonSize,
-                        iconSize = look.buttonIconSize,
-                        fillAlpha = look.buttonFillAlpha,
-                        border = look.buttonBorder,
-                        enabled = !showTrim,
-                    )
+                TitlePill()
+                if (look != PlayerLook.RAIL) {
+                    Spacer(Modifier.weight(1f))
+                    TopCluster()
                 }
             }
         }
 
-        // Center transport: -10s / play-pause / +10s (moon's layout, kept).
-        AnimatedVisibility(
-            visible = controlsVisible && !locked,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.Center),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(look.centerSpacing),
+        // Center transport (Current + Rail): -10s / play-pause / +10s.
+        // Tube has an EMPTY center — its transport lives in the bottom
+        // bar instead (double-tap -10s/+10s still works: it is a gesture,
+        // not a button).
+        if (look != PlayerLook.TUBE) {
+            AnimatedVisibility(
+                visible = controlsVisible && !locked,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.Center),
             ) {
-                MockPlayerIconButton(
-                    icon = Icons.Filled.Replay10,
-                    contentDescription = "Back 10s",
-                    onClick = {
-                        seekBy(-10_000L)
-                        seekFeedback = false to 10
-                    },
-                    size = look.seek10Size,
-                    iconSize = look.seek10IconSize,
-                    fillAlpha = look.buttonFillAlpha,
-                    border = look.buttonBorder,
-                )
-                Surface(
-                    onClick = {
-                        isPlaying = !isPlaying
-                        poke()
-                    },
-                    shape = CircleShape,
-                    color = if (look.playFillAccent) MsColors.Accent
-                        else Color.White.copy(alpha = look.playFillAlpha),
-                    border = if (look.playBorderAlpha > 0f) {
-                        BorderStroke(
-                            look.playBorderWidth,
-                            Color.White.copy(alpha = look.playBorderAlpha),
-                        )
-                    } else null,
-                    modifier = Modifier.size(look.playSize).mockPressScale(),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            if (isPlaying) "Pause" else "Play",
-                            tint = Color.White,
-                            modifier = Modifier.size(look.playIconSize),
-                        )
-                    }
-                }
-                MockPlayerIconButton(
-                    icon = Icons.Filled.Forward10,
-                    contentDescription = "Forward 10s",
-                    onClick = {
-                        seekBy(10_000L)
-                        seekFeedback = true to 10
-                    },
-                    size = look.seek10Size,
-                    iconSize = look.seek10IconSize,
-                    fillAlpha = look.buttonFillAlpha,
-                    border = look.buttonBorder,
-                )
+                CenterTransport()
             }
         }
 
@@ -760,8 +1020,11 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
             )
         }
 
-        // Bottom cluster: buttons above the seekbar (kept); the History
-        // icon is GONE (NEW) — the floating Resume pill covers that job.
+        // Bottom cluster — this is where the layouts split:
+        // Current: button row, then the seekbar row. Tube: transport
+        // row (Play, -10, +10, Next | Subs, Audio, Aspect), then the
+        // seekbar row. Rail: the seekbar row only, stopping short of
+        // the rail (end padding); its buttons live in the rail.
         AnimatedVisibility(
             visible = controlsVisible && !locked,
             enter = fadeIn(),
@@ -771,149 +1034,46 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(
-                        if (look.bottomPanelAlpha > 0f) {
-                            Modifier.background(
-                                Color.Black.copy(alpha = look.bottomPanelAlpha),
-                            )
-                        } else {
-                            Modifier.background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        Color.Transparent,
-                                        Color.Black.copy(alpha = look.bottomScrimAlpha),
-                                    ),
-                                ),
-                            )
-                        },
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)),
+                        ),
                     )
-                    .padding(horizontal = 16.dp)
+                    .padding(
+                        start = 16.dp,
+                        end = if (look == PlayerLook.RAIL) 84.dp else 16.dp,
+                    )
                     .padding(top = 8.dp, bottom = 12.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(look.bottomSpacing)) {
-                        MockPlayerIconButton(
-                            icon = Icons.Filled.ClosedCaption,
-                            contentDescription = "Subtitles",
-                            onClick = { sheet = MockSheet.SUBS },
-                            size = look.buttonSize,
-                            iconSize = look.buttonIconSize,
-                            active = subTrack != 0,
-                            fillAlpha = look.buttonFillAlpha,
-                            border = look.buttonBorder,
-                            enabled = !showTrim,
-                        )
-                        MockPlayerIconButton(
-                            icon = Icons.Filled.Audiotrack,
-                            contentDescription = "Audio",
-                            onClick = { sheet = MockSheet.AUDIO },
-                            size = look.buttonSize,
-                            iconSize = look.buttonIconSize,
-                            fillAlpha = look.buttonFillAlpha,
-                            border = look.buttonBorder,
-                            enabled = !showTrim,
-                        )
+                when (look) {
+                    PlayerLook.CURRENT -> {
+                        BottomButtonRow()
+                        Spacer(Modifier.height(4.dp))
+                        SeekRow()
                     }
-                    Spacer(Modifier.weight(1f))
-                    Row(horizontalArrangement = Arrangement.spacedBy(look.bottomSpacing)) {
-                        if (episode < 8) {
-                            MockPlayerIconButton(
-                                icon = Icons.Filled.SkipNext,
-                                contentDescription = "Next episode",
-                                onClick = { nextEpisode() },
-                                size = look.buttonSize,
-                                iconSize = look.buttonIconSize,
-                                fillAlpha = look.buttonFillAlpha,
-                                border = look.buttonBorder,
-                                enabled = !showTrim,
-                            )
-                        }
-                        Surface(
-                            onClick = { aspectIndex = (aspectIndex + 1) % aspects.size },
-                            enabled = !showTrim,
-                            shape = RoundedCornerShape(50),
-                            color = Color.White.copy(alpha = look.buttonFillAlpha),
-                            border = if (look.buttonBorder) {
-                                BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
-                            } else null,
-                            modifier = Modifier.height(look.buttonSize).mockPressScale(),
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 14.dp),
-                            ) {
-                                Icon(
-                                    Icons.Filled.AspectRatio,
-                                    contentDescription = "Aspect ratio",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(look.buttonIconSize),
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    aspects[aspectIndex],
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                    ),
-                                )
-                            }
-                        }
+                    PlayerLook.TUBE -> {
+                        TransportRow()
+                        Spacer(Modifier.height(4.dp))
+                        SeekRow()
                     }
+                    PlayerLook.RAIL -> SeekRow()
                 }
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        mockFormatTime(scrubMs ?: positionMs),
-                        color = Color.White.copy(alpha = 0.9f),
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = look.timeFontSize,
-                        ),
-                        modifier = Modifier.width(64.dp),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(vertical = 2.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        MockSeekBar(
-                            positionMs = positionMs,
-                            durationMs = durationMs,
-                            bufferFrac = bufferFrac,
-                            segments = segments,
-                            onSeek = { positionMs = it; poke() },
-                            onScrubChange = { scrubMs = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            trimStartMs = trimStartMs,
-                            trimEndMs = trimEndMs,
-                            restHeight = look.seekRestHeight,
-                            scrubHeight = look.seekScrubHeight,
-                        )
-                    }
-                    Text(
-                        if (showRemaining) {
-                            "-${mockFormatTime((durationMs - positionMs).coerceAtLeast(0L))}"
-                        } else {
-                            mockFormatTime(durationMs)
-                        },
-                        color = Color.White.copy(alpha = 0.9f),
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = look.timeFontSize,
-                        ),
-                        textAlign = TextAlign.End,
-                        modifier = Modifier
-                            .width(64.dp)
-                            .clickable { showRemaining = !showRemaining },
-                    )
-                }
+            }
+        }
+
+        // Rail (Rail only): the side capsule, vertically centered on
+        // the right edge. Drawn after the bottom cluster so it stays
+        // on top where they meet.
+        if (look == PlayerLook.RAIL) {
+            AnimatedVisibility(
+                visible = controlsVisible && !locked,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 12.dp),
+            ) {
+                SideRail()
             }
         }
 
@@ -928,10 +1088,9 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
                     positionMs = seg.endMs
                     poke()
                 },
-                fillAlpha = look.pillFillAlpha,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = if (controlsVisible) 104.dp else 28.dp),
+                    .padding(end = pillEnd, bottom = if (controlsVisible) pillBottom else 28.dp),
             )
         }
 
@@ -944,10 +1103,9 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
                     positionMs = resumeMs
                     poke()
                 },
-                fillAlpha = look.pillFillAlpha,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 16.dp, bottom = if (controlsVisible) 104.dp else 28.dp),
+                    .padding(start = 16.dp, bottom = if (controlsVisible) pillBottom else 28.dp),
             )
         }
 
@@ -961,7 +1119,7 @@ private fun PlayerLandscapeMock(look: PlayerLook) {
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .width(320.dp)
-                    .padding(end = 16.dp, bottom = if (controlsVisible) 168.dp else 88.dp),
+                    .padding(end = pillEnd, bottom = if (controlsVisible) nextUpBottom else 88.dp),
             )
         }
 

@@ -91,7 +91,7 @@ fun App() {
                     }
                 }
             }
-            // Look picker (player only): same buttons, different face.
+            // Look picker (player only): same buttons, different layout.
             if (screen == MockScreen.PLAYER) {
                 Row(
                     modifier = Modifier
