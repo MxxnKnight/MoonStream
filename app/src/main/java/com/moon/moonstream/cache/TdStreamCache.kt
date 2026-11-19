@@ -28,8 +28,9 @@ object TdStreamCache {
     /** Playbacks currently holding a window; their folder is never cleared. */
     private val active = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
-    /** Folders warmed for instant play but not yet played; swept on the
-     *  next player close so warmed bytes never linger (see StreamWarmer). */
+    /** Folders warmed for instant play but not yet played; swept the
+     *  moment the Detail page closes (player close is the backstop),
+     *  so warmed bytes never linger (see StreamWarmer). */
     private val warmed = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     private fun root(context: Context): File = File(context.filesDir, ROOT)
@@ -55,6 +56,13 @@ object TdStreamCache {
     /** Remember a folder as warmed for instant play (swept by [clearWarmed]). */
     fun markWarmed(channelId: Long, messageId: Long) {
         warmed.add(key(channelId, messageId))
+    }
+
+    /** Forget a warmed folder: the file IS being played, so the
+     *  Detail-exit sweep must leave its chunks alone. Called from
+     *  playInApp/playContinue before navigation. */
+    fun unmarkWarmed(channelId: Long, messageId: Long) {
+        warmed.remove(key(channelId, messageId))
     }
 
     /** Total bytes of in-app player chunks on disk. */
@@ -92,9 +100,10 @@ object TdStreamCache {
 
     /**
      * Deletes warmed-only folders (instant-play leftovers) that no playback
-     * is using. Called on player close, after the played file's own chunks
-     * are cleared. A warmed folder the player just used is already gone by
-     * then; one never played is dropped here. Returns bytes freed.
+     * is using. Called when a Detail page closes without playing, and on
+     * player close as a backstop. A warmed folder the player just used is
+     * unmarked before navigation, so it is never dropped here. Returns
+     * bytes freed.
      */
     fun clearWarmed(context: Context): Long {
         val root = root(context)

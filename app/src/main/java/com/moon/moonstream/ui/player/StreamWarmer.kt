@@ -20,11 +20,12 @@ import kotlinx.coroutines.withContext
  * skips chunks already on disk). Silent and best effort — any failure
  * just means playback fetches the chunk itself, as today.
  *
- * Warmed folders are swept on the next player close
- * ([TdStreamCache.clearWarmed]), so bytes for a title never played do
- * not linger. The player's own close rule (both caches cleared on
- * every close) is untouched: a warmed file that IS played has its
- * chunks cleared by the normal close handler.
+ * Warmed folders are swept the moment the Detail page closes without
+ * playing ([TdStreamCache.clearWarmed]); player close is the backstop.
+ * So bytes for a title never played do not linger. The player's own
+ * close rule (both caches cleared on every close) is untouched: a
+ * warmed file that IS played has its chunks cleared by the normal
+ * close handler.
  */
 object StreamWarmer {
 

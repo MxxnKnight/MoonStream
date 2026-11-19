@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
 import com.moon.moonstream.R
+import com.moon.moonstream.cache.TdStreamCache
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.player.PlayerUrls
 import com.moon.moonstream.ui.player.StreamWarmer
@@ -56,6 +57,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.moon.moonstream.backend.BackendProvider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -243,6 +245,16 @@ fun DetailScreen(
         StreamWarmer.warm(context, first)
     }
 
+    // Instant play cleanup (moon's 2026-11-19): the moment the user
+    // leaves this page WITHOUT playing, the warmed chunks are deleted
+    // right here — they never wait for the next player close. A file
+    // that IS played is unmarked in playInApp/playContinue before
+    // navigation, so the sweep skips it. The player-close sweep stays
+    // as a backstop (e.g. app killed while on Detail).
+    DisposableEffect(mediaId) {
+        onDispose { TdStreamCache.clearWarmed(context) }
+    }
+
     // Stream URLs served by the in-phone server: /stream/file/<mediaId>/<fileId>
     // (same shape the server advertises in its /stream responses).
     val streamBase = "http://${AppUiState.currentIp}:${AppUiState.port}"
@@ -309,6 +321,10 @@ fun DetailScreen(
         // from part 1, so the resume position and watch row live on one
         // file. The player joins the parts either way.
         val first = SplitFiles.sequenceFor(files, file).first()
+        // Instant play: this file IS being played, so the Detail-exit
+        // sweep must leave its warmed chunks alone (the player reads
+        // them). Unmark BEFORE navigating — dispose fires on the way out.
+        TdStreamCache.unmarkWarmed(first.channelId, first.messageId)
         onPlayInApp(
             PlayerUrls.stream(m.id, first.id), playTitle(first), m.title,
             m.id, first.id,
@@ -336,6 +352,9 @@ fun DetailScreen(
                 }
                 // Split file: play from part 1 (same as playInApp).
                 val first = SplitFiles.sequenceFor(files, target).first()
+                // Instant play: played, not abandoned — keep its warmed
+                // chunks (see playInApp).
+                TdStreamCache.unmarkWarmed(first.channelId, first.messageId)
                 onPlayInApp(
                     PlayerUrls.stream(m.id, first.id), playTitle(first), m.title,
                     m.id, first.id,
