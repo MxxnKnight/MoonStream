@@ -3983,9 +3983,10 @@ private fun FontOptionBtn(
     onClick: () -> Unit,
 ) {
     SheetOptionBtn(
-        label, selected, onClick,
+        label, selected,
         fontFamily = subtitleFontFamily(fontId),
         modifier = modifier,
+        onClick = onClick,
     )
 }
 
@@ -3994,9 +3995,9 @@ private fun FontOptionBtn(
 private fun SheetOptionBtn(
     label: String,
     selected: Boolean,
-    onClick: () -> Unit,
     fontFamily: FontFamily? = null,
     modifier: Modifier = Modifier,
+    onClick: () -> Unit,
 ) {
     Box(
         modifier = modifier
