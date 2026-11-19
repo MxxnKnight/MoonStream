@@ -82,6 +82,8 @@ import kotlin.math.abs
 // Borderland S1, 24:00, intro 0:00-1:30, outro 22:30-24:00.
 // In portrait the player doesn't fit (it's landscape-only, like the app),
 // so portrait shows what changed + how to try it; rotate to play.
+// 2026-11-19: three looks (PlayerLooks.kt) — Current, Air, Bar — same
+// buttons, look only; switch them in App.kt's Look row.
 // ---------------------------------------------------------------------------
 
 private enum class MockSheet { SUBS, AUDIO, EPISODES, SUBLINES, PLAYLIST }
@@ -120,23 +122,23 @@ private val mockChanges = listOf(
 )
 
 @Composable
-fun PlayerScreen() {
+fun PlayerScreen(look: PlayerLook = PlayerLooks.current) {
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black),
     ) {
         if (maxWidth < maxHeight) {
-            PlayerPortraitNotes()
+            PlayerPortraitNotes(look)
         } else {
-            PlayerLandscapeMock()
+            PlayerLandscapeMock(look)
         }
     }
 }
 
 /** Portrait: what changed + how to try it (the player is landscape-only). */
 @Composable
-private fun PlayerPortraitNotes() {
+private fun PlayerPortraitNotes(look: PlayerLook) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -169,6 +171,51 @@ private fun PlayerPortraitNotes() {
                 color = MsColors.TextSecondary,
             )
             Spacer(Modifier.height(24.dp))
+            Text(
+                "Three looks to try",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MsColors.TextPrimary,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Same buttons, just a different face — switch them in the " +
+                    "Look row above the player. Playback keeps going when " +
+                    "you switch.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MsColors.TextSecondary,
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+        items(PlayerLooks.all) { lookOption ->
+            Row(Modifier.padding(bottom = 16.dp)) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 7.dp)
+                        .size(7.dp)
+                        .background(
+                            if (lookOption.id == look.id) MsColors.Accent
+                            else MsColors.TextSecondary,
+                            CircleShape,
+                        ),
+                )
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        lookOption.label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MsColors.TextPrimary,
+                    )
+                    Text(
+                        lookOption.blurb,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MsColors.TextSecondary,
+                    )
+                }
+            }
+        }
+        item {
             Text(
                 "What's new in this design",
                 style = MaterialTheme.typography.titleMedium,
@@ -219,7 +266,7 @@ private fun PlayerPortraitNotes() {
 }
 
 @Composable
-private fun PlayerLandscapeMock() {
+private fun PlayerLandscapeMock(look: PlayerLook) {
     // Demo episode.
     val durationMs = 1_440_000L // 24:00
     val segments = remember {
@@ -509,7 +556,7 @@ private fun PlayerLandscapeMock() {
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = if (controlsVisible) 132.dp else 36.dp)
+                    .padding(bottom = if (controlsVisible) look.subBottomPadding else 36.dp)
                     .padding(bottom = (subPosition * 300).dp)
                     .padding(horizontal = 48.dp),
             )
@@ -526,7 +573,10 @@ private fun PlayerLandscapeMock() {
                     .fillMaxWidth()
                     .background(
                         Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = 0.65f), Color.Transparent),
+                            listOf(
+                                Color.Black.copy(alpha = look.topScrimAlpha),
+                                Color.Transparent,
+                            ),
                         ),
                     )
                     .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -536,12 +586,16 @@ private fun PlayerLandscapeMock() {
                     icon = Icons.Filled.ArrowBack,
                     contentDescription = "Back",
                     onClick = { toast = "Back — closes the player in the app (mock)" },
+                    size = look.buttonSize,
+                    iconSize = look.buttonIconSize,
+                    fillAlpha = look.buttonFillAlpha,
+                    border = look.buttonBorder,
                 )
                 Spacer(Modifier.width(12.dp))
                 Surface(
                     onClick = { sheet = MockSheet.EPISODES },
                     shape = RoundedCornerShape(50),
-                    color = Color.Black.copy(alpha = 0.45f),
+                    color = Color.Black.copy(alpha = look.titlePillAlpha),
                 ) {
                     Text(
                         text = "Alice in Borderland — S1 E$episode",
@@ -555,23 +609,35 @@ private fun PlayerLandscapeMock() {
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(look.topSpacing)) {
                     MockPlayerIconButton(
                         icon = Icons.Filled.PlaylistPlay,
                         contentDescription = "Episodes",
                         onClick = { sheet = MockSheet.EPISODES },
+                        size = look.buttonSize,
+                        iconSize = look.buttonIconSize,
+                        fillAlpha = look.buttonFillAlpha,
+                        border = look.buttonBorder,
                         enabled = !showTrim,
                     )
                     MockPlayerIconButton(
                         icon = Icons.Filled.List,
                         contentDescription = "Playlist",
                         onClick = { sheet = MockSheet.PLAYLIST },
+                        size = look.buttonSize,
+                        iconSize = look.buttonIconSize,
+                        fillAlpha = look.buttonFillAlpha,
+                        border = look.buttonBorder,
                         enabled = !showTrim,
                     )
                     MockPlayerIconButton(
                         icon = Icons.Filled.PhotoCamera,
                         contentDescription = "Screenshot",
                         onClick = { toast = "Screenshot saved (mock)" },
+                        size = look.buttonSize,
+                        iconSize = look.buttonIconSize,
+                        fillAlpha = look.buttonFillAlpha,
+                        border = look.buttonBorder,
                         enabled = !showTrim,
                     )
                     MockPlayerIconButton(
@@ -581,7 +647,11 @@ private fun PlayerLandscapeMock() {
                             showTrim = !showTrim
                             if (!showTrim) trimLoop = false
                         },
+                        size = look.buttonSize,
+                        iconSize = look.buttonIconSize,
                         active = showTrim,
+                        fillAlpha = look.buttonFillAlpha,
+                        border = look.buttonBorder,
                     )
                     MockPlayerIconButton(
                         icon = Icons.Filled.Lock,
@@ -591,6 +661,10 @@ private fun PlayerLandscapeMock() {
                             controlsVisible = false
                             showUnlock = true
                         },
+                        size = look.buttonSize,
+                        iconSize = look.buttonIconSize,
+                        fillAlpha = look.buttonFillAlpha,
+                        border = look.buttonBorder,
                         enabled = !showTrim,
                     )
                 }
@@ -606,7 +680,7 @@ private fun PlayerLandscapeMock() {
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(64.dp),
+                horizontalArrangement = Arrangement.spacedBy(look.centerSpacing),
             ) {
                 MockPlayerIconButton(
                     icon = Icons.Filled.Replay10,
@@ -615,8 +689,10 @@ private fun PlayerLandscapeMock() {
                         seekBy(-10_000L)
                         seekFeedback = false to 10
                     },
-                    size = 52.dp,
-                    iconSize = 32.dp,
+                    size = look.seek10Size,
+                    iconSize = look.seek10IconSize,
+                    fillAlpha = look.buttonFillAlpha,
+                    border = look.buttonBorder,
                 )
                 Surface(
                     onClick = {
@@ -624,15 +700,22 @@ private fun PlayerLandscapeMock() {
                         poke()
                     },
                     shape = CircleShape,
-                    color = Color.White.copy(alpha = 0.14f),
-                    modifier = Modifier.size(76.dp).mockPressScale(),
+                    color = if (look.playFillAccent) MsColors.Accent
+                        else Color.White.copy(alpha = look.playFillAlpha),
+                    border = if (look.playBorderAlpha > 0f) {
+                        BorderStroke(
+                            look.playBorderWidth,
+                            Color.White.copy(alpha = look.playBorderAlpha),
+                        )
+                    } else null,
+                    modifier = Modifier.size(look.playSize).mockPressScale(),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                             if (isPlaying) "Pause" else "Play",
                             tint = Color.White,
-                            modifier = Modifier.size(38.dp),
+                            modifier = Modifier.size(look.playIconSize),
                         )
                     }
                 }
@@ -643,8 +726,10 @@ private fun PlayerLandscapeMock() {
                         seekBy(10_000L)
                         seekFeedback = true to 10
                     },
-                    size = 52.dp,
-                    iconSize = 32.dp,
+                    size = look.seek10Size,
+                    iconSize = look.seek10IconSize,
+                    fillAlpha = look.buttonFillAlpha,
+                    border = look.buttonBorder,
                 )
             }
         }
@@ -686,10 +771,21 @@ private fun PlayerLandscapeMock() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)),
-                        ),
+                    .then(
+                        if (look.bottomPanelAlpha > 0f) {
+                            Modifier.background(
+                                Color.Black.copy(alpha = look.bottomPanelAlpha),
+                            )
+                        } else {
+                            Modifier.background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = look.bottomScrimAlpha),
+                                    ),
+                                ),
+                            )
+                        },
                     )
                     .padding(horizontal = 16.dp)
                     .padding(top = 8.dp, bottom = 12.dp),
@@ -698,28 +794,40 @@ private fun PlayerLandscapeMock() {
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(look.bottomSpacing)) {
                         MockPlayerIconButton(
                             icon = Icons.Filled.ClosedCaption,
                             contentDescription = "Subtitles",
                             onClick = { sheet = MockSheet.SUBS },
+                            size = look.buttonSize,
+                            iconSize = look.buttonIconSize,
                             active = subTrack != 0,
+                            fillAlpha = look.buttonFillAlpha,
+                            border = look.buttonBorder,
                             enabled = !showTrim,
                         )
                         MockPlayerIconButton(
                             icon = Icons.Filled.Audiotrack,
                             contentDescription = "Audio",
                             onClick = { sheet = MockSheet.AUDIO },
+                            size = look.buttonSize,
+                            iconSize = look.buttonIconSize,
+                            fillAlpha = look.buttonFillAlpha,
+                            border = look.buttonBorder,
                             enabled = !showTrim,
                         )
                     }
                     Spacer(Modifier.weight(1f))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(look.bottomSpacing)) {
                         if (episode < 8) {
                             MockPlayerIconButton(
                                 icon = Icons.Filled.SkipNext,
                                 contentDescription = "Next episode",
                                 onClick = { nextEpisode() },
+                                size = look.buttonSize,
+                                iconSize = look.buttonIconSize,
+                                fillAlpha = look.buttonFillAlpha,
+                                border = look.buttonBorder,
                                 enabled = !showTrim,
                             )
                         }
@@ -727,9 +835,11 @@ private fun PlayerLandscapeMock() {
                             onClick = { aspectIndex = (aspectIndex + 1) % aspects.size },
                             enabled = !showTrim,
                             shape = RoundedCornerShape(50),
-                            color = Color.White.copy(alpha = 0.12f),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-                            modifier = Modifier.height(45.dp).mockPressScale(),
+                            color = Color.White.copy(alpha = look.buttonFillAlpha),
+                            border = if (look.buttonBorder) {
+                                BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                            } else null,
+                            modifier = Modifier.height(look.buttonSize).mockPressScale(),
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -739,7 +849,7 @@ private fun PlayerLandscapeMock() {
                                     Icons.Filled.AspectRatio,
                                     contentDescription = "Aspect ratio",
                                     tint = Color.White,
-                                    modifier = Modifier.size(20.dp),
+                                    modifier = Modifier.size(look.buttonIconSize),
                                 )
                                 Spacer(Modifier.width(6.dp))
                                 Text(
@@ -763,6 +873,7 @@ private fun PlayerLandscapeMock() {
                         color = Color.White.copy(alpha = 0.9f),
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace,
+                            fontSize = look.timeFontSize,
                         ),
                         modifier = Modifier.width(64.dp),
                     )
@@ -782,6 +893,8 @@ private fun PlayerLandscapeMock() {
                             modifier = Modifier.fillMaxWidth(),
                             trimStartMs = trimStartMs,
                             trimEndMs = trimEndMs,
+                            restHeight = look.seekRestHeight,
+                            scrubHeight = look.seekScrubHeight,
                         )
                     }
                     Text(
@@ -793,6 +906,7 @@ private fun PlayerLandscapeMock() {
                         color = Color.White.copy(alpha = 0.9f),
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace,
+                            fontSize = look.timeFontSize,
                         ),
                         textAlign = TextAlign.End,
                         modifier = Modifier
@@ -814,6 +928,7 @@ private fun PlayerLandscapeMock() {
                     positionMs = seg.endMs
                     poke()
                 },
+                fillAlpha = look.pillFillAlpha,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = 16.dp, bottom = if (controlsVisible) 104.dp else 28.dp),
@@ -829,6 +944,7 @@ private fun PlayerLandscapeMock() {
                     positionMs = resumeMs
                     poke()
                 },
+                fillAlpha = look.pillFillAlpha,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(start = 16.dp, bottom = if (controlsVisible) 104.dp else 28.dp),

@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.moon.webmock.screens.PlayerLooks
 import com.moon.webmock.screens.PlayerScreen
 import com.moon.webmock.screens.StatsScreen
 import com.moon.webmock.theme.MoonStreamTheme
@@ -46,6 +47,7 @@ private enum class MockScreen(val label: String) {
 fun App() {
     MoonStreamTheme {
         var screen by remember { mutableStateOf(MockScreen.PLAYER) }
+        var look by remember { mutableStateOf(PlayerLooks.current) }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -89,6 +91,46 @@ fun App() {
                     }
                 }
             }
+            // Look picker (player only): same buttons, different face.
+            if (screen == MockScreen.PLAYER) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.Black)
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Look",
+                        style = MaterialTheme.typography.bodyMedium.doto(),
+                        fontWeight = FontWeight.SemiBold,
+                        color = MsColors.TextSecondary,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Row(
+                        modifier = Modifier
+                            .background(MsColors.SurfaceAlt, RoundedCornerShape(50))
+                            .padding(4.dp),
+                    ) {
+                        PlayerLooks.all.forEach { option ->
+                            val selected = look.id == option.id
+                            Text(
+                                option.label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) MsColors.OnAccent else MsColors.TextSecondary,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(
+                                        if (selected) MsColors.Accent else Color.Transparent,
+                                    )
+                                    .clickable { look = option }
+                                    .padding(horizontal = 16.dp, vertical = 7.dp),
+                            )
+                        }
+                    }
+                }
+            }
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -105,7 +147,7 @@ fun App() {
                     ) {
                         StatsScreen(onBack = {})
                     }
-                    MockScreen.PLAYER -> PlayerScreen()
+                    MockScreen.PLAYER -> PlayerScreen(look)
                 }
             }
         }

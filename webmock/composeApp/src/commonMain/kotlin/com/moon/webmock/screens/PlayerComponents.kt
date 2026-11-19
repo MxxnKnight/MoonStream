@@ -134,6 +134,8 @@ fun MockPlayerIconButton(
     size: Dp = 45.dp,
     iconSize: Dp = 20.dp,
     active: Boolean = false,
+    fillAlpha: Float = 0.12f,
+    border: Boolean = true,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
@@ -141,9 +143,9 @@ fun MockPlayerIconButton(
         onClick = onClick,
         enabled = enabled,
         shape = CircleShape,
-        color = Color.White.copy(alpha = 0.12f),
+        color = Color.White.copy(alpha = fillAlpha),
         modifier = modifier.size(size).mockPressScale(),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+        border = if (border) BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)) else null,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -172,9 +174,9 @@ data class MockSeekSegment(
  * 2. Scrub bubble — while dragging, the target time floats above the
  *    thumb (with the segment name when inside one), instead of only the
  *    small bottom-left timer changing.
- * Same behaviour as the app otherwise: 4dp at rest, 10dp while scrubbing,
- * played/buffered/remaining shades, NO thumb dot (moon's rule), seek
- * lands once on finger lift.
+ * Same behaviour as the app otherwise: played/buffered/remaining shades,
+ * NO thumb dot (moon's rule), seek lands once on finger lift. Rest/scrub
+ * heights come from the look (Current: 4dp at rest, 10dp while scrubbing).
  */
 @Composable
 fun MockSeekBar(
@@ -188,11 +190,13 @@ fun MockSeekBar(
     /** Trimmer selection: the marked clip, drawn as an Accent band. */
     trimStartMs: Long? = null,
     trimEndMs: Long? = null,
+    restHeight: Dp = 4.dp,
+    scrubHeight: Dp = 10.dp,
 ) {
     var isScrubbing by remember { mutableStateOf(false) }
     var scrubMs by remember { mutableStateOf<Long?>(null) }
     val barHeight by animateDpAsState(
-        targetValue = if (isScrubbing) 10.dp else 4.dp,
+        targetValue = if (isScrubbing) scrubHeight else restHeight,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioNoBouncy,
             stiffness = Spring.StiffnessMediumLow,
@@ -371,11 +375,12 @@ fun MockSkipPill(
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    fillAlpha: Float = 0.14f,
 ) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(50),
-        color = Color.White.copy(alpha = 0.14f),
+        color = Color.White.copy(alpha = fillAlpha),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
         modifier = modifier.mockPressScale(),
     ) {
