@@ -1239,14 +1239,19 @@ fun PlayerScreen(
             // 11 MB window deleted on every reopen). Now release() only
             // closes handles.
             val targets = closeTargets
-            if (targets.isNotEmpty()) {
-                ioScope.launch(Dispatchers.IO) {
-                    targets.forEach { (ch, msg) ->
-                        try {
-                            TdStreamCache.clearFile(context, ch, msg)
-                        } catch (e: Exception) { /* never break close */ }
-                    }
+            ioScope.launch(Dispatchers.IO) {
+                targets.forEach { (ch, msg) ->
+                    try {
+                        TdStreamCache.clearFile(context, ch, msg)
+                    } catch (e: Exception) { /* never break close */ }
                 }
+                // Sweep instant-play leftovers: warmed chunks of titles
+                // never played (see StreamWarmer). The played file's own
+                // chunks are already gone above; this drops the rest so
+                // warmed bytes never linger past the next playback.
+                try {
+                    TdStreamCache.clearWarmed(context)
+                } catch (e: Exception) { /* never break close */ }
             }
             player.release()
         }

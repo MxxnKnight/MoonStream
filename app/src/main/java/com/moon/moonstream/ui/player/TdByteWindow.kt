@@ -287,6 +287,31 @@ internal class TdByteWindow(
     }
 
     /**
+     * Instant-play warm-up (moon's 2026-11-19): downloads chunk 0 and the
+     * last chunk into this window's folder, so the player's first reads
+     * hit disk instead of waiting on Telegram. Chunk 0 holds the
+     * container header and the first frames; the last chunk holds the
+     * MP4 moov or MKV cues when the index sits at the end of the file.
+     * At most ~2 MB (two 1 MB chunks). Chunks already on disk are
+     * skipped, so a re-warm costs nothing. Best effort: any failure just
+     * means the player fetches the chunk itself, as today. No prefetch,
+     * no eviction — this only fills, never trims.
+     */
+    suspend fun warmEdges() {
+        if (closed) return
+        val last = LowStorageWindow.chunkCount(fileSize)
+        if (last <= 0L) return
+        mutex.withLock {
+            if (!closed) downloadRange(0L, 1)
+        }
+        if (last > 1L) {
+            mutex.withLock {
+                if (!closed) downloadRange(last - 1, 1)
+            }
+        }
+    }
+
+    /**
      * Waits until it is polite to talk to Telegram again: the pacing gap after
      * the last request, plus any backoff from empty replies. Called while
      * holding [mutex], so nothing else is fetching meanwhile.

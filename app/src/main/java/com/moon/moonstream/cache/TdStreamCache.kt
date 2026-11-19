@@ -28,6 +28,10 @@ object TdStreamCache {
     /** Playbacks currently holding a window; their folder is never cleared. */
     private val active = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
+    /** Folders warmed for instant play but not yet played; swept on the
+     *  next player close so warmed bytes never linger (see StreamWarmer). */
+    private val warmed = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
     private fun root(context: Context): File = File(context.filesDir, ROOT)
 
     /** Stable folder name for one Telegram message. */
@@ -48,6 +52,11 @@ object TdStreamCache {
     fun isActive(channelId: Long, messageId: Long): Boolean =
         active.contains(key(channelId, messageId))
 
+    /** Remember a folder as warmed for instant play (swept by [clearWarmed]). */
+    fun markWarmed(channelId: Long, messageId: Long) {
+        warmed.add(key(channelId, messageId))
+    }
+
     /** Total bytes of in-app player chunks on disk. */
     fun bytes(context: Context): Long = dirSize(root(context))
 
@@ -67,6 +76,9 @@ object TdStreamCache {
                 folders++
             }
         }
+        // Warmed keys for folders just deleted are stale; folders still
+        // in use keep theirs (their own close handler clears them).
+        synchronized(warmed) { warmed.retainAll(inUse) }
         val freed = (before - dirSize(root)).coerceAtLeast(0L)
         if (folders > 0) {
             AppLog.i(
@@ -78,8 +90,40 @@ object TdStreamCache {
         return freed
     }
 
+    /**
+     * Deletes warmed-only folders (instant-play leftovers) that no playback
+     * is using. Called on player close, after the played file's own chunks
+     * are cleared. A warmed folder the player just used is already gone by
+     * then; one never played is dropped here. Returns bytes freed.
+     */
+    fun clearWarmed(context: Context): Long {
+        val root = root(context)
+        val inUse = synchronized(active) { active.toSet() }
+        val todo = synchronized(warmed) { warmed.toSet() }
+        var freed = 0L
+        var folders = 0
+        todo.forEach { k ->
+            warmed.remove(k)
+            if (inUse.contains(k)) return@forEach
+            val dir = File(root, k)
+            if (dir.exists()) {
+                freed += dirSize(dir)
+                dir.deleteRecursively()
+                folders++
+            }
+        }
+        if (folders > 0) {
+            AppLog.i(
+                "CACHE",
+                "instant play: deleted $folders warmed folder(s), ${freed / 1024} KB freed",
+            )
+        }
+        return freed
+    }
+
     /** Deletes one file's chunks (called when its playback closes). */
     fun clearFile(context: Context, channelId: Long, messageId: Long): Long {
+        warmed.remove(key(channelId, messageId))
         val dir = File(root(context), key(channelId, messageId))
         val before = dirSize(dir)
         dir.deleteRecursively()

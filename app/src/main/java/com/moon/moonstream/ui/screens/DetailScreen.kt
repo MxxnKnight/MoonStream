@@ -9,6 +9,7 @@ import androidx.compose.ui.res.vectorResource
 import com.moon.moonstream.R
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.ui.player.PlayerUrls
+import com.moon.moonstream.ui.player.StreamWarmer
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -175,6 +176,10 @@ fun DetailScreen(
     // "Move to" sheet + file-delete dialog (moon's 2026-11-15).
     var showMoveSheet by remember { mutableStateOf(false) }
     var fileToDelete by remember { mutableStateOf<StreamFileEntity?>(null) }
+    // Instant play (moon's 2026-11-19): file ids already warmed this
+    // Detail open, so a files re-emission never re-warms the same file.
+    // Plain set, not state — nothing on screen reads it.
+    val warmedIds = remember(mediaId) { mutableSetOf<Long>() }
 
     val m = media
     if (m == null) {
@@ -215,6 +220,27 @@ fun DetailScreen(
             MetadataMatcher.fetchBackdrop(m.imdbId!!, m.type)
         }
         if (url != null) db.mediaDao().updateBackdropUrl(m.id, url)
+    }
+
+    // Instant play (moon's 2026-11-19): while the user is looking at
+    // this title, quietly warm the file they are most likely to play —
+    // the continue-watch target, else the first file (part 1 for a
+    // split file) — so the first frame comes from local disk instead
+    // of waiting on Telegram. Silent, best effort, and cancelled the
+    // moment the user leaves the page. Keyed on the files list going
+    // from empty to loaded, so later re-emissions never restart it.
+    LaunchedEffect(files.isNotEmpty()) {
+        if (files.isEmpty()) return@LaunchedEffect
+        val latest = try {
+            withContext(Dispatchers.IO) { db.watchProgressDao().latestForMedia(m.id) }
+        } catch (e: Exception) { null }
+        val target = latest?.let { rec -> files.find { it.id == rec.streamFileId } }
+            ?: files.firstOrNull()
+            ?: return@LaunchedEffect
+        // Split file: warm part 1, the file playback starts from.
+        val first = SplitFiles.sequenceFor(files, target).first()
+        if (!warmedIds.add(first.id)) return@LaunchedEffect
+        StreamWarmer.warm(context, first)
     }
 
     // Stream URLs served by the in-phone server: /stream/file/<mediaId>/<fileId>
