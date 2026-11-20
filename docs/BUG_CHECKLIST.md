@@ -1,6 +1,19 @@
 # MoonStream Bug Checklist
 
-Every bug you report goes here. I check them off only when the fix is built, pushed, and (where I can) verified. Updated 2026-11-01.
+Every bug you report goes here. I check them off only when the fix is built, pushed, and (where I can) verified. Updated 2026-11-20.
+
+## 🔨 For freebuff (Telegram module — TdlibMoonStreamBackend)
+
+- [ ] Telegram restore misses backups older than the newest 60 Saved Messages: `recentBackupDocs` reads only GetChatHistory(limit=60) and `searchBackupDocs` relies on the hashtag search index. Page through Saved Messages history (GetChatHistory with from_message_id pagination, 100 per page, up to ~20 pages) until a MoonStream_backup document is found or history is exhausted. Keep the hashtag search as the fast path. Log the attempt with AppLog BACKUP tag (messages scanned, found or not) so it shows in the Logs screen. (moon's 2026-11-20: restore said "No backup found" after Clear data)
+
+## 🔨 Done in this build (0.15.163 — build from workflow to get it)
+
+- [x] Detail header showed 5 Episodes while Season 1 showed 6 (same 10.3 GB) → Set-episode save now refreshes the stored count, plus a one-time repair on first launch after updating
+- [x] "Copy Link" and "Add Custom Stream" buttons clipped → shortened to "Copy" and "Add Stream"
+- [x] Instant play: opening a Detail page quietly warms the first + last chunks (~2 MB) so the first frame comes from local disk; warmed chunks deleted the moment you leave the page without playing
+- [x] Logs screen never showed Detail actions → Set episode, Fix Metadata, Refresh metadata, Move to, Add Stream, Subtitle, Delete file, Move to unmatched, Custom content now log one DETAIL line each
+- [x] App grew to 248 MB → poster cache capped 50 MB, server-streamed bytes swept after 10 min idle, auto-cleanup over 500 MB, Cache MB cap enforced, storage breakdown rows in Settings, Lite posters switch (needs restart)
+- [x] Gist restore failed after Clear data (saved gist id wiped, app never searched) → pull/push now list your gists and find the MoonStream one; toasts say the real reason (no token / no gist / token rejected / no connection)
 
 ## ✅ Done (pushed to main)
 
