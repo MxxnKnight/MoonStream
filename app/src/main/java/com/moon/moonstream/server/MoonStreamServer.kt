@@ -486,6 +486,11 @@ class MoonStreamServer(
                 contentLengthOverride = length, extraHeaders = extra)
             return
         }
+        // Storage janitor (moon's 2026-11-20): serving downloads these
+        // parts into TDLib's dir — remember them so the idle sweep can
+        // drop their Telegram copies once playback has been quiet.
+        partsList.forEach { ServedFiles.note(it.channelId, it.messageId) }
+        ServedFiles.maybeSweep()
         try {
             val header = buildHeader(status.first, status.second, mime, length, extra)
             output.write(header.toString().toByteArray(Charsets.UTF_8))
@@ -579,6 +584,9 @@ class MoonStreamServer(
                 contentLengthOverride = length, extraHeaders = extra)
             return
         }
+        // Storage janitor (moon's 2026-11-20): see serveMediaBytes.
+        ServedFiles.note(channelId, messageId)
+        ServedFiles.maybeSweep()
         try {
             val header = buildHeader(status.first, status.second, mime, length, extra)
             output.write(header.toString().toByteArray(Charsets.UTF_8))
@@ -623,6 +631,9 @@ class MoonStreamServer(
             val bytes: ByteArray = runBlocking {
                 backend.readFileRange(sub.channelId, sub.messageId, 0, sub.fileSize.toInt())
             }
+            // Storage janitor (moon's 2026-11-20): see serveMediaBytes.
+            ServedFiles.note(sub.channelId, sub.messageId)
+            ServedFiles.maybeSweep()
             // Subtitle delay (moon's pick 2026-11-02): shift SRT/VTT cue
             // timestamps on the fly when ?delayMs= is present.
             val outBytes =

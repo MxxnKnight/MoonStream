@@ -10,6 +10,8 @@ import com.moon.moonstream.R
 import com.moon.moonstream.index.StremioIds
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.cache.CacheManager
+import com.moon.moonstream.cache.StorageJanitor
+import com.moon.moonstream.server.ServedFiles
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -167,6 +169,15 @@ object AppUiState {
                 // Best-effort: the server falls back to computing IDs on the
                 // fly, so a failed backfill is never fatal.
             }
+        }
+        // Storage janitor (moon's 2026-11-20): keep the app small even
+        // with a big library — auto-clean an overgrown stream cache,
+        // enforce the Cache MB cap, and sweep server-served files gone
+        // idle. Best effort; never blocks startup.
+        CoroutineScope(Dispatchers.IO).launch {
+            StorageJanitor.maybeAutoClean(context)
+            StorageJanitor.enforceCacheCap(context)
+            ServedFiles.maybeSweep()
         }
     }
 

@@ -98,7 +98,9 @@ import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
 import coil.compose.AsyncImage
+import com.moon.moonstream.cache.StorageJanitor
 import com.moon.moonstream.cache.TdStreamCache
+import com.moon.moonstream.server.ServedFiles
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.backend.BackendProvider
@@ -1251,6 +1253,13 @@ fun PlayerScreen(
                 // warmed bytes never linger past the next playback.
                 try {
                     TdStreamCache.clearWarmed(context)
+                } catch (e: Exception) { /* never break close */ }
+                // Storage janitor (moon's 2026-11-20): after every close,
+                // drop an overgrown stream cache and sweep server-served
+                // files gone idle.
+                try {
+                    StorageJanitor.maybeAutoClean(context)
+                    ServedFiles.maybeSweep()
                 } catch (e: Exception) { /* never break close */ }
             }
             player.release()

@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.moon.moonstream.MainActivity
 import com.moon.moonstream.R
+import com.moon.moonstream.cache.StorageJanitor
 import com.moon.moonstream.util.AppLog
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -124,6 +125,10 @@ class UpdateDownloadService : Service() {
                 }
             }
             downloadedApk = file
+            // Storage janitor (moon's 2026-11-20): an update APK just
+            // landed — enforce the Cache MB cap now. The fresh APK is
+            // safe: files touched in the last 10 minutes are skipped.
+            scope.launch { StorageJanitor.enforceCacheCap(this@UpdateDownloadService) }
             _state.value = UpdateState.Done(info.version, file)
             notificationManager?.notify(
                 NOTIF_ID,

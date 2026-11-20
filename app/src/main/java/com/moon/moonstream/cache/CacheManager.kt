@@ -37,6 +37,36 @@ object CacheManager {
         dirSize(java.io.File(context.filesDir, "tdlib_files")) + TdStreamCache.bytes(context)
     }
 
+    /** Per-folder sizes for the Settings storage breakdown (moon's 2026-11-20). All bytes, real disk usage. */
+    data class StorageBreakdown(
+        val appCache: Long,
+        val telegramFiles: Long,
+        val playerChunks: Long,
+        val libraryDb: Long,
+        val tdlibDb: Long,
+        val logs: Long,
+    )
+
+    /** Measures every folder the app stores data in. */
+    suspend fun measureBreakdown(context: Context): StorageBreakdown = withContext(Dispatchers.IO) {
+        StorageBreakdown(
+            appCache = dirSize(context.cacheDir),
+            telegramFiles = dirSize(File(context.filesDir, "tdlib_files")),
+            playerChunks = TdStreamCache.bytes(context),
+            libraryDb = databaseBytes(context),
+            tdlibDb = dirSize(File(context.filesDir, "tdlib")),
+            logs = dirSize(File(context.filesDir, "logs")),
+        )
+    }
+
+    /** Room database file plus its -wal/-shm sidecars when present. */
+    private fun databaseBytes(context: Context): Long {
+        val base = context.getDatabasePath("moonstream.db")
+        return realFileSize(base) +
+            realFileSize(File(base.absolutePath + "-wal")) +
+            realFileSize(File(base.absolutePath + "-shm"))
+    }
+
     /** Deletes everything under the cache dir. Returns bytes freed. */
     suspend fun clear(context: Context): Long = withContext(Dispatchers.IO) {
         val dir = context.cacheDir

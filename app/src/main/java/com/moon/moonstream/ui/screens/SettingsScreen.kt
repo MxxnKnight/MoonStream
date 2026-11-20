@@ -9,6 +9,8 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import coil.Coil
+import com.moon.moonstream.MoonStreamApp
 import com.moon.moonstream.ui.components.MsToast
 import com.moon.moonstream.index.db.MsDatabase
 import com.moon.moonstream.util.AppLog
@@ -156,6 +158,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
 
     // --- Streaming & Storage state ---
     var cacheMb by remember { mutableStateOf(AppUiState.cacheMaxMb.toString()) }
+    var litePosters by remember { mutableStateOf(MoonStreamApp.isLitePosters(context)) }
     var playerBufferS by remember { mutableStateOf(AppUiState.playerBufferS.toString()) }
     var maxSizeMb by remember { mutableStateOf("") }
     var minSearchMb by remember { mutableStateOf("") }
@@ -896,6 +899,30 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.width(100.dp),
+                )
+            }
+            SettingRow(
+                title = "Lite posters",
+                info = "Posters are never saved to disk — they load from the network every time. Saves the most space on a big library. Needs an app restart to apply; turning it on clears the saved posters right away.",
+            ) {
+                MsToggle(
+                    checked = litePosters,
+                    onCheckedChange = {
+                        litePosters = it
+                        context.getSharedPreferences("moonstream_prefs", android.content.Context.MODE_PRIVATE)
+                            .edit().putBoolean(MoonStreamApp.KEY_LITE_POSTERS, it).apply()
+                        if (it) {
+                            // Clear the saved posters now so the space
+                            // comes back at once; the loader itself
+                            // switches on the next app start.
+                            scope.launch(Dispatchers.IO) {
+                                try {
+                                    Coil.imageLoader(context).diskCache?.clear()
+                                } catch (e: Exception) { /* best effort */ }
+                            }
+                        }
+                        MsToast.show("Saved — restart the app to apply")
+                    },
                 )
             }
             SettingRow(
@@ -2010,10 +2037,12 @@ private fun CacheStorageBlock() {
     val max = AppUiState.cacheMaxMb.coerceAtLeast(1)
     val streamMb = AppUiState.streamCacheMb
     val bar = remember { Animatable(used.toFloat() / max) }
+    var breakdown by remember { mutableStateOf<CacheManager.StorageBreakdown?>(null) }
 
     // Measure the real cache dir size when this block appears.
     androidx.compose.runtime.LaunchedEffect(Unit) {
         AppUiState.refreshCacheUsed(context)
+        breakdown = CacheManager.measureBreakdown(context)
     }
 
     // Keep the bar in sync when the numbers change (e.g. after Clear).
@@ -2099,7 +2128,9 @@ private fun CacheStorageBlock() {
                                 "stream cache ${beforeStream / (1024 * 1024)} → " +
                                 "${afterStream / (1024 * 1024)} MB",
                         )
+                        val freshBreakdown = CacheManager.measureBreakdown(context)
                         withContext(Dispatchers.Main) {
+                            breakdown = freshBreakdown
                             val msg = buildString {
                                 append(if (freed > 0) "Cache cleared" else "Cache is already empty")
                                 if (chunksFreed > 0) {
@@ -2149,12 +2180,57 @@ private fun CacheStorageBlock() {
                 color = MsColors.TextPrimary,
             )
         }
+        // Storage breakdown (moon's 2026-11-20): where the megabytes live.
+        breakdown?.let { b ->
+            Text(
+                text = "Storage breakdown",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MsColors.TextPrimary,
+            )
+            BreakdownRow("App cache", b.appCache)
+            BreakdownRow("Telegram files", b.telegramFiles)
+            BreakdownRow("Player chunks", b.playerChunks)
+            BreakdownRow("Library database", b.libraryDb)
+            BreakdownRow("TDLib database", b.tdlibDb)
+            BreakdownRow("Logs", b.logs)
+        }
         Text(
             text = "Video and subtitles you play in the app stream straight from Telegram — no addon server needed. Only the part you're watching is kept, watched parts are deleted as you go, and the rest goes when you close the player. Clear Cache above wipes whatever is left.",
             style = MaterialTheme.typography.bodySmall,
             color = MsColors.TextSecondary,
         )
     }
+}
+
+/**
+ * One row of the storage breakdown: a folder name and its size.
+ */
+@Composable
+private fun BreakdownRow(label: String, bytes: Long) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MsColors.TextSecondary,
+        )
+        Text(
+            text = fmtMb(bytes),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MsColors.TextPrimary,
+        )
+    }
+}
+
+/** Bytes as MB: one decimal under 10 MB, whole MB above. */
+private fun fmtMb(bytes: Long): String {
+    val mb = bytes / 1048576.0
+    return if (mb < 10) String.format(Locale.US, "%.1f MB", mb) else "${mb.toInt()} MB"
 }
 
 /**
