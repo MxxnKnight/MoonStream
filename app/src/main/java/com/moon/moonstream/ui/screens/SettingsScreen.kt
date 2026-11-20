@@ -342,14 +342,24 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         backupWorking = true
         scope.launch(Dispatchers.IO) {
             try {
-                val bytes = com.moon.moonstream.backup.GistBackup.pull(context)
-                if (bytes == null) {
+                val result = com.moon.moonstream.backup.GistBackup.pull(context)
+                if (result !is com.moon.moonstream.backup.GistBackup.PullResult.Success) {
+                    val msg = when (result) {
+                        com.moon.moonstream.backup.GistBackup.PullResult.NoToken ->
+                            "Add your GitHub token in Settings first"
+                        com.moon.moonstream.backup.GistBackup.PullResult.NoGist ->
+                            "No MoonStream backup gist on this GitHub account"
+                        com.moon.moonstream.backup.GistBackup.PullResult.AuthFailed ->
+                            "GitHub rejected the token — check it has the gist scope"
+                        com.moon.moonstream.backup.GistBackup.PullResult.NetworkError ->
+                            "Could not reach GitHub — check your connection"
+                    }
                     withContext(Dispatchers.Main) {
-                        MsToast.show("No Gist backup found — check the token in Settings")
+                        MsToast.show(msg)
                     }
                     return@launch
                 }
-                val json = BackupManager.parseBackup(bytes)
+                val json = BackupManager.parseBackup(result.bytes)
                 val summary = BackupManager.restore(context, json)
                 com.moon.moonstream.index.scan.ScanUiState.bumpChannelListVersion()
                 withContext(Dispatchers.Main) {
