@@ -901,7 +901,7 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
         ) {
             SettingRow(
                 title = "Cache MB",
-                info = "How much phone storage the app may use for its own cache (update downloads, thumbnails). Video you play in the app is downloaded by Telegram and stored separately — see Stream cache below.",
+                info = "How much phone storage the app may use for its cache — update downloads, thumbnails, and video Telegram downloaded for playback (see Stream cache below). Oldest files go first when it runs over.",
             ) {
                 MsTextField(
                     value = cacheMb,

@@ -5,6 +5,7 @@ import android.content.Context
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
+import com.moon.moonstream.server.ServedFiles
 
 /**
  * App entry point. Owns the Coil image loader so poster caching is
@@ -18,6 +19,13 @@ import coil.disk.DiskCache
  * it is RAM, not disk, and it keeps scrolling smooth.
  */
 class MoonStreamApp : Application(), ImageLoaderFactory {
+
+    override fun onCreate() {
+        super.onCreate()
+        // Reload the list of files the addon server served, so the
+        // sweep can still drop their Telegram copies after a restart.
+        ServedFiles.init(this)
+    }
 
     override fun newImageLoader(): ImageLoader {
         val lite = isLitePosters(this)

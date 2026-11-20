@@ -6,6 +6,12 @@ Every bug you report goes here. I check them off only when the fix is built, pus
 
 - [ ] Telegram restore misses backups older than the newest 60 Saved Messages: `recentBackupDocs` reads only GetChatHistory(limit=60) and `searchBackupDocs` relies on the hashtag search index. Page through Saved Messages history (GetChatHistory with from_message_id pagination, 100 per page, up to ~20 pages) until a MoonStream_backup document is found or history is exhausted. Keep the hashtag search as the fast path. Log the attempt with AppLog BACKUP tag (messages scanned, found or not) so it shows in the Logs screen. (moon's 2026-11-20: restore said "No backup found" after Clear data)
 
+## 🔨 Done in this build (0.15.164 — build from workflow to get it)
+
+- [x] Telegram files stayed at 1230 MB after a Stremio/Nuvio session — the sweep only ran on app start or player close, and the app almost never restarts → the server now sweeps on a timer (first check after 2 min, then every 15 min) while it runs
+- [x] The sweep forgot everything it served when the app restarted → the served list is now saved on the phone and reloaded on launch (capped at the 1000 most recent, entries older than a day dropped)
+- [x] The "0 MB of 2048 MB" meter didn't count Telegram files at all → the meter and the Cache MB cap now count the whole cache (app cache + Telegram files), and the cap trims the app cache first, then drops Telegram copies of files unplayed 7+ days
+
 ## 🔨 Done in this build (0.15.163 — build from workflow to get it)
 
 - [x] Detail header showed 5 Episodes while Season 1 showed 6 (same 10.3 GB) → Set-episode save now refreshes the stored count, plus a one-time repair on first launch after updating

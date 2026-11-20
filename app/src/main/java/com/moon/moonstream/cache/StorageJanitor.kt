@@ -85,9 +85,10 @@ object StorageJanitor {
     /**
      * Drops Telegram's cached copies of files not played in 7 days,
      * oldest first, up to MAX_PURGE_PER_RUN. Returns how many were
-     * dropped. Files a playback holds are skipped.
+     * dropped. Files a playback holds are skipped. Used by the
+     * auto-cleanup and by cap enforcement.
      */
-    private suspend fun purgeStaleTelegramCopies(context: Context): Int {
+    suspend fun purgeStaleTelegramCopies(context: Context): Int {
         val db = MsDatabase.get(context)
         val cutoff = System.currentTimeMillis() - RECENT_PLAY_DAYS * 24L * 60L * 60L * 1000L
         val now = System.currentTimeMillis()
@@ -119,12 +120,16 @@ object StorageJanitor {
     /**
      * Enforces the Cache MB cap from Settings (moon's pick
      * 2026-11-20 — the cap was display-only until now). Runs on app
-     * start and after an update APK lands. Trims cacheDir back under
-     * the cap, oldest files first. Never touches Coil's poster cache
-     * (Coil caps it at 50 MB itself), never touches filesDir, and
-     * never deletes a file touched in the last 10 minutes (an update
-     * download in progress or an APK that just landed). A cap of 0
-     * means enforcement is off.
+     * start and after an update APK lands. Measures the whole cache
+     * (app cache dir + Telegram's downloaded video bytes): trims
+     * cacheDir back under the cap first, oldest files first, then
+     * drops Telegram copies of files unplayed 7+ days if still over.
+     * Files played in the last 7 days are never purged, so the total
+     * can stay over the cap until they age out. Never touches Coil's
+     * poster cache (Coil caps it at 50 MB itself), and never deletes
+     * a file touched in the last 10 minutes (an update download in
+     * progress or an APK that just landed). A cap of 0 means
+     * enforcement is off.
      */
     suspend fun enforceCacheCap(context: Context) {
         try {
@@ -132,17 +137,23 @@ object StorageJanitor {
                 .getInt(KEY_CACHE_MAX_MB, 2048)
             if (maxMb <= 0) return
             val cap = maxMb.toLong() * 1024L * 1024L
-            val used = CacheManager.usedBytes(context)
+            val mb = 1024L * 1024L
+            var used = CacheManager.totalCacheBytes(context)
             if (used <= cap) return
-            val freed = withContext(Dispatchers.IO) { trimCacheDir(context, used - cap) }
-            if (freed > 0) {
-                val mb = 1024L * 1024L
-                AppLog.i(
-                    "CACHE",
-                    "cache cap: cacheDir ${used / mb} MB over ${maxMb} MB cap — " +
-                        "trimmed ${freed / mb} MB, oldest first (posters untouched)",
-                )
+            val over = used
+            val cacheFreed = withContext(Dispatchers.IO) { trimCacheDir(context, used - cap) }
+            used = CacheManager.totalCacheBytes(context)
+            var purged = 0
+            if (used > cap) {
+                purged = purgeStaleTelegramCopies(context)
+                used = CacheManager.totalCacheBytes(context)
             }
+            AppLog.i(
+                "CACHE",
+                "cache cap: total ${over / mb} MB over ${maxMb} MB cap — " +
+                    "trimmed ${cacheFreed / mb} MB from app cache, dropped " +
+                    "$purged stale Telegram copies — now ${used / mb} MB",
+            )
         } catch (e: Exception) {
             AppLog.w("CACHE", "cache cap enforcement failed: ${e.message}")
         }

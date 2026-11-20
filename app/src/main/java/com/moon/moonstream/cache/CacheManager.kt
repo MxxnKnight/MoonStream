@@ -37,6 +37,17 @@ object CacheManager {
         dirSize(java.io.File(context.filesDir, "tdlib_files")) + TdStreamCache.bytes(context)
     }
 
+    /**
+     * Everything the app holds on disk for playback: its own cache
+     * dir plus Telegram's downloaded video bytes and our player
+     * chunks. This is what the Settings meter and the Cache MB cap
+     * measure (moon's 2026-11-20 — the meter used to count the app
+     * cache alone, so it read 0 MB while 1230 MB of Telegram files
+     * sat on the phone).
+     */
+    suspend fun totalCacheBytes(context: Context): Long =
+        usedBytes(context) + streamCacheBytes(context)
+
     /** Per-folder sizes for the Settings storage breakdown (moon's 2026-11-20). All bytes, real disk usage. */
     data class StorageBreakdown(
         val appCache: Long,

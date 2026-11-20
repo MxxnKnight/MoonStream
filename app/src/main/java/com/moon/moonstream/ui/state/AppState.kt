@@ -102,8 +102,8 @@ object AppUiState {
     var loggedIn by mutableStateOf(false)
 
     // Cache: the limit is a real persisted setting; the used amount is
-    // measured from the app cache dir (OTA downloads live there today —
-    // the server streams video straight from Telegram, it doesn't cache it).
+    // measured from the whole cache — the app cache dir plus Telegram's
+    // downloaded video bytes (streamCacheMb below is the video part alone).
     var cacheUsedMb by mutableStateOf(0)
     var cacheMaxMb by mutableStateOf(2048)
     /**
@@ -226,10 +226,11 @@ object AppUiState {
             .edit().putInt("player_buffer_s", playerBufferS).apply()
     }
 
-    /** Refresh the used-cache meter from the real cache dir size. */
+    /** Refresh the used-cache meter from the real total cache size
+     *  (app cache dir + Telegram's downloaded video bytes). */
     fun refreshCacheUsed(context: Context) {
         CoroutineScope(Dispatchers.IO).launch {
-            val mb = (CacheManager.usedBytes(context) / (1024 * 1024)).toInt()
+            val mb = (CacheManager.totalCacheBytes(context) / (1024 * 1024)).toInt()
             val streamMb = (CacheManager.streamCacheBytes(context) / (1024 * 1024)).toInt()
             withContext(Dispatchers.Main) {
                 cacheUsedMb = mb

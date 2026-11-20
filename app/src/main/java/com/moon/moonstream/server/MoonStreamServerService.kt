@@ -17,6 +17,14 @@ import com.moon.moonstream.MainActivity
 import com.moon.moonstream.R
 import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.ui.state.AppUiState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /**
  * Foreground Service that keeps the MoonStream addon + stream servers running
@@ -28,6 +36,12 @@ class MoonStreamServerService : Service() {
 
     private var server: MoonStreamServer? = null
     private var notificationManager: NotificationManager? = null
+
+    /** Timer that sweeps server-streamed bytes idle over 10 min while
+     *  the server runs (moon's 2026-11-20 — without a timer, nothing
+     *  cleaned up after a Stremio/Nuvio session ended). */
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var sweepJob: Job? = null
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = refreshForNetworkChange("available")
@@ -80,6 +94,7 @@ class MoonStreamServerService : Service() {
             com.moon.moonstream.util.AppLog.i("SERVER", "Addon server running: ${s.addonManifestUrl()}")
             // Refresh the notification now that we have the real URL.
             startForeground(NOTIFICATION_ID, buildNotification())
+            startSweepTimer()
         } else {
             server = null
             AppUiState.serverOn = false
@@ -88,7 +103,29 @@ class MoonStreamServerService : Service() {
         }
     }
 
+    /** First sweep check 2 min after the server starts, then every
+     *  15 min. maybeSweep throttles itself to 10-min intervals, so
+     *  the timer composes with the app-start / player-close /
+     *  served-request triggers. Safe to call again (a restart
+     *  replaces the old timer). */
+    private fun startSweepTimer() {
+        sweepJob?.cancel()
+        sweepJob = serviceScope.launch {
+            delay(SWEEP_FIRST_TICK_MS)
+            while (isActive) {
+                ServedFiles.maybeSweep()
+                delay(SWEEP_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun stopSweepTimer() {
+        sweepJob?.cancel()
+        sweepJob = null
+    }
+
     private fun stopServer() {
+        stopSweepTimer()
         try { server?.stop() } catch (_: Exception) {}
         server = null
         if (AppUiState.serverOn) {
@@ -107,6 +144,7 @@ class MoonStreamServerService : Service() {
                 ?.unregisterNetworkCallback(networkCallback)
         } catch (_: Exception) {}
         stopServer()
+        serviceScope.cancel()
         super.onDestroy()
     }
 
@@ -177,6 +215,12 @@ class MoonStreamServerService : Service() {
         const val ACTION_STOP = "com.moon.moonstream.STOP_SERVER"
         const val EXTRA_PORT = "extra_port"
         const val EXTRA_STREAM_PORT = "extra_stream_port"
+
+        /** First sweep check after the server starts. */
+        private const val SWEEP_FIRST_TICK_MS = 2L * 60L * 1000L
+
+        /** Sweep checks while the server runs. */
+        private const val SWEEP_INTERVAL_MS = 15L * 60L * 1000L
 
         fun start(context: Context, port: Int = 8080, streamPort: Int = 8081) {
             val intent = Intent(context, MoonStreamServerService::class.java).apply {
