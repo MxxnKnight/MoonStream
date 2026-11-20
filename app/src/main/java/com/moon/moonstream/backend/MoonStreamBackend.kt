@@ -143,10 +143,12 @@ interface MoonStreamBackend {
      * [deleteCachedFile] cannot reach those, which is why a cache could
      * grow to hundreds of MB and survive Clear Cache.
      *
-     * Returns true when the backend performed the trim; the default is
-     * a no-op returning false so other implementations keep compiling.
+     * Returns how many of those files TDLib kept after the trim — 0 means
+     * none are left on disk. A backend that cannot trim returns -1 (the
+     * default no-op), which callers must read as "unknown", never as
+     * "empty": -1 must not be used to skip the per-file deletes.
      */
-    suspend fun trimDownloadCache(maxBytes: Long, keepRecentSeconds: Int = 60): Boolean = false
+    suspend fun trimDownloadCache(maxBytes: Long, keepRecentSeconds: Int = 60): Int = -1
 
     /**
      * Does this message still exist in the channel? Used by the Dead-links

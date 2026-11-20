@@ -249,7 +249,7 @@ class TdlibMoonStreamBackend(
      * [keepRecentSeconds] protects downloads that are being written right
      * now.
      */
-    override suspend fun trimDownloadCache(maxBytes: Long, keepRecentSeconds: Int): Boolean {
+    override suspend fun trimDownloadCache(maxBytes: Long, keepRecentSeconds: Int): Int {
         return try {
             val types = arrayOf<TdApi.FileType>(
                 TdApi.FileTypeVideo(),
@@ -271,7 +271,7 @@ class TdlibMoonStreamBackend(
             )
             if (res.isFailure) {
                 AppLog.w("CACHE", "OptimizeStorage failed: ${res.exceptionOrNull()?.message}")
-                false
+                -1
             } else {
                 val stats = res.getOrThrow()
                 AppLog.i(
@@ -279,11 +279,13 @@ class TdlibMoonStreamBackend(
                     "TDLib cache trimmed to ${maxBytes / (1024 * 1024)} MB — " +
                         "${stats.size / (1024 * 1024)} MB in ${stats.count} file(s) left",
                 )
-                true
+                // The count of files TDLib still tracks, of these types.
+                // 0 lets Clear Cache skip its per-file lookups.
+                stats.count
             }
         } catch (e: Exception) {
             AppLog.w("CACHE", "OptimizeStorage threw: ${e.message}")
-            false
+            -1
         }
     }
 

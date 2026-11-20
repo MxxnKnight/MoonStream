@@ -102,9 +102,9 @@ object StorageJanitor {
             // download, an old entry) was un-clearable and is exactly what
             // kept the folder at hundreds of MB. TDLib's own OptimizeStorage
             // drops those, so the bytes actually leave the phone.
-            var trimmed = false
+            var remaining = -1
             if (after > threshold) {
-                trimmed = BackendProvider.backend.trimDownloadCache(
+                remaining = BackendProvider.backend.trimDownloadCache(
                     AUTO_CLEAN_TARGET_MB * 1024L * 1024L,
                     keepRecentSeconds = 60,
                 )
@@ -116,7 +116,8 @@ object StorageJanitor {
                 "auto-cleanup: stream cache ${before / mb} MB over " +
                     "${AUTO_CLEAN_THRESHOLD_MB} MB — freed ${(before - after) / mb} MB " +
                     "(chunks ${chunksFreed / mb} MB, $purged Telegram copies dropped in " +
-                    "$passes passes, TDLib trim ${if (trimmed) "ran" else "n/a"}) — " +
+                    "$passes passes, TDLib left " +
+                    (if (remaining >= 0) "$remaining file(s)" else "n/a") + ") — " +
                     "now ${after / mb} MB",
             )
         } catch (e: Exception) {
@@ -225,7 +226,7 @@ object StorageJanitor {
             val mb = 1024L * 1024L
             val before = CacheManager.streamCacheBytes(context)
             withContext(Dispatchers.IO) { TdStreamCache.clearWarmed(context) }
-            val trimmed = BackendProvider.backend.trimDownloadCache(
+            val remaining = BackendProvider.backend.trimDownloadCache(
                 PLAYER_CLOSE_TARGET_MB * mb,
                 keepRecentSeconds = 30,
             )
@@ -233,8 +234,8 @@ object StorageJanitor {
             AppLog.i(
                 "CACHE",
                 "player close: stream cache ${before / mb} → ${after / mb} MB " +
-                    "(freed ${(before - after) / mb} MB, TDLib trim " +
-                    (if (trimmed) "ran)" else "not supported by this backend)"),
+                    "(freed ${(before - after) / mb} MB, TDLib left " +
+                    (if (remaining >= 0) "$remaining file(s))" else "n/a — this backend cannot trim)"),
             )
         } catch (e: Exception) {
             AppLog.w("CACHE", "player-close cache clear failed: ${e.message}")
@@ -242,27 +243,40 @@ object StorageJanitor {
     }
 
     /**
+     * What Settings → Clear Cache's Telegram half managed to do:
+     * [bytesFreed] measured on disk, and [remainingFiles] how many
+     * video/document/audio files TDLib still tracks afterwards (0 = none
+     * left, -1 = this backend cannot trim, so "unknown").
+     */
+    data class TelegramTrim(val bytesFreed: Long, val remainingFiles: Int)
+
+    /**
      * Settings → Clear Cache's Telegram half: asks TDLib to drop every
      * downloaded video/document/audio file, not just the ones the library
      * still maps to a message ([purgeStaleTelegramCopies] could never
-     * reach the rest, which is why the folder survived a clear). Returns
-     * the bytes freed, measured on disk.
+     * reach the rest, which is why the folder survived a clear).
+     *
+     * Runs *before* the per-file deletes in Settings, whose result says
+     * whether they can be skipped: when TDLib reports nothing left, every
+     * deleteCachedFile would only confirm an empty cache, one Telegram
+     * round trip per library row (moon's 2026-11-20 — the button felt
+     * slow on a big library).
      */
-    suspend fun clearTelegramCache(context: Context): Long {
+    suspend fun clearTelegramCache(context: Context): TelegramTrim {
         return try {
             val mb = 1024L * 1024L
             val before = CacheManager.streamCacheBytes(context)
-            val trimmed = BackendProvider.backend.trimDownloadCache(0L, keepRecentSeconds = 30)
+            val remaining = BackendProvider.backend.trimDownloadCache(0L, keepRecentSeconds = 30)
             val after = CacheManager.streamCacheBytes(context)
             AppLog.i(
                 "CACHE",
                 "Clear Cache: Telegram files ${before / mb} → ${after / mb} MB " +
-                    (if (trimmed) "(TDLib trim ran)" else "(backend has no TDLib trim)"),
+                    (if (remaining >= 0) "($remaining file(s) left)" else "(backend has no TDLib trim)"),
             )
-            (before - after).coerceAtLeast(0L)
+            TelegramTrim((before - after).coerceAtLeast(0L), remaining)
         } catch (e: Exception) {
             AppLog.w("CACHE", "Telegram cache clear failed: ${e.message}")
-            0L
+            TelegramTrim(0L, -1)
         }
     }
 

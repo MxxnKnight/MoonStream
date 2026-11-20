@@ -10,6 +10,7 @@ Every bug you report goes here. I check them off only when the fix is built, pus
 
 - [x] The cache still grew to 935 MB with 2048 MB set, and Clear Cache could not bring it down — the only delete path was per-message (`DeleteFile` for files the library still maps to a channel message), so every file TDLib downloaded without a matching library row (served to Stremio/Nuvio, row deleted, interrupted download) stayed on disk forever → the backend now trims TDLib's own cache with `OptimizeStorage` (what Telegram's "Clear cache" uses), applied on player close, by the auto-cleanup, by the Cache MB cap and by Clear Cache
 - [x] The cache should be cleared the moment you quit the player — player close now runs `StorageJanitor.clearPlaybackCache`: it drops the played file's copies (as before), sweeps warmed chunks, and shrinks TDLib's video/document/audio cache to 100 MB, so nothing a playback downloaded stays on the phone
+- [x] Clear Cache felt slow on a big library — it asked Telegram about every library row before doing the bulk work → TDLib's trim now runs first, and when it reports no video/document/audio files left the per-file lookups are skipped entirely (nothing they could delete)
 - [x] Posters must not be thrown away with the video cache → the trim only considers video, document and audio files, so library artwork is kept and never re-downloads after a playback
 
 ## 🔨 Done in this build (0.15.164 — build from workflow to get it)
