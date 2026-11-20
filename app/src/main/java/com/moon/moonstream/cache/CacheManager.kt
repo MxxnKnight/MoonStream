@@ -83,10 +83,20 @@ object CacheManager {
     suspend fun listTelegramFiles(context: Context, limit: Int = 30): List<TelegramFileInfo> =
         withContext(Dispatchers.IO) {
             val dir = File(context.filesDir, "tdlib_files")
-            val files = dir.listFiles()?.filter { it.isFile } ?: return@withContext emptyList()
-            files.map { TelegramFileInfo(it.name, realFileSize(it)) }
-                .sortedByDescending { it.bytes }
-                .take(limit)
+            val files = ArrayList<TelegramFileInfo>()
+            // Recursive: TDLib shards downloads into subdirectories, so a
+            // top-level listing comes back empty while dirSize (recursive)
+            // reports 935 MB (moon's 2026-11-20 — the list showed nothing).
+            // Names are relative to tdlib_files so sharded files stay
+            // identifiable.
+            fun walk(d: File) {
+                d.listFiles()?.forEach { f ->
+                    if (f.isDirectory) walk(f)
+                    else files.add(TelegramFileInfo(f.relativeTo(dir).path, realFileSize(f)))
+                }
+            }
+            if (dir.exists()) walk(dir)
+            files.sortedByDescending { it.bytes }.take(limit)
         }
 
     /** Room database file plus its -wal/-shm sidecars when present. */

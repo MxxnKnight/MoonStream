@@ -5,11 +5,13 @@ Every bug you report goes here. I check them off only when the fix is built, pus
 ## 🔨 For freebuff (Telegram module — TdlibMoonStreamBackend)
 
 - [ ] Telegram restore misses backups older than the newest 60 Saved Messages: `recentBackupDocs` reads only GetChatHistory(limit=60) and `searchBackupDocs` relies on the hashtag search index. Page through Saved Messages history (GetChatHistory with from_message_id pagination, 100 per page, up to ~20 pages) until a MoonStream_backup document is found or history is exhausted. Keep the hashtag search as the fast path. Log the attempt with AppLog BACKUP tag (messages scanned, found or not) so it shows in the Logs screen. (moon's 2026-11-20: restore said "No backup found" after Clear data)
+- [ ] Clear Cache cannot clear Telegram files (stuck at 935 MB on moon's phone, 2026-11-20): both Clear Cache and the janitor only iterate the library database, but the bytes may belong to files the database doesn't track — and DeleteFile succeeds trivially on never-downloaded files, so the loop counts empty deletes. Use TDLib's own storage API instead: add a backend method that reports `GetStorageStatistics` and clears with `OptimizeStorage`, and wire the Settings Clear Cache button to it. Full brief: docs/clear-cache-freebuff.md. Never delete files under filesDir/tdlib_files directly.
 
 ## 🔨 Done in this build (0.15.165 — build from workflow to get it)
 
 - [x] 0.15.164 update download failed with ENOENT on the APK path — your phone storage was so full that Android deleted the download folder (cache dirs are reclaimable), and the updater never checked the folder was really there → the updater now verifies the folder exists after creating it and before merging the parts, and says plainly that storage is likely full instead of showing a bare file path
 - [x] The cache trimmer walked the whole cache dir and would have deleted a staged update (it only spared the poster cache) → it now skips the updates folder entirely
+- [x] The "Largest Telegram files" list showed nothing even with 935 MB on disk — it only listed the top level of tdlib_files, but TDLib shards downloads into subdirectories → the list now walks recursively and shows paths relative to tdlib_files
 
 ## 🔨 Done in this build (0.15.164 — build from workflow to get it)
 
