@@ -353,6 +353,10 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                             "GitHub rejected the token — check it has the gist scope"
                         com.moon.moonstream.backup.GistBackup.PullResult.NetworkError ->
                             "Could not reach GitHub — check your connection"
+                        // Success is unreachable here (guarded by the
+                        // !is check above); the else only satisfies the
+                        // exhaustive-when rule for the sealed class.
+                        else -> "Could not reach GitHub — check your connection"
                     }
                     withContext(Dispatchers.Main) {
                         MsToast.show(msg)
