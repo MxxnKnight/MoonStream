@@ -40,8 +40,10 @@ object StorageJanitor {
     private const val AUTO_CLEAN_TARGET_MB = 250L
 
     /** What TDLib's file cache is trimmed back to when the player closes:
-     *  nothing should stay on the phone once a playback is over. */
-    private const val PLAYER_CLOSE_TARGET_MB = 100L
+     *  zero (moon's pick 2026-11-21) — nothing a playback downloaded
+     *  stays on the phone. Files touched in the last 30 seconds are
+     *  spared by the trim itself, so an in-flight download is safe. */
+    private const val PLAYER_CLOSE_TARGET_MB = 0L
 
     /** Purge attempts remembered for a day, so consecutive runs make
      *  progress down the list instead of retrying the same head. */
