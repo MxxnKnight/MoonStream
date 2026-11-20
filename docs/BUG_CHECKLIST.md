@@ -6,6 +6,11 @@ Every bug you report goes here. I check them off only when the fix is built, pus
 
 - [ ] Telegram restore misses backups older than the newest 60 Saved Messages: `recentBackupDocs` reads only GetChatHistory(limit=60) and `searchBackupDocs` relies on the hashtag search index. Page through Saved Messages history (GetChatHistory with from_message_id pagination, 100 per page, up to ~20 pages) until a MoonStream_backup document is found or history is exhausted. Keep the hashtag search as the fast path. Log the attempt with AppLog BACKUP tag (messages scanned, found or not) so it shows in the Logs screen. (moon's 2026-11-20: restore said "No backup found" after Clear data)
 
+## 🔨 Done in this build (0.15.165 — build from workflow to get it)
+
+- [x] 0.15.164 update download failed with ENOENT on the APK path — your phone storage was so full that Android deleted the download folder (cache dirs are reclaimable), and the updater never checked the folder was really there → the updater now verifies the folder exists after creating it and before merging the parts, and says plainly that storage is likely full instead of showing a bare file path
+- [x] The cache trimmer walked the whole cache dir and would have deleted a staged update (it only spared the poster cache) → it now skips the updates folder entirely
+
 ## 🔨 Done in this build (0.15.164 — build from workflow to get it)
 
 - [x] Telegram files stayed at 1230 MB after a Stremio/Nuvio session — the sweep only ran on app start or player close, and the app almost never restarts → the server now sweeps on a timer (first check after 2 min, then every 15 min) while it runs

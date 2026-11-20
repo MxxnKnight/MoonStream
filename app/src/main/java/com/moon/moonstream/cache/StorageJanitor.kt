@@ -47,6 +47,10 @@ object StorageJanitor {
      *  (see MoonStreamApp), so the trimmer never deletes behind it. */
     private const val COIL_CACHE_DIR = "image_cache"
 
+    /** The updater's folder — the trimmer must never eat a staged
+     *  or in-progress update (moon's 2026-11-20). */
+    private const val UPDATES_DIR = "updates"
+
     private const val PREFS = "moonstream_prefs"
     private const val KEY_CACHE_MAX_MB = "cache_max_mb"
 
@@ -185,7 +189,7 @@ object StorageJanitor {
         fun walk(dir: File) {
             dir.listFiles()?.forEach { f ->
                 if (f.isDirectory) {
-                    if (f.name != COIL_CACHE_DIR) walk(f)
+                    if (f.name != COIL_CACHE_DIR && f.name != UPDATES_DIR) walk(f)
                 } else if (now - f.lastModified() > FRESH_FILE_AGE_MS) {
                     files.add(f)
                 }

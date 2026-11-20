@@ -28,12 +28,32 @@ object ApkInstaller {
      * supports Range, and this is 2-4x faster than single-stream on
      * good connections.
      */
+    /**
+     * The updates folder, created. Android reclaims cache dirs when
+     * the phone is critically low on storage, so the folder may be
+     * gone — and mkdirs() fails silently on a full disk. Check the
+     * folder really exists and say so in plain words instead of
+     * failing later with a bare file path (moon's 2026-11-20:
+     * ENOENT on the 0.15.164 download).
+     */
+    private fun updatesDir(context: Context): File {
+        val dir = File(context.cacheDir, "updates")
+        dir.mkdirs()
+        if (!dir.isDirectory) {
+            throw Exception(
+                "Could not create the download folder — your phone storage " +
+                    "may be full. Free some space and try again.",
+            )
+        }
+        return dir
+    }
+
     suspend fun download(
         context: Context,
         info: UpdateInfo,
         onProgress: (Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
-        val dir = File(context.cacheDir, "updates").apply { mkdirs() }
+        val dir = updatesDir(context)
         // Clear stale downloads first.
         dir.listFiles()?.forEach { it.delete() }
         val out = File(dir, info.apkName)
@@ -68,7 +88,18 @@ object ApkInstaller {
                 }.forEach { it.await() }
             }
 
-            // Combine parts.
+            // Combine parts. The folder can vanish mid-download:
+            // Android reclaims cache dirs when the phone is critically
+            // low on storage, and the part writes keep succeeding
+            // against unlinked files — only this fresh open fails.
+            // Check first so the error says what actually happened.
+            if (!dir.exists()) {
+                throw Exception(
+                    "The download folder was cleared while downloading — " +
+                        "the phone is likely out of storage. Free some space " +
+                        "and try again.",
+                )
+            }
             FileOutputStream(out).use { output ->
                 parts.forEach { (file, _) ->
                     file.inputStream().use { it.copyTo(output) }
@@ -146,7 +177,7 @@ object ApkInstaller {
         info: UpdateInfo,
         onProgress: (Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
-        val dir = File(context.cacheDir, "updates").apply { mkdirs() }
+        val dir = updatesDir(context)
         val out = File(dir, info.apkName)
         val conn = (URL(info.apkUrl).openConnection() as HttpURLConnection).apply {
             connectTimeout = 20_000
