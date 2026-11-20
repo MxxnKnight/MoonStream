@@ -31,6 +31,10 @@ object StorageJanitor {
      *  can cost a Telegram lookup, so the run stays bounded. */
     private const val MAX_PURGE_PER_RUN = 200
 
+    /** Max purge passes in one auto-clean run (25 x 200 = 5000 files,
+     *  the whole library and then some). Each pass takes ~1s. */
+    private const val MAX_CLEAN_PASSES = 25
+
     /** Purge attempts remembered for a day, so consecutive runs make
      *  progress down the list instead of retrying the same head. */
     private const val ATTEMPT_MEMORY_MS = 24L * 60L * 60L * 1000L
@@ -53,8 +57,11 @@ object StorageJanitor {
      * and after the player closes. If the stream cache (Telegram's
      * downloaded bytes plus our player chunks) is over 500 MB, first
      * drops our leftover chunks, then drops Telegram's copies of
-     * files not played in the last 7 days, oldest first. Files a
-     * playback is holding are skipped. Purging only drops TDLib's
+     * files not played in the last 7 days, oldest first, in passes of
+     * 200 until the cache is under the threshold or nothing is left
+     * to drop (one pass freed 0 MB on moon's phone — most picked
+     * files never held bytes). Files a playback is holding are
+     * skipped. Purging only drops TDLib's
      * cached copy — the library entry stays, and the bytes download
      * again on the next play.
      */
@@ -66,8 +73,19 @@ object StorageJanitor {
             val chunksFreed = withContext(Dispatchers.IO) { TdStreamCache.clear(context) }
             var after = CacheManager.streamCacheBytes(context)
             var purged = 0
-            if (after > threshold) {
-                purged = purgeStaleTelegramCopies(context)
+            var passes = 0
+            // One pass drops at most 200 copies and most of them never
+            // held bytes (moon's 2026-11-20 log: 200 dropped, 0 MB freed),
+            // so keep passing until the cache is under the threshold or
+            // nothing is left to drop. Each pass takes the next 200
+            // (attempted files are remembered for 24h), so the loop walks
+            // the whole library instead of stopping at the first 200
+            // empty deletes.
+            while (after > threshold && passes < MAX_CLEAN_PASSES) {
+                val purgedThisPass = purgeStaleTelegramCopies(context)
+                passes++
+                if (purgedThisPass == 0) break
+                purged += purgedThisPass
                 after = CacheManager.streamCacheBytes(context)
             }
             val mb = 1024L * 1024L
@@ -75,7 +93,7 @@ object StorageJanitor {
                 "CACHE",
                 "auto-cleanup: stream cache ${before / mb} MB over " +
                     "${AUTO_CLEAN_THRESHOLD_MB} MB — freed ${(before - after) / mb} MB " +
-                    "(chunks ${chunksFreed / mb} MB, $purged Telegram copies dropped)",
+                    "(chunks ${chunksFreed / mb} MB, $purged Telegram copies dropped in $passes passes)",
             )
         } catch (e: Exception) {
             AppLog.w("CACHE", "auto-cleanup failed: ${e.message}")

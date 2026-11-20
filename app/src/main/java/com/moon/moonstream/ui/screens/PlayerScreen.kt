@@ -135,7 +135,9 @@ import com.moon.moonstream.util.AppLog
 import com.moon.moonstream.util.AniSkip
 import com.moon.moonstream.util.IntroDb
 import com.moon.moonstream.util.SkipDb
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -245,6 +247,18 @@ private fun buildRenderersFactory(context: android.content.Context): DefaultRend
         // track instead of showing a playback error.
         .setEnableDecoderFallback(true)
 }
+
+/**
+ * App-lifetime scope for player-close cleanup (moon's 2026-11-20):
+ * the close deletes used to launch in the screen's
+ * rememberCoroutineScope, which dies with the screen — the network
+ * deletes were cancelled before they finished, so watched files were
+ * never deleted. This scope outlives the player, so the position save,
+ * the Telegram deletes, the chunk sweep and the janitor run all
+ * complete. Only the two onDispose launches use it; everything during
+ * playback still uses the screen scope and dies with the screen.
+ */
+private val playerCloseScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -1189,7 +1203,7 @@ fun PlayerScreen(
             val finalPos = if (pos < 10_000L || finished) 0L else pos
             if (streamFileId != 0L) {
                 val pct = if (dur > 0) (pos * 100 / dur).toInt() else 0
-                ioScope.launch(Dispatchers.IO) {
+                playerCloseScope.launch(Dispatchers.IO) {
                     AppLog.i(
                         "PLAYER",
                         "closed at ${pos / 1000}s of ${dur / 1000}s ($pct%) — " +
@@ -1241,7 +1255,7 @@ fun PlayerScreen(
             // 11 MB window deleted on every reopen). Now release() only
             // closes handles.
             val targets = closeTargets
-            ioScope.launch(Dispatchers.IO) {
+            playerCloseScope.launch(Dispatchers.IO) {
                 targets.forEach { (ch, msg) ->
                     try {
                         TdStreamCache.clearFile(context, ch, msg)

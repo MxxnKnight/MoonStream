@@ -2052,11 +2052,13 @@ private fun CacheStorageBlock() {
     val streamMb = AppUiState.streamCacheMb
     val bar = remember { Animatable(used.toFloat() / max) }
     var breakdown by remember { mutableStateOf<CacheManager.StorageBreakdown?>(null) }
+    var telegramFiles by remember { mutableStateOf<List<CacheManager.TelegramFileInfo>>(emptyList()) }
 
     // Measure the real cache dir size when this block appears.
     androidx.compose.runtime.LaunchedEffect(Unit) {
         AppUiState.refreshCacheUsed(context)
         breakdown = CacheManager.measureBreakdown(context)
+        telegramFiles = CacheManager.listTelegramFiles(context)
     }
 
     // Keep the bar in sync when the numbers change (e.g. after Clear).
@@ -2143,8 +2145,10 @@ private fun CacheStorageBlock() {
                                 "${afterStream / (1024 * 1024)} MB",
                         )
                         val freshBreakdown = CacheManager.measureBreakdown(context)
+                        val freshTelegramFiles = CacheManager.listTelegramFiles(context)
                         withContext(Dispatchers.Main) {
                             breakdown = freshBreakdown
+                            telegramFiles = freshTelegramFiles
                             val msg = buildString {
                                 append(if (freed > 0) "Cache cleared" else "Cache is already empty")
                                 if (chunksFreed > 0) {
@@ -2209,6 +2213,20 @@ private fun CacheStorageBlock() {
             BreakdownRow("TDLib database", b.tdlibDb)
             BreakdownRow("Logs", b.logs)
         }
+        // Largest Telegram files (moon's 2026-11-20): the breakdown total
+        // could not say WHICH files held the bytes. Names are Telegram's
+        // internal file names.
+        if (telegramFiles.isNotEmpty()) {
+            Text(
+                text = "Largest Telegram files",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MsColors.TextPrimary,
+            )
+            telegramFiles.forEach { f ->
+                TelegramFileRow(f.name, f.bytes)
+            }
+        }
         Text(
             text = "Video and subtitles you play in the app stream straight from Telegram — no addon server needed. Only the part you're watching is kept, watched parts are deleted as you go, and the rest goes when you close the player. Clear Cache above wipes whatever is left.",
             style = MaterialTheme.typography.bodySmall,
@@ -2231,6 +2249,34 @@ private fun BreakdownRow(label: String, bytes: Long) {
             text = label,
             style = MaterialTheme.typography.bodyMedium,
             color = MsColors.TextSecondary,
+        )
+        Text(
+            text = fmtMb(bytes),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MsColors.TextPrimary,
+        )
+    }
+}
+
+/**
+ * One row of the largest-files list: Telegram's internal file name
+ * (ellipsised) and its real disk size.
+ */
+@Composable
+private fun TelegramFileRow(name: String, bytes: Long) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MsColors.TextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
         )
         Text(
             text = fmtMb(bytes),

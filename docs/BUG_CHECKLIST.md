@@ -11,6 +11,9 @@ Every bug you report goes here. I check them off only when the fix is built, pus
 - [x] Telegram files stayed at 1230 MB after a Stremio/Nuvio session — the sweep only ran on app start or player close, and the app almost never restarts → the server now sweeps on a timer (first check after 2 min, then every 15 min) while it runs
 - [x] The sweep forgot everything it served when the app restarted → the served list is now saved on the phone and reloaded on launch (capped at the 1000 most recent, entries older than a day dropped)
 - [x] The "0 MB of 2048 MB" meter didn't count Telegram files at all → the meter and the Cache MB cap now count the whole cache (app cache + Telegram files), and the cap trims the app cache first, then drops Telegram copies of files unplayed 7+ days
+- [x] Auto-cleanup dropped 200 files and freed 0 MB (your log) — it stopped at the first 200 files, most of which never held bytes → it now keeps passing (up to 25 passes of 200) until the cache is under 500 MB or nothing is left to drop
+- [x] Watched files were never deleted on player close — the deletes launched in a scope that died with the player screen → close cleanup now runs in a scope that outlives the player, so the position save, Telegram deletes, chunk sweep and janitor run all complete
+- [x] The breakdown total could not say WHICH files held the 935 MB → Streaming & Storage now lists the largest Telegram files by real disk size under the breakdown
 
 ## 🔨 Done in this build (0.15.163 — build from workflow to get it)
 

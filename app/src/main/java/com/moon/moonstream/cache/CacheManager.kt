@@ -70,6 +70,25 @@ object CacheManager {
         )
     }
 
+    /** One file inside TDLib's download dir, by real disk usage. */
+    data class TelegramFileInfo(val name: String, val bytes: Long)
+
+    /**
+     * Largest files in TDLib's download dir, biggest first (moon's
+     * 2026-11-20 — the breakdown total could not say WHICH files held
+     * the bytes). Names are Telegram's internal file names; the library
+     * database holds no TDLib file id, so titles cannot be mapped here.
+     * Read-only measurement; safe to call any time.
+     */
+    suspend fun listTelegramFiles(context: Context, limit: Int = 30): List<TelegramFileInfo> =
+        withContext(Dispatchers.IO) {
+            val dir = File(context.filesDir, "tdlib_files")
+            val files = dir.listFiles()?.filter { it.isFile } ?: return@withContext emptyList()
+            files.map { TelegramFileInfo(it.name, realFileSize(it)) }
+                .sortedByDescending { it.bytes }
+                .take(limit)
+        }
+
     /** Room database file plus its -wal/-shm sidecars when present. */
     private fun databaseBytes(context: Context): Long {
         val base = context.getDatabasePath("moonstream.db")
