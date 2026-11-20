@@ -1273,6 +1273,12 @@ fun PlayerScreen(
                 // files gone idle.
                 try {
                     StorageJanitor.maybeAutoClean(context)
+                    // Clear everything this playback left on the phone
+                    // (moon's ask 2026-11-20). The per-file deletes above
+                    // only reach files the library maps to a message, so
+                    // TDLib's own cache is trimmed as well — otherwise the
+                    // folder kept growing past what any clear could reach.
+                    StorageJanitor.clearPlaybackCache(context)
                     ServedFiles.maybeSweep()
                 } catch (e: Exception) { /* never break close */ }
             }

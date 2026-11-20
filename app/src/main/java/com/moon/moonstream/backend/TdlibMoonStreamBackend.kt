@@ -233,6 +233,63 @@ class TdlibMoonStreamBackend(
     }
 
     /**
+     * Shrinks TDLib's download cache to [maxBytes] with `OptimizeStorage`.
+     *
+     * The per-message `DeleteFile` path can only drop files the library
+     * still maps to a channel message. Everything else TDLib downloaded
+     * (a file served to Stremio/Nuvio whose row is gone, an interrupted
+     * download, an old library entry) stayed on disk forever — the
+     * "935 MB that cannot be cleared". `OptimizeStorage` is what the
+     * official Telegram clients use for Clear cache: it knows every file
+     * TDLib tracks and deletes the least recently used ones until the
+     * cache fits, keeping its own state consistent.
+     *
+     * Only video, document and audio files are considered, so poster and
+     * thumbnail images (which the library shows constantly) survive.
+     * [keepRecentSeconds] protects downloads that are being written right
+     * now.
+     */
+    override suspend fun trimDownloadCache(maxBytes: Long, keepRecentSeconds: Int): Int {
+        return try {
+            val types = arrayOf<TdApi.FileType>(
+                TdApi.FileTypeVideo(),
+                TdApi.FileTypeDocument(),
+                TdApi.FileTypeAudio(),
+            )
+            val res = telegramManager.send(
+                TdApi.OptimizeStorage(
+                    maxBytes.coerceAtLeast(0L),
+                    -1, // ttl: no age limit, the size limit decides
+                    -1, // count: no file-count limit
+                    keepRecentSeconds.coerceAtLeast(0),
+                    types,
+                    longArrayOf(), // all chats
+                    longArrayOf(), // nothing excluded
+                    false,
+                    0,
+                ),
+            )
+            if (res.isFailure) {
+                AppLog.w("CACHE", "OptimizeStorage failed: ${res.exceptionOrNull()?.message}")
+                -1
+            } else {
+                val stats = res.getOrThrow()
+                AppLog.i(
+                    "CACHE",
+                    "TDLib cache trimmed to ${maxBytes / (1024 * 1024)} MB — " +
+                        "${stats.size / (1024 * 1024)} MB in ${stats.count} file(s) left",
+                )
+                // The count of files TDLib still tracks, of these types.
+                // 0 lets Clear Cache skip its per-file lookups.
+                stats.count
+            }
+        } catch (e: Exception) {
+            AppLog.w("CACHE", "OptimizeStorage threw: ${e.message}")
+            -1
+        }
+    }
+
+    /**
      * Asks Telegram for one message and pulls out its file id.
      *
      * `Result.success(0)` means the message really has no downloadable file

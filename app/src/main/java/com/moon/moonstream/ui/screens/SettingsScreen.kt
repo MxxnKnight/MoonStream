@@ -122,6 +122,7 @@ import com.moon.moonstream.update.UpdateDownloadService
 import com.moon.moonstream.update.UpdateInfo
 import com.moon.moonstream.update.UpdateState
 import com.moon.moonstream.cache.CacheManager
+import com.moon.moonstream.cache.StorageJanitor
 import com.moon.moonstream.cache.TdStreamCache
 
 /**
@@ -2102,45 +2103,62 @@ private fun CacheStorageBlock() {
                         // Ours to delete, unlike Telegram's own download dir.
                         val chunksFreed = TdStreamCache.clear(context)
                         AppUiState.refreshCacheUsed(context)
-                        // 2. Stream cache via the backend contract (moon's pick
-                        // 2026-11-02). Currently a no-op until the Telegram
-                        // module implements deleteCachedFile — then this
-                        // clears it safely via TdApi.DeleteFile.
+                        // 2. Telegram's downloaded files. Ask TDLib first:
+                        // it drops every file it downloaded, including the
+                        // ones no library row points at (a served file whose
+                        // row is gone, an interrupted download) — the part
+                        // that used to survive a clear. Whatever it leaves is
+                        // all the per-file deletes below could reach, so on a
+                        // big library those lookups are skipped entirely
+                        // (moon's 2026-11-20 — the button was slow).
                         var streamCleared = 0
                         var streamTotal = 0
                         var streamFailed = 0
                         val beforeStream = CacheManager.streamCacheBytes(context)
-                        try {
-                            val db = MsDatabase.get(context)
-                            val backend = BackendProvider.backend
-                            val files = db.streamDao().getAll()
-                            streamTotal = files.size
-                            for ((i, f) in files.withIndex()) {
-                                try {
-                                    if (backend.deleteCachedFile(f.channelId, f.messageId)) {
-                                        streamCleared++
-                                    } else {
+                        val telegramTrim = StorageJanitor.clearTelegramCache(context)
+                        val afterStream = CacheManager.streamCacheBytes(context)
+                        if (telegramTrim.remainingFiles == 0) {
+                            // Nothing of those types is left on disk: every
+                            // deleteCachedFile would just confirm an empty
+                            // cache, one Telegram round trip per library row.
+                            AppLog.i(
+                                "CACHE",
+                                "Clear Cache: TDLib left no video/document/audio files — " +
+                                    "skipped the per-file Telegram lookups",
+                            )
+                        } else {
+                            try {
+                                val db = MsDatabase.get(context)
+                                val backend = BackendProvider.backend
+                                val files = db.streamDao().getAll()
+                                streamTotal = files.size
+                                for ((i, f) in files.withIndex()) {
+                                    try {
+                                        if (backend.deleteCachedFile(f.channelId, f.messageId)) {
+                                            streamCleared++
+                                        } else {
+                                            streamFailed++
+                                        }
+                                    } catch (e: Exception) {
                                         streamFailed++
                                     }
-                                } catch (e: Exception) {
-                                    streamFailed++
+                                    // Each file may need a Telegram lookup now, so
+                                    // show that the loop is alive.
+                                    if ((i + 1) % 25 == 0) {
+                                        AppLog.i("CACHE", "stream cache: ${i + 1}/$streamTotal files checked")
+                                    }
                                 }
-                                // Each file may need a Telegram lookup now, so
-                                // show that the loop is alive.
-                                if ((i + 1) % 25 == 0) {
-                                    AppLog.i("CACHE", "stream cache: ${i + 1}/$streamTotal files checked")
-                                }
+                                AppUiState.refreshCacheUsed(context)
+                            } catch (e: Exception) {
+                                AppLog.w("CACHE", "stream cache clear failed: ${e.message}")
                             }
-                            AppUiState.refreshCacheUsed(context)
-                        } catch (e: Exception) {
-                            AppLog.w("CACHE", "stream cache clear failed: ${e.message}")
                         }
-                        val afterStream = CacheManager.streamCacheBytes(context)
                         AppLog.i(
                             "CACHE",
                             "Clear Cache: app ${freed / (1024 * 1024)} MB, player chunks " +
                                 "${chunksFreed / (1024 * 1024)} MB, Telegram copies " +
-                                "$streamCleared/$streamTotal deleted ($streamFailed failed) — " +
+                                "$streamCleared/$streamTotal deleted ($streamFailed failed), " +
+                                "TDLib left ${telegramTrim.remainingFiles} file(s) — " +
                                 "stream cache ${beforeStream / (1024 * 1024)} → " +
                                 "${afterStream / (1024 * 1024)} MB",
                         )
@@ -2160,6 +2178,9 @@ private fun CacheStorageBlock() {
                                     } else {
                                         append(" (stream cache needs the Telegram module update)")
                                     }
+                                }
+                                if (telegramTrim.bytesFreed > 0) {
+                                    append(" + ${telegramTrim.bytesFreed / (1024 * 1024)} MB Telegram files")
                                 }
                             }
                             MsToast.show(msg)

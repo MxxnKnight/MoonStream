@@ -131,6 +131,26 @@ interface MoonStreamBackend {
     suspend fun deleteCachedFile(channelId: Long, messageId: Long): Boolean = false
 
     /**
+     * Ask Telegram to shrink its own downloaded-file cache (video,
+     * document and audio files only — posters and thumbnails are left
+     * alone) down to at most [maxBytes], dropping the least recently
+     * used files first. Files touched in the last [keepRecentSeconds]
+     * seconds are spared, so an in-flight download is never killed.
+     *
+     * This is the only way to reclaim bytes TDLib downloaded but the
+     * library no longer maps to a message — a file streamed to an
+     * external player, a deleted library row, an interrupted download.
+     * [deleteCachedFile] cannot reach those, which is why a cache could
+     * grow to hundreds of MB and survive Clear Cache.
+     *
+     * Returns how many of those files TDLib kept after the trim — 0 means
+     * none are left on disk. A backend that cannot trim returns -1 (the
+     * default no-op), which callers must read as "unknown", never as
+     * "empty": -1 must not be used to skip the per-file deletes.
+     */
+    suspend fun trimDownloadCache(maxBytes: Long, keepRecentSeconds: Int = 60): Int = -1
+
+    /**
      * Does this message still exist in the channel? Used by the Dead-links
      * tool.
      *
