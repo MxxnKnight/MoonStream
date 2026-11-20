@@ -6,6 +6,12 @@ Every bug you report goes here. I check them off only when the fix is built, pus
 
 - [ ] Telegram restore misses backups older than the newest 60 Saved Messages: `recentBackupDocs` reads only GetChatHistory(limit=60) and `searchBackupDocs` relies on the hashtag search index. Page through Saved Messages history (GetChatHistory with from_message_id pagination, 100 per page, up to ~20 pages) until a MoonStream_backup document is found or history is exhausted. Keep the hashtag search as the fast path. Log the attempt with AppLog BACKUP tag (messages scanned, found or not) so it shows in the Logs screen. (moon's 2026-11-20: restore said "No backup found" after Clear data)
 
+## 🔨 Done in this build (0.15.165 — build from workflow to get it)
+
+- [x] The cache still grew to 935 MB with 2048 MB set, and Clear Cache could not bring it down — the only delete path was per-message (`DeleteFile` for files the library still maps to a channel message), so every file TDLib downloaded without a matching library row (served to Stremio/Nuvio, row deleted, interrupted download) stayed on disk forever → the backend now trims TDLib's own cache with `OptimizeStorage` (what Telegram's "Clear cache" uses), applied on player close, by the auto-cleanup, by the Cache MB cap and by Clear Cache
+- [x] The cache should be cleared the moment you quit the player — player close now runs `StorageJanitor.clearPlaybackCache`: it drops the played file's copies (as before), sweeps warmed chunks, and shrinks TDLib's video/document/audio cache to 100 MB, so nothing a playback downloaded stays on the phone
+- [x] Posters must not be thrown away with the video cache → the trim only considers video, document and audio files, so library artwork is kept and never re-downloads after a playback
+
 ## 🔨 Done in this build (0.15.164 — build from workflow to get it)
 
 - [x] Telegram files stayed at 1230 MB after a Stremio/Nuvio session — the sweep only ran on app start or player close, and the app almost never restarts → the server now sweeps on a timer (first check after 2 min, then every 15 min) while it runs

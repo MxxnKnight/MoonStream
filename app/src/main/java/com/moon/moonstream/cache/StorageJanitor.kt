@@ -35,6 +35,14 @@ object StorageJanitor {
      *  the whole library and then some). Each pass takes ~1s. */
     private const val MAX_CLEAN_PASSES = 25
 
+    /** What TDLib's file cache is trimmed back to on an auto-clean —
+     *  well under the trigger, so the next run is not immediate. */
+    private const val AUTO_CLEAN_TARGET_MB = 250L
+
+    /** What TDLib's file cache is trimmed back to when the player closes:
+     *  nothing should stay on the phone once a playback is over. */
+    private const val PLAYER_CLOSE_TARGET_MB = 100L
+
     /** Purge attempts remembered for a day, so consecutive runs make
      *  progress down the list instead of retrying the same head. */
     private const val ATTEMPT_MEMORY_MS = 24L * 60L * 60L * 1000L
@@ -88,12 +96,28 @@ object StorageJanitor {
                 purged += purgedThisPass
                 after = CacheManager.streamCacheBytes(context)
             }
+            // The per-file deletes above only reach files the library still
+            // maps to a message. Everything else TDLib downloaded (a file
+            // served to Stremio/Nuvio whose row is gone, an interrupted
+            // download, an old entry) was un-clearable and is exactly what
+            // kept the folder at hundreds of MB. TDLib's own OptimizeStorage
+            // drops those, so the bytes actually leave the phone.
+            var trimmed = false
+            if (after > threshold) {
+                trimmed = BackendProvider.backend.trimDownloadCache(
+                    AUTO_CLEAN_TARGET_MB * 1024L * 1024L,
+                    keepRecentSeconds = 60,
+                )
+                after = CacheManager.streamCacheBytes(context)
+            }
             val mb = 1024L * 1024L
             AppLog.i(
                 "CACHE",
                 "auto-cleanup: stream cache ${before / mb} MB over " +
                     "${AUTO_CLEAN_THRESHOLD_MB} MB — freed ${(before - after) / mb} MB " +
-                    "(chunks ${chunksFreed / mb} MB, $purged Telegram copies dropped in $passes passes)",
+                    "(chunks ${chunksFreed / mb} MB, $purged Telegram copies dropped in " +
+                    "$passes passes, TDLib trim ${if (trimmed) "ran" else "n/a"}) — " +
+                    "now ${after / mb} MB",
             )
         } catch (e: Exception) {
             AppLog.w("CACHE", "auto-cleanup failed: ${e.message}")
@@ -166,6 +190,12 @@ object StorageJanitor {
                 purged = purgeStaleTelegramCopies(context)
                 used = CacheManager.totalCacheBytes(context)
             }
+            // Still over? Let TDLib drop its own cache down to the cap —
+            // the per-file deletes cannot reach files the library lost.
+            if (used > cap) {
+                BackendProvider.backend.trimDownloadCache(cap, keepRecentSeconds = 60)
+                used = CacheManager.totalCacheBytes(context)
+            }
             AppLog.i(
                 "CACHE",
                 "cache cap: total ${over / mb} MB over ${maxMb} MB cap — " +
@@ -174,6 +204,65 @@ object StorageJanitor {
             )
         } catch (e: Exception) {
             AppLog.w("CACHE", "cache cap enforcement failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Clears what a playback left behind, run when the player closes
+     * (moon's ask 2026-11-20: "the app should clear the cache after I
+     * quit the player"). The played file's own copies are deleted by the
+     * caller; this is the backstop that also reaches what no library row
+     * points at any more — TDLib is asked to shrink its video/document/
+     * audio cache to [PLAYER_CLOSE_TARGET_MB], and leftover player chunks
+     * are swept.
+     *
+     * Poster images are deliberately spared (only those file types are
+     * trimmed), so the library does not re-download its artwork after
+     * every playback.
+     */
+    suspend fun clearPlaybackCache(context: Context) {
+        try {
+            val mb = 1024L * 1024L
+            val before = CacheManager.streamCacheBytes(context)
+            withContext(Dispatchers.IO) { TdStreamCache.clearWarmed(context) }
+            val trimmed = BackendProvider.backend.trimDownloadCache(
+                PLAYER_CLOSE_TARGET_MB * mb,
+                keepRecentSeconds = 30,
+            )
+            val after = CacheManager.streamCacheBytes(context)
+            AppLog.i(
+                "CACHE",
+                "player close: stream cache ${before / mb} → ${after / mb} MB " +
+                    "(freed ${(before - after) / mb} MB, TDLib trim " +
+                    (if (trimmed) "ran)" else "not supported by this backend)"),
+            )
+        } catch (e: Exception) {
+            AppLog.w("CACHE", "player-close cache clear failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Settings → Clear Cache's Telegram half: asks TDLib to drop every
+     * downloaded video/document/audio file, not just the ones the library
+     * still maps to a message ([purgeStaleTelegramCopies] could never
+     * reach the rest, which is why the folder survived a clear). Returns
+     * the bytes freed, measured on disk.
+     */
+    suspend fun clearTelegramCache(context: Context): Long {
+        return try {
+            val mb = 1024L * 1024L
+            val before = CacheManager.streamCacheBytes(context)
+            val trimmed = BackendProvider.backend.trimDownloadCache(0L, keepRecentSeconds = 30)
+            val after = CacheManager.streamCacheBytes(context)
+            AppLog.i(
+                "CACHE",
+                "Clear Cache: Telegram files ${before / mb} → ${after / mb} MB " +
+                    (if (trimmed) "(TDLib trim ran)" else "(backend has no TDLib trim)"),
+            )
+            (before - after).coerceAtLeast(0L)
+        } catch (e: Exception) {
+            AppLog.w("CACHE", "Telegram cache clear failed: ${e.message}")
+            0L
         }
     }
 

@@ -122,6 +122,7 @@ import com.moon.moonstream.update.UpdateDownloadService
 import com.moon.moonstream.update.UpdateInfo
 import com.moon.moonstream.update.UpdateState
 import com.moon.moonstream.cache.CacheManager
+import com.moon.moonstream.cache.StorageJanitor
 import com.moon.moonstream.cache.TdStreamCache
 
 /**
@@ -2135,6 +2136,12 @@ private fun CacheStorageBlock() {
                         } catch (e: Exception) {
                             AppLog.w("CACHE", "stream cache clear failed: ${e.message}")
                         }
+                        // The loop above only reaches files the library still
+                        // maps to a message. TDLib drops everything else it
+                        // downloaded (served files with no row, interrupted
+                        // downloads) — that is the part that used to survive
+                        // a clear.
+                        val telegramTrimmed = StorageJanitor.clearTelegramCache(context)
                         val afterStream = CacheManager.streamCacheBytes(context)
                         AppLog.i(
                             "CACHE",
@@ -2160,6 +2167,9 @@ private fun CacheStorageBlock() {
                                     } else {
                                         append(" (stream cache needs the Telegram module update)")
                                     }
+                                }
+                                if (telegramTrimmed > 0) {
+                                    append(" + ${telegramTrimmed / (1024 * 1024)} MB Telegram files")
                                 }
                             }
                             MsToast.show(msg)
