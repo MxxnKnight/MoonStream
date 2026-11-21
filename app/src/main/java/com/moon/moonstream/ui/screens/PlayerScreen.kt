@@ -307,6 +307,11 @@ fun PlayerScreen(
     DisposableEffect(streamFileId) {
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         val window = activity?.window
+        // Keep the screen on while the player is open (moon's 2026-11-21):
+        // without this the system screen timeout dims the display and then
+        // turns it off mid-movie — the "brightness lowers by itself" and
+        // the "screen turns off, have to unlock again" were the same bug.
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val insets = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
         insets?.hide(WindowInsetsCompat.Type.systemBars())
         insets?.systemBarsBehavior =
@@ -315,14 +320,21 @@ fun PlayerScreen(
             if (!isSwitching) {
                 activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             insets?.show(WindowInsetsCompat.Type.systemBars())
-            // Restore system brightness (gestures override it while playing).
-            try {
-                activity?.window?.attributes?.let { lp ->
-                    lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-                    activity?.window?.attributes = lp
-                }
-            } catch (e: Exception) { /* never break close */ }
+            // Restore system brightness when leaving the player (gestures
+            // override it while playing). Skipped on an episode switch:
+            // the new episode re-enters this effect immediately, and the
+            // brightness the user set should carry over, not jump back
+            // to system brightness every episode (moon's 2026-11-21).
+            if (!isSwitching) {
+                try {
+                    activity?.window?.attributes?.let { lp ->
+                        lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                        activity?.window?.attributes = lp
+                    }
+                } catch (e: Exception) { /* never break close */ }
+            }
         }
     }
 
@@ -1290,8 +1302,6 @@ fun PlayerScreen(
     // with animation; consecutive double-taps accumulate (20>, 30>...).
     // Arrows, not +10s/-10s (moon's 2026-11-14).
     var seekFeedback by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
-    // Center double-tap pause/play feedback: true = now playing, false = paused.
-    var pauseFeedback by remember { mutableStateOf<Boolean?>(null) }
     var lastSeekTapTime by remember { mutableStateOf(0L) }
     var seekTapCount by remember { mutableStateOf(0) }
     // Double-tap timing (moon's 2026-11-16): the stock 300ms window was
@@ -1437,13 +1447,6 @@ fun PlayerScreen(
             seekTapCount = 0
         }
     }
-    LaunchedEffect(pauseFeedback) {
-        if (pauseFeedback != null) {
-            delay(1000)
-            pauseFeedback = null
-        }
-    }
-
     // Controls visibility state.
     var controlsVisible by remember { mutableStateOf(true) }
     // Lock state (mpvex-style, moon's pick 2026-11-02): when locked, all
@@ -1838,7 +1841,6 @@ fun PlayerScreen(
                     if (dtCenterPause && tapX >= size.width / 3 && tapX < size.width * 2 / 3) {
                         val wasPlaying = player.isPlaying
                         if (wasPlaying) player.pause() else player.play()
-                        pauseFeedback = !wasPlaying
                         return@awaitEachGesture
                     }
                     // Double-tap left/right: ∓10s with animated feedback.
@@ -2368,30 +2370,6 @@ fun PlayerScreen(
                             fontWeight = FontWeight.Bold,
                         ),
                         modifier = Modifier.padding(horizontal = 56.dp),
-                    )
-                }
-            }
-        }
-
-        // Center double-tap pause/play feedback: "Paused" / "Playing" text
-        // in the middle, same style as the seek feedback (moon's 2026-11-18).
-        AnimatedVisibility(
-            visible = pauseFeedback != null,
-            enter = fadeIn(animationSpec = tween(150)) +
-                scaleIn(initialScale = 0.85f, animationSpec = tween(150)),
-            exit = fadeOut(animationSpec = tween(300)),
-        ) {
-            pauseFeedback?.let { playing ->
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        if (playing) "Playing" else "Paused",
-                        color = Color.White.copy(alpha = 0.7f),
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                        ),
                     )
                 }
             }
