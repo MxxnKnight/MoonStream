@@ -2153,7 +2153,6 @@ fun PlayerScreen(
                             enabled = !showTrimPanel,
                             shape = RoundedCornerShape(50),
                             color = Color.White.copy(alpha = 0.12f),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
                             modifier = Modifier.height(45.dp).playerPressScale(),
                         ) {
                             Row(
@@ -3283,13 +3282,14 @@ private fun PlayerIconButton(
      *  2026-11-10). */
     enabled: Boolean = true,
 ) {
+    // Borderless like the title pill (moon's 2026-11-21): the 1dp white
+    // ring is gone, the soft round fill stays.
     Surface(
         onClick = onClick,
         enabled = enabled,
         shape = CircleShape,
         color = Color.White.copy(alpha = 0.12f),
         modifier = modifier.size(size).playerPressScale(),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -3338,8 +3338,8 @@ private fun Modifier.playerPressScale(): Modifier {
 
 /**
  * Soft translucent capsule for the floating Skip / Resume pills
- * (2026-11-14 redesign): white 14% fill, white 20% border, 50dp corners,
- * icon + SemiBold label, press-scale.
+ * (2026-11-14 redesign): white 14% fill, borderless like the title pill
+ * (moon's 2026-11-21), 50dp corners, icon + SemiBold label, press-scale.
  */
 @Composable
 private fun SkipPill(
@@ -3352,7 +3352,6 @@ private fun SkipPill(
         onClick = onClick,
         shape = RoundedCornerShape(50),
         color = Color.White.copy(alpha = 0.14f),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
         modifier = modifier.playerPressScale(),
     ) {
         Row(
@@ -3874,7 +3873,6 @@ private fun TrimNudgeButton(
         enabled = enabled,
         shape = CircleShape,
         color = Color.White.copy(alpha = 0.12f),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
         modifier = Modifier.size(32.dp),
     ) {
         Box(contentAlignment = Alignment.Center) {

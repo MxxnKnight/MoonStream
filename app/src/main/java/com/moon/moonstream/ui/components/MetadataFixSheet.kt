@@ -591,9 +591,11 @@ private fun MetaResultRow(
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Poster a third bigger (moon's 2026-11-21): 52x74 was too small
+        // to see properly. Same box serves Fix Metadata and Link to Title.
         Box(
             modifier = Modifier
-                .size(width = 52.dp, height = 74.dp)
+                .size(width = 68.dp, height = 96.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(MsColors.Bg),
             contentAlignment = Alignment.Center,

@@ -12,6 +12,13 @@ Every bug you report goes here. I check them off only when the fix is built, pus
 - [x] Brightness lowered by itself after some time of watching, and the screen turned off during long playback so the phone needed unlocking — the player never held the screen on, so the system timeout dimmed the display and then slept it (same bug twice) → the player now keeps the screen on while open
 - [x] Brightness jumped back to system brightness on every episode switch — leaving the player restored system brightness, and the switch disposed the player first → the restore is skipped on episode switches, so the brightness you set carries over
 - [x] Double-tap to play/pause showed "Playing"/"Paused" text in the middle — removed (the center button still shows the state)
+- [x] Player buttons had a thin white ring (outline) while the title pill had none — the ring is off every player button now (round icon buttons, Aspect, trim nudge buttons, Skip/Resume pills); the soft round fill stays, the big play/pause was already ring-free
+- [x] Bottom sheets dropped down when scrolling inside them — sheets now close ONLY by holding the top bar and dragging it down (~80dp); the grab strip is full-width so it's easy to hold, and content drags can never dismiss the sheet. Tapping outside and the back button still close it
+- [x] Posters in Fix Metadata / Link to Title were too small to see (52x74) — now 68x96, about a third bigger
+
+## 🔨 Open — bottom-sheet slide speed (needs moon's call)
+
+- [ ] Bottom sheets open/close slowly — the slide speed is fixed inside the Material3 1.3.0 sheet component: verified from the real AAR, it has no animation setting and no gesture toggle in its public API. Speeding up the slide needs either a Material3 update (1.4+, a toolchain bump) or a custom sheet. The dismiss fix (top-bar drag only) shipped in 0.15.166.
 
 ## 🔨 Done in this build (0.15.165 — build from workflow to get it)
 

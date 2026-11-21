@@ -106,6 +106,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -1670,6 +1671,12 @@ fun IosContextMenu(
 /**
  * iOS-style bottom sheet wrapper: grabber handle, rounded top, dark fill.
  * moon's iOS rebuild 2026-11-04. Wraps M3 ModalBottomSheet.
+ *
+ * Dismiss (moon's 2026-11-21): the sheet closes ONLY by dragging the top
+ * bar down — scrolling the content never closes it. Drags can never hide
+ * the sheet (confirmValueChange vetoes Hidden); the handle's own drag
+ * detector is the one path that may hide it, via the allowHide flag.
+ * Tapping outside the sheet and the back button still close it.
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -1678,9 +1685,24 @@ fun IosBottomSheet(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
+    var allowHide by remember { mutableStateOf(false) }
     val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
+        confirmValueChange = { value ->
+            allowHide || value != androidx.compose.material3.SheetValue.Hidden
+        },
     )
+    // Close from the handle's drag: allow the hide, animate out, then
+    // report the dismiss once the sheet is actually gone.
+    fun closeFromHandle() {
+        scope.launch {
+            allowHide = true
+            sheetState.hide()
+        }.invokeOnCompletion {
+            if (!sheetState.isVisible) onDismissRequest()
+        }
+    }
     androidx.compose.material3.ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
@@ -1689,15 +1711,40 @@ fun IosBottomSheet(
         contentColor = Color.White,
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
         dragHandle = {
-            // iOS grabber: small rounded bar, centered.
+            // Full-width grab strip: hold the top bar and drag down to
+            // close (moon's 2026-11-21). ~80dp of downward drag closes
+            // it; shorter drags do nothing.
+            val density = LocalDensity.current
+            val thresholdPx = with(density) { 80.dp.toPx() }
+            var dragTotal by remember { mutableStateOf(0f) }
             Box(
-                Modifier
-                    .padding(top = 8.dp, bottom = 4.dp)
-                    .width(36.dp)
-                    .height(5.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(Color(0xFF48484A)),
-            )
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(36.dp)
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onVerticalDrag = { change, dragAmount ->
+                                change.consume()
+                                if (dragAmount > 0f) dragTotal += dragAmount
+                            },
+                            onDragEnd = {
+                                if (dragTotal > thresholdPx) closeFromHandle()
+                                dragTotal = 0f
+                            },
+                            onDragCancel = { dragTotal = 0f },
+                        )
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                // iOS grabber: small rounded bar, centered.
+                Box(
+                    Modifier
+                        .width(36.dp)
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color(0xFF48484A)),
+                )
+            }
         },
     ) {
         content()
