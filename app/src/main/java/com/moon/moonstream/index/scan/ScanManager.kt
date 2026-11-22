@@ -710,8 +710,13 @@ object ScanManager {
             // scanner skips already-indexed rows, so anime already in
             // Series stays there until moved with the Detail-screen
             // button (or a from-scratch rescan).
-            val detected = animeCache.getOrPut(norm) {
-                MetadataMatcher.isAnimeTitle(parsed.title, parsed.episode != null)
+            // Cache key carries the year too (moon's 2026-11-22): the
+            // year-aware detect can answer differently for two files
+            // sharing a title ("Who Am I" 1998 vs 2014).
+            val detected = animeCache.getOrPut("$norm|${parsed.year ?: ""}") {
+                MetadataMatcher.isAnimeTitle(
+                    parsed.title, parsed.episode != null, parsed.year,
+                )
             }
             if (detected) {
                 com.moon.moonstream.util.AppLog.i(

@@ -94,6 +94,7 @@ import com.moon.moonstream.index.db.ChannelConfigEntity
 import com.moon.moonstream.index.db.ChannelBreakdown
 import com.moon.moonstream.index.db.MediaItemEntity
 import com.moon.moonstream.index.db.MsDatabase
+import com.moon.moonstream.index.db.resolvePick
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.index.db.UnmatchedFileEntity
 import com.moon.moonstream.index.StremioIds
@@ -775,9 +776,9 @@ fun ChannelsScreen(
                     // create a new one if there is none.
                     // Before this, "New entry/episode" always inserted a row,
                     // so linking created duplicates.
-                    val existing = picked.mediaId?.let { db.mediaDao().getById(it) }
-                        ?: picked.imdbId?.let { db.mediaDao().findByImdb(it) }
-                        ?: db.mediaDao().findByNormAnyChannel(norm)
+                    val existing = db.mediaDao().resolvePick(
+                        picked.mediaId, picked.imdbId, norm, picked.year,
+                    )
                     // FIX 2026-11-05: if linking to an existing entry that lacks
                     // an IMDb ID, update it with the picked one (needed for Skip Intro)
                     if (existing != null && existing.imdbId.isNullOrBlank() && !picked.imdbId.isNullOrBlank()) {
@@ -843,9 +844,9 @@ fun ChannelsScreen(
                     val norm = normalizeTitle(picked.title)
                     val now = System.currentTimeMillis()
                     // Find or create ONE entry for all files.
-                    val existing = picked.mediaId?.let { db.mediaDao().getById(it) }
-                        ?: picked.imdbId?.let { db.mediaDao().findByImdb(it) }
-                        ?: db.mediaDao().findByNormAnyChannel(norm)
+                    val existing = db.mediaDao().resolvePick(
+                        picked.mediaId, picked.imdbId, norm, picked.year,
+                    )
                     val mediaId = existing?.id ?: db.mediaDao().upsert(
                         MediaItemEntity(
                             channelId = first.channelId,

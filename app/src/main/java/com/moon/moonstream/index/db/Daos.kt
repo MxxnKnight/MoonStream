@@ -144,6 +144,11 @@ interface MediaDao {
     @Query("SELECT * FROM media_items WHERE imdbId = :imdbId LIMIT 1")
     suspend fun findByImdb(imdbId: String): MediaItemEntity?
 
+    /** Title+YEAR lookup (moon's 2026-11-22): a same-title entry from
+     *  another year is a different work, not the target. */
+    @Query("SELECT * FROM media_items WHERE normalizedTitle = :norm AND year = :year LIMIT 1")
+    suspend fun findByNormAndYear(norm: String, year: String): MediaItemEntity?
+
     @Query("SELECT * FROM media_items WHERE stremioId = :stremioId LIMIT 1")
     suspend fun findByStremioId(stremioId: String): MediaItemEntity?
 
@@ -815,4 +820,25 @@ interface WatchProgressDao {
            GROUP BY w.mediaId HAVING hoursMs > 0"""
     )
     suspend fun watchedTitleMetaSince(since: Long?): List<StatsTitleMetaRow>
+}
+
+/**
+ * Resolve a picked title to its library entry, strongest identity first
+ * (moon's 2026-11-22): the exact row tapped, the IMDb id, then title+YEAR.
+ * A same-title entry from another year is a different work ("Who Am I"
+ * 1998 vs the 2012 anime video) — it must never be the target, or a
+ * "wrong title" move silently lands the file back where it started.
+ * Title-only is the last resort, and only when the pick carries no year
+ * to contradict it. Null means "no such entry — create it".
+ */
+suspend fun MediaDao.resolvePick(
+    mediaId: Long?,
+    imdbId: String?,
+    norm: String,
+    year: String?,
+): MediaItemEntity? {
+    return mediaId?.let { getById(it) }
+        ?: imdbId?.let { findByImdb(it) }
+        ?: year?.let { findByNormAndYear(norm, it) }
+        ?: if (year.isNullOrBlank()) findByNormAnyChannel(norm) else null
 }

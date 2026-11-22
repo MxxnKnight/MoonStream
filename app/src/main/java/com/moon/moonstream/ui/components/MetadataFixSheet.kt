@@ -456,11 +456,15 @@ fun MetadataFixSheet(
                                     }
                                     // Only mark if the entry has actual streams
                                     // (moon's 2026-11-04: "already indexed with streams").
+                                    // Key on the identity that matched (moon's
+                                    // 2026-11-22): adding the bare title for an
+                                    // id-bearing result badged every same-title
+                                    // result "In Library", even other works.
                                     if (media != null &&
                                         db.streamDao().listByMedia(media.id).isNotEmpty()
                                     ) {
-                                        r.imdbId?.let { keys.add(it) }
-                                        keys.add(normalizeTitle(r.title))
+                                        if (!r.imdbId.isNullOrBlank()) keys.add(r.imdbId)
+                                        else keys.add(normalizeTitle(r.title))
                                     }
                                 }
                                 keys
@@ -469,8 +473,15 @@ fun MetadataFixSheet(
                     }
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(results) { r ->
-                            val inLibrary = !r.imdbId.isNullOrBlank() && libraryKeys.contains(r.imdbId) ||
+                            // Identity-aware (moon's 2026-11-22): a result
+                            // with an IMDb id is "in library" only when THAT
+                            // id matched — sharing a title with another
+                            // work's entry doesn't count.
+                            val inLibrary = if (!r.imdbId.isNullOrBlank()) {
+                                libraryKeys.contains(r.imdbId)
+                            } else {
                                 libraryKeys.contains(normalizeTitle(r.title))
+                            }
                             MetaResultRow(
                                 result = r,
                                 selected = selected == r,

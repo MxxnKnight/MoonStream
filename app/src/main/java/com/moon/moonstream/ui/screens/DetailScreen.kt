@@ -83,6 +83,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.moon.moonstream.index.db.MediaItemEntity
 import com.moon.moonstream.index.db.MsDatabase
+import com.moon.moonstream.index.db.resolvePick
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.index.db.SubtitleFileEntity
 import com.moon.moonstream.index.db.UnmatchedFileEntity
@@ -592,16 +593,26 @@ fun DetailScreen(
             // Use the picked type, not the source entry's type (same fix as
             // applyFixTitle — a file moved to a series must match as series).
             val targetType = picked.type ?: m.type
-            // The EXACT row the user tapped when the pick came from a local
-            // result — a custom entry and a real show can share a name.
-            var target = picked.mediaId?.let { db.mediaDao().getById(it) }
-                ?: db.mediaDao().findByNormAnyChannel(norm)
+            // Resolve by identity, strongest first (moon's 2026-11-22):
+            // a same-title entry from another year is a different work,
+            // not the target.
+            var target = db.mediaDao().resolvePick(
+                picked.mediaId, picked.imdbId, norm, picked.year,
+            )
             // FIX 2026-11-05: if target exists but lacks IMDb ID, update it
             // (needed for Skip Intro via IntroDB)
             if (target != null && target.imdbId.isNullOrBlank() && !picked.imdbId.isNullOrBlank()) {
                 db.mediaDao().updateImdbId(target.id, picked.imdbId!!)
-                target = picked.mediaId?.let { db.mediaDao().getById(it) }
-                    ?: db.mediaDao().findByNormAnyChannel(norm)
+                target = db.mediaDao().getById(target.id)
+            }
+            // Same entry the file is already under — moving would be a
+            // no-op, so say so instead of a fake "moved" toast.
+            if (target != null && target.id == m.id) {
+                AppLog.i("DETAIL", "Move file: '${file.fileName}' already under '${m.title}' — no move")
+                withContext(Dispatchers.Main) {
+                    MsToast.show("Already under ${m.title}")
+                }
+                return@launch
             }
             if (target == null) {
                 val key = ScanPrefs.getTmdbKey(context)
@@ -629,7 +640,10 @@ fun DetailScreen(
                         updatedAt = now,
                     ),
                 )
-                target = db.mediaDao().findByNormAnyChannel(norm) ?: return@launch
+                // Re-fetch by the id just created (moon's 2026-11-22):
+                // a title lookup here could return a same-title entry
+                // from another year instead of the new one.
+                target = db.mediaDao().getById(newId) ?: return@launch
             }
             db.streamDao().moveToMedia(file.id, target.id)
             db.mediaDao().refreshAggregates(m.id, now)
@@ -984,7 +998,16 @@ fun DetailScreen(
             currentTitle = fixFile?.fileName ?: m.title,
             isAnime = isAnime,
             onDismiss = { fixMode = null; fixFile = null },
-            mediaType = m.type,
+            // FIX_FILE opens on the FILE's own type (moon's 2026-11-22):
+            // the entry's type is what we're fixing, so trusting it puts
+            // a movie file's sheet on the Anime tab. A series file in an
+            // anime entry keeps Anime (an episode file there is anime).
+            mediaType = if (mode == FixMode.FIX_FILE && fixFile != null) {
+                val fileType = FilenameParser.parse(fixFile.fileName, false, "").type
+                if (fileType == "movie") "movie" else m.type
+            } else {
+                m.type
+            },
             initialQuery = fixFile?.fileName ?: m.title,
             onApply = { picked ->
                 when (mode) {

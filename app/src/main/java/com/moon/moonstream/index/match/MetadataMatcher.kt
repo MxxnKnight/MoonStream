@@ -273,14 +273,32 @@ object MetadataMatcher {
      * title match (confidence >= 0.75, the same bar as indexing) so a
      * vaguely-similar non-anime title never flips to the Anime tab.
      * Covers anime series AND anime movies — Kitsu lists both.
+     * Year check (moon's 2026-11-22): when the filename carries a year,
+     * it must be within 1 of the Kitsu entry's year — a movie sharing
+     * its title with an anime from another decade ("Who Am I" 1998 vs
+     * the 2012 MMD video) is a different work, not anime. No year on
+     * either side means no check, as before.
      * Never throws — any failure means "not anime".
      */
-    fun isAnimeTitle(title: String, hasEpisode: Boolean = false): Boolean {
+    fun isAnimeTitle(
+        title: String,
+        hasEpisode: Boolean = false,
+        year: String? = null,
+    ): Boolean {
         if (title.isBlank()) return false
         return try {
             // resolveIds=false: the auto-detect only needs the confidence,
             // so it skips the extra Kitsu→AniList lookup per title.
-            (tryKitsu(title, preferSeries = hasEpisode, resolveIds = false)?.confidence ?: 0.0) >= 0.75
+            val candidate = tryKitsu(title, preferSeries = hasEpisode, resolveIds = false)
+            if ((candidate?.confidence ?: 0.0) < 0.75) return false
+            val wantYear = year?.take(4)?.toIntOrNull()
+            val candYear = candidate?.year?.take(4)?.toIntOrNull()
+            if (wantYear != null && candYear != null &&
+                kotlin.math.abs(candYear - wantYear) > 1
+            ) {
+                return false
+            }
+            true
         } catch (_: Exception) {
             false
         }
