@@ -993,21 +993,29 @@ fun DetailScreen(
     }
 
     fixMode?.let { mode ->
+        // FIX_FILE opens on the FILE's own type (moon's 2026-11-22):
+        // the entry's type is what we're fixing, so trusting it puts
+        // a movie file's sheet on the Anime tab. A series file in an
+        // anime entry keeps Anime (an episode file there is anime).
+        // (fixFile is a delegated state property — capture it in a
+        // local first, or the smart cast fails to compile.)
+        val sheetType = if (mode == FixMode.FIX_FILE) {
+            val file = fixFile
+            if (file != null) {
+                val fileType = FilenameParser.parse(file.fileName, false, "").type
+                if (fileType == "movie") "movie" else m.type
+            } else {
+                m.type
+            }
+        } else {
+            m.type
+        }
         MetadataFixSheet(
             mode = mode,
             currentTitle = fixFile?.fileName ?: m.title,
             isAnime = isAnime,
             onDismiss = { fixMode = null; fixFile = null },
-            // FIX_FILE opens on the FILE's own type (moon's 2026-11-22):
-            // the entry's type is what we're fixing, so trusting it puts
-            // a movie file's sheet on the Anime tab. A series file in an
-            // anime entry keeps Anime (an episode file there is anime).
-            mediaType = if (mode == FixMode.FIX_FILE && fixFile != null) {
-                val fileType = FilenameParser.parse(fixFile.fileName, false, "").type
-                if (fileType == "movie") "movie" else m.type
-            } else {
-                m.type
-            },
+            mediaType = sheetType,
             initialQuery = fixFile?.fileName ?: m.title,
             onApply = { picked ->
                 when (mode) {
