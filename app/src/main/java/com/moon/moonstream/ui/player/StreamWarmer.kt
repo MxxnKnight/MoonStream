@@ -1,11 +1,13 @@
 package com.moon.moonstream.ui.player
 
 import android.content.Context
+import com.moon.moonstream.backend.BackendProvider
 import com.moon.moonstream.cache.TdStreamCache
 import com.moon.moonstream.index.db.StreamFileEntity
 import com.moon.moonstream.util.AppLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 /**
@@ -26,13 +28,23 @@ import kotlinx.coroutines.withContext
  * close rule (both caches cleared on every close) is untouched: a
  * warmed file that IS played has its chunks cleared by the normal
  * close handler.
+ *
+ * The warmer also drops TDLib's own copy when done (moon's
+ * 2026-11-23): the chunk-0 request starts a full background download
+ * inside TDLib that nothing cancels — the app asked for ~6 MB and
+ * ~700 MB arrived in an hour, with zero playback. The warmed chunks
+ * live in the tdstream cache, so instant play still works; dropping
+ * TDLib's copy only stops Telegram downloading the rest.
  */
 object StreamWarmer {
 
     /**
      * Warms [file]'s head and tail chunks (at most ~2 MB). Cancellable:
      * leaving the Detail page cancels the in-flight download. Never
-     * throws except on cancellation.
+     * throws except on cancellation. Always drops TDLib's copy when
+     * done — even on cancellation — so the background download the
+     * chunk-0 request started stops instead of running to the whole
+     * file (moon's 2026-11-23).
      */
     suspend fun warm(context: Context, file: StreamFileEntity) {
         if (file.fileSize <= 0L) return
@@ -50,6 +62,22 @@ object StreamWarmer {
                 AppLog.i("TDLOCAL", "warm-up skipped for '${file.fileName}': ${e.message}")
             } finally {
                 window.release()
+                // NonCancellable: a cancelled warm must still stop the
+                // download — a finally block in a cancelled coroutine
+                // can't suspend otherwise. A failed delete must never
+                // break the warm, so it runs inside runCatching.
+                withContext(NonCancellable) {
+                    val dropped = runCatching {
+                        BackendProvider.backend.deleteCachedFile(
+                            file.channelId,
+                            file.messageId,
+                        )
+                    }.getOrDefault(false)
+                    AppLog.d(
+                        "TDLOCAL",
+                        "warmer dropped TDLib copy for '${file.fileName}': $dropped",
+                    )
+                }
             }
         }
     }
