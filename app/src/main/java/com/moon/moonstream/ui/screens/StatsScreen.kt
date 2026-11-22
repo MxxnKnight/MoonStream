@@ -383,6 +383,18 @@ private fun StatsHeader(onBack: () -> Unit, stats: WatchStats?) {
 // ---------------------------------------------------------------------------
 // Hero — the Library card's glow language, big number, sparkline.
 // ---------------------------------------------------------------------------
+/**
+ * Delta label for the hero pill. Huge jumps read better as a multiple
+ * (moon's 2026-11-22): "31x" instead of "3048%". Only increases can
+ * explode like that — a drop never passes 100% — so the multiple
+ * applies to rises of 10x and up, and everything else stays a percent.
+ */
+private fun deltaLabel(delta: Float): String {
+    val multiple = 1f + delta / 100f
+    return if (delta >= 0f && multiple >= 10f) "${multiple.toInt()}x"
+    else "${kotlin.math.abs(delta).toInt()}%"
+}
+
 @Composable
 private fun HeroCard(
     s: WatchStats,
@@ -492,7 +504,7 @@ private fun HeroCard(
                         ) {
                             Text(
                                 (if (up) "↑ " else "↓ ") +
-                                    "${kotlin.math.abs(delta).toInt()}% vs previous",
+                                    "${deltaLabel(delta)} vs previous",
                                 style = MaterialTheme.typography.labelSmall.doto(),
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (up) Color(0xFF7DD956) else MsColors.TextSecondary,
