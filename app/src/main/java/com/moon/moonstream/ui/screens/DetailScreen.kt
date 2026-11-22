@@ -468,7 +468,12 @@ fun DetailScreen(
             // otherwise the matcher finds the old wrong title again and the
             // update appears to do nothing (moon's #Love case 2026-11-02).
             val targetType = picked.type ?: m.type
-            val full = MetadataMatcher.match(picked.title, picked.year, targetType, isAnime, key, omdbKey = omdbKey)
+            // Pass the PICKED IMDb id (moon's 2026-11-22): without it the
+            // matcher re-searches by title+year and re-finds the same wrong
+            // film — two "Beautiful" 2011s, and Fix Title "updated" the
+            // entry with the same wrong description and poster. The id
+            // makes it a direct lookup of the film he actually picked.
+            val full = MetadataMatcher.match(picked.title, picked.year, targetType, isAnime, key, imdbId = picked.imdbId, omdbKey = omdbKey)
                 ?.let { MetadataMatcher.enrichFromCinemeta(it, targetType) }
             db.mediaDao().updateMetadata(
                 id = m.id,
@@ -617,7 +622,10 @@ fun DetailScreen(
             if (target == null) {
                 val key = ScanPrefs.getTmdbKey(context)
                 val omdbKey = ScanPrefs.getOmdbKey(context)
-                val full = MetadataMatcher.match(picked.title, picked.year, targetType, isAnime, key, omdbKey = omdbKey)
+                // Same picked-id lookup as Fix Title (moon's 2026-11-22):
+                // a title re-search here could build the new entry from
+                // the wrong same-title film instead of the picked one.
+                val full = MetadataMatcher.match(picked.title, picked.year, targetType, isAnime, key, imdbId = picked.imdbId, omdbKey = omdbKey)
                     ?.let { MetadataMatcher.enrichFromCinemeta(it, targetType) }
                 val newId = db.mediaDao().upsert(
                     MediaItemEntity(

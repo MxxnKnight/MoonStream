@@ -831,8 +831,11 @@ interface WatchProgressDao {
  * A same-title entry from another year is a different work ("Who Am I"
  * 1998 vs the 2012 anime video) — it must never be the target, or a
  * "wrong title" move silently lands the file back where it started.
- * Title-only is the last resort, and only when the pick carries no year
- * to contradict it. Null means "no such entry — create it".
+ * A same-title entry carrying a DIFFERENT IMDb id is also a different
+ * work ("Beautiful" 2011: the Malayalam feature tt2133191 vs the French
+ * short tt2282713) — the title fallbacks skip it. Title-only is the last
+ * resort, and only when the pick carries no year to contradict it. Null
+ * means "no such entry — create it".
  */
 suspend fun MediaDao.resolvePick(
     mediaId: Long?,
@@ -840,8 +843,14 @@ suspend fun MediaDao.resolvePick(
     norm: String,
     year: String?,
 ): MediaItemEntity? {
+    // An entry with no id, or a pick with no id, can't conflict.
+    fun conflicts(candidate: MediaItemEntity?): Boolean {
+        val stored = candidate?.imdbId
+        return candidate != null && !stored.isNullOrBlank() &&
+            !imdbId.isNullOrBlank() && stored != imdbId
+    }
     return mediaId?.let { getById(it) }
         ?: imdbId?.let { findByImdb(it) }
-        ?: year?.let { findByNormAndYear(norm, it) }
-        ?: if (year.isNullOrBlank()) findByNormAnyChannel(norm) else null
+        ?: year?.let { findByNormAndYear(norm, it) }?.takeUnless { conflicts(it) }
+        ?: if (year.isNullOrBlank()) findByNormAnyChannel(norm)?.takeUnless { conflicts(it) } else null
 }
