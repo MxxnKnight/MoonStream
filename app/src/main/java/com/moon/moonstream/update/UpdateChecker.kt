@@ -20,6 +20,10 @@ data class UpdateInfo(
     val notes: String,
     val apkUrl: String,
     val apkName: String,
+    /** Delta patch for this device (null = no patch for this version jump). */
+    val patchUrl: String? = null,
+    val patchName: String? = null,
+    val patchSize: Long = 0,
 )
 
 object UpdateChecker {
@@ -36,12 +40,16 @@ object UpdateChecker {
             return@withContext null
         }
         val apk = pickApkAsset(json) ?: return@withContext null
+        val patch = pickPatchAsset(json, version)
         UpdateInfo(
             version = version,
             tag = tag,
             notes = json.optString("body", ""),
             apkUrl = apk.optString("browser_download_url", ""),
             apkName = apk.optString("name", "MoonStream-$version.apk"),
+            patchUrl = patch?.optString("browser_download_url", "")?.takeIf { it.isNotBlank() },
+            patchName = patch?.optString("name", ""),
+            patchSize = patch?.optLong("size", 0) ?: 0,
         ).takeIf { it.apkUrl.isNotBlank() }
     }
 
@@ -55,6 +63,24 @@ object UpdateChecker {
             if (a != b) return a > b
         }
         return false
+    }
+
+    /**
+     * Pick the delta patch for THIS device: from the installed version,
+     * to the release version, matching ABI. CI names it
+     * MoonStream-<from>-to-<to>-<abi>.patch. Null when the release has
+     * no patch for this exact jump (e.g. the user skipped a version) —
+     * the updater then falls back to the full APK.
+     */
+    private fun pickPatchAsset(release: JSONObject, version: String): JSONObject? {
+        val assets = release.optJSONArray("assets") ?: return null
+        val abi = Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
+        val expected = "MoonStream-${BuildConfig.VERSION_NAME}-to-$version-$abi.patch"
+        for (i in 0 until assets.length()) {
+            val a = assets.getJSONObject(i)
+            if (a.optString("name", "").equals(expected, ignoreCase = true)) return a
+        }
+        return null
     }
 
     /** Pick the APK asset matching this device's primary ABI. */

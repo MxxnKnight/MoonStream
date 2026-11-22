@@ -1770,6 +1770,13 @@ fun SettingsScreen(onOpenLogs: () -> Unit = {}, onLoggedOut: () -> Unit = {}) {
                             )
                         }
                     }
+                    if (info.patchUrl != null && info.patchSize > 0) {
+                        Text(
+                            "Small update — downloads ${"%.1f".format(info.patchSize / 1024f / 1024f)} MB instead of the full app.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MsColors.Accent,
+                        )
+                    }
                     if (updateState is UpdateState.Downloading) {
                         val p = (updateState as UpdateState.Downloading).progress
                         Text(

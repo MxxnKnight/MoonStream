@@ -47,6 +47,8 @@ class UpdateDownloadService : Service() {
         private const val EXTRA_VERSION = "version"
         private const val EXTRA_TAG = "tag"
         private const val EXTRA_NOTES = "notes"
+        private const val EXTRA_PATCH_URL = "patch_url"
+        private const val EXTRA_PATCH_NAME = "patch_name"
 
         private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
         val state: StateFlow<UpdateState> = _state.asStateFlow()
@@ -69,6 +71,8 @@ class UpdateDownloadService : Service() {
                 putExtra(EXTRA_VERSION, info.version)
                 putExtra(EXTRA_TAG, info.tag)
                 putExtra(EXTRA_NOTES, info.notes)
+                putExtra(EXTRA_PATCH_URL, info.patchUrl)
+                putExtra(EXTRA_PATCH_NAME, info.patchName)
             }
             ContextCompat.startForegroundService(context, intent)
         }
@@ -99,6 +103,8 @@ class UpdateDownloadService : Service() {
             notes = intent.getStringExtra(EXTRA_NOTES).orEmpty(),
             apkUrl = intent.getStringExtra(EXTRA_APK_URL).orEmpty(),
             apkName = intent.getStringExtra(EXTRA_APK_NAME).orEmpty(),
+            patchUrl = intent.getStringExtra(EXTRA_PATCH_URL),
+            patchName = intent.getStringExtra(EXTRA_PATCH_NAME),
         )
         startForeground(NOTIF_ID, buildNotification("Downloading update…", 0, "v${info.version}"))
         scope.launch { runDownload(info) }
@@ -114,15 +120,29 @@ class UpdateDownloadService : Service() {
             // and each notify() is an IPC to the system. Only push a
             // notification when the whole percent actually changes.
             var lastNotified = -1
-            val file = ApkInstaller.download(this, info) { p ->
+            fun report(p: Int, title: String) {
                 _state.value = UpdateState.Downloading(p, "v${info.version}")
                 if (p != lastNotified) {
                     lastNotified = p
                     notificationManager?.notify(
                         NOTIF_ID,
-                        buildNotification("Downloading update…", p, "v${info.version} — $p%"),
+                        buildNotification(title, p, "v${info.version} — $p%"),
                     )
                 }
+            }
+            // Delta first when the release carries a patch for this exact
+            // version jump; any failure falls back to the full download.
+            val deltaFile = if (!info.patchUrl.isNullOrBlank()) {
+                AppLog.i(TAG, "Trying delta update (patch ${info.patchName})")
+                ApkInstaller.downloadDelta(this, info) { p ->
+                    report(p, "Downloading small update…")
+                }
+            } else {
+                null
+            }
+            if (deltaFile != null) AppLog.i(TAG, "Delta update ready")
+            val file = deltaFile ?: ApkInstaller.download(this, info) { p ->
+                report(p, "Downloading update…")
             }
             downloadedApk = file
             // Storage janitor (moon's 2026-11-20): an update APK just

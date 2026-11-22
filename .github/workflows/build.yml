@@ -92,6 +92,34 @@ jobs:
           for f in *universal*.apk; do [ -f "$f" ] && mv "$f" "MoonStream-${{ inputs.version }}-universal.apk"; done
           ls -la
 
+      # Delta-update patches (moon's 2026-11-22): a small patch per ABI
+      # between the previous release's APK and this one, so the in-app
+      # updater downloads ~3 MB instead of 41 MB. Patches are an
+      # optimization — any failure here skips them, never the build.
+      - name: Build delta patches
+        if: inputs.publish_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p patches
+          PREV=$(git tag --sort=-v:refname | grep -v "^v${{ inputs.version }}$" | head -n 1)
+          if [ -z "$PREV" ]; then echo "No previous release — skipping patches"; exit 0; fi
+          PREV_VER=${PREV#v}
+          echo "Previous release: $PREV ($PREV_VER)"
+          if ! python3 -m pip install --quiet bsdiff4; then echo "bsdiff4 install failed — skipping patches"; exit 0; fi
+          mkdir -p prev
+          if ! gh release download "$PREV" --pattern '*-arm64-v8a.apk' --pattern '*-armeabi-v7a.apk' --pattern '*-x86_64.apk' --dir prev; then echo "Previous APKs unavailable — skipping patches"; exit 0; fi
+          for ABI in arm64-v8a armeabi-v7a x86_64; do
+            OLD="prev/MoonStream-$PREV_VER-$ABI.apk"
+            NEW="app/build/outputs/apk/release/MoonStream-${{ inputs.version }}-$ABI.apk"
+            if [ -f "$OLD" ] && [ -f "$NEW" ]; then
+              python3 tools/make_patch.py "$OLD" "$NEW" "$PREV_VER" "${{ inputs.version }}" "patches/MoonStream-$PREV_VER-to-${{ inputs.version }}-$ABI.patch" || echo "Patch failed for $ABI — skipping"
+            else
+              echo "Missing APK for $ABI — skipping patch"
+            fi
+          done
+          ls -la patches/
+
       # One artifact per ABI so each downloads as its own file.
       # The POCO M4 Pro needs arm64-v8a.
       - name: Upload arm64-v8a APK
@@ -149,4 +177,6 @@ jobs:
           tag_name: v${{ inputs.version }}
           name: MoonStream v${{ inputs.version }}
           body_path: changelog.txt
-          files: app/build/outputs/apk/release/*.apk
+          files: |
+            app/build/outputs/apk/release/*.apk
+            patches/*.patch

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.core.content.FileProvider
+import com.moon.moonstream.BuildConfig
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
@@ -171,15 +172,58 @@ object ApkInstaller {
         }
     }
 
-    /** Fallback single-stream download (original implementation). */
-    private suspend fun downloadSingle(
+    /**
+     * Delta update: downloads the small patch for this device, applies it
+     * to the installed APK, and returns the rebuilt APK — byte-identical
+     * to the release APK, so it installs exactly like a full download.
+     * Returns null when no patch is available, the patch isn't for the
+     * installed version, or anything fails — the caller falls back to
+     * the full download. Never throws.
+     */
+    suspend fun downloadDelta(
         context: Context,
         info: UpdateInfo,
         onProgress: (Int) -> Unit,
-    ): File = withContext(Dispatchers.IO) {
-        val dir = updatesDir(context)
-        val out = File(dir, info.apkName)
-        val conn = (URL(info.apkUrl).openConnection() as HttpURLConnection).apply {
+    ): File? = withContext(Dispatchers.IO) {
+        val patchUrl = info.patchUrl ?: return@withContext null
+        val patchName = info.patchName ?: return@withContext null
+        try {
+            val dir = updatesDir(context)
+            dir.listFiles()?.forEach { it.delete() }
+            val patchFile = File(dir, patchName)
+            // Patch download is 0-60, applying is 60-100.
+            downloadToFile(patchUrl, patchFile) { p -> onProgress((p * 60) / 100) }
+            val header = PatchApplier.readHeader(patchFile)
+            if (header.fromVersion != BuildConfig.VERSION_NAME) {
+                Log.i(
+                    TAG,
+                    "Patch is for ${header.fromVersion}, installed is " +
+                        "${BuildConfig.VERSION_NAME} — full download",
+                )
+                return@withContext null
+            }
+            val installedApk = File(context.applicationInfo.sourceDir)
+            val out = File(dir, info.apkName)
+            PatchApplier.apply(installedApk, patchFile, out) { p ->
+                onProgress(60 + (p * 40) / 100)
+            }
+            patchFile.delete()
+            onProgress(100)
+            Log.i(TAG, "Delta update applied: ${header.fromVersion} -> ${header.toVersion}")
+            out
+        } catch (e: Exception) {
+            Log.w(TAG, "Delta update failed, falling back to full download", e)
+            null
+        }
+    }
+
+    /** Single-stream download of one file with 0..100 progress. Throws on failure. */
+    private fun downloadToFile(
+        url: String,
+        out: File,
+        onProgress: (Int) -> Unit,
+    ) {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 20_000
             readTimeout = 30_000
             setRequestProperty("User-Agent", "MoonStream")
@@ -203,10 +247,21 @@ object ApkInstaller {
                 }
             }
             onProgress(100)
-            out
         } finally {
             conn.disconnect()
         }
+    }
+
+    /** Fallback single-stream download (original implementation). */
+    private suspend fun downloadSingle(
+        context: Context,
+        info: UpdateInfo,
+        onProgress: (Int) -> Unit,
+    ): File = withContext(Dispatchers.IO) {
+        val dir = updatesDir(context)
+        val out = File(dir, info.apkName)
+        downloadToFile(info.apkUrl, out, onProgress)
+        out
     }
 
     /** Fires the system package installer for a downloaded APK. */
