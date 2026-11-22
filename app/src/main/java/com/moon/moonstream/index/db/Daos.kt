@@ -429,8 +429,11 @@ interface SubtitleDao {
     @Query("SELECT * FROM subtitle_files WHERE id = :id")
     suspend fun getById(id: Long): SubtitleFileEntity?
 
-    @Query("SELECT * FROM subtitle_files WHERE channelId = :channelId AND mediaId IS NULL ORDER BY id DESC")
-    fun observeUnlinkedByChannel(channelId: Long): Flow<List<SubtitleFileEntity>>
+    // Unlinked subtitles across ALL channels (moon's 2026-11-22): the
+    // Detail page is a picker — moon attaches by hand, so every entry
+    // shows the same list instead of only its own channel's leftovers.
+    @Query("SELECT * FROM subtitle_files WHERE mediaId IS NULL ORDER BY id DESC")
+    fun observeUnlinkedAll(): Flow<List<SubtitleFileEntity>>
 
     @Query("SELECT * FROM subtitle_files WHERE channelId = :channelId AND mediaId IS NULL")
     suspend fun unlinkedByChannel(channelId: Long): List<SubtitleFileEntity>

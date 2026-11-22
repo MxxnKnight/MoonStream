@@ -115,7 +115,6 @@ import com.moon.moonstream.index.StremioIds
 import com.moon.moonstream.ui.state.AppUiState
 import com.moon.moonstream.ui.theme.MsColors
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -149,11 +148,12 @@ fun DetailScreen(
     val files by db.streamDao().observeByMedia(mediaId).collectAsState(initial = emptyList())
     val subtitles by db.subtitleDao().observeByMedia(mediaId).collectAsState(initial = emptyList())
     val channelId = media?.channelId
-    val unlinkedSubs by (
-        channelId?.let { db.subtitleDao().observeUnlinkedByChannel(it) }
-            ?: flowOf(emptyList())
-        ).collectAsState(initial = emptyList())
-    // Search (moon's 2026-11-15): a big channel can hold hundreds of
+    // All unlinked subtitles, every channel (moon's 2026-11-22): the
+    // list used to be scoped to this entry's channel, so an entry whose
+    // channel held no subtitles showed nothing at all.
+    val unlinkedSubs by db.subtitleDao().observeUnlinkedAll()
+        .collectAsState(initial = emptyList())
+    // Search (moon's 2026-11-15): the library can hold hundreds of
     // unlinked subtitles — a query filters them by filename.
     var unlinkedQuery by remember { mutableStateOf("") }
     val unlinkedFiltered = remember(unlinkedSubs, unlinkedQuery) {
@@ -943,7 +943,11 @@ fun DetailScreen(
                 }
                 SubtitleSection(
                     title = "Subtitles",
-                    subs = subtitles.filter { it.season == null && it.episode == null },
+                    // Every subtitle attached to this movie (moon's
+                    // 2026-11-22): the old season/episode filter hid
+                    // attached subtitles that carried a parsed episode
+                    // number, so they couldn't be seen or deleted.
+                    subs = subtitles,
                     onUnlink = { sub ->
                         scope.launch {
                             db.subtitleDao().delete(sub.id)
@@ -953,7 +957,7 @@ fun DetailScreen(
                 )
             }
 
-            // Unlinked subtitles for this channel — attach by hand.
+            // Unlinked subtitles from every channel — attach by hand.
             if (unlinkedSubs.isNotEmpty()) {
                 Text(
                     if (unlinkedQuery.isBlank()) "Unlinked subtitles (${unlinkedSubs.size})"

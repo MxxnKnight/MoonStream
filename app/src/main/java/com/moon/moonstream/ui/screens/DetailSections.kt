@@ -900,7 +900,7 @@ fun AddSubtitleSheet(
         MsSheetContent(title = "Add Subtitle") {
             if (unlinked.isNotEmpty()) {
                 Text(
-                    if (subQuery.isBlank()) "Unlinked in this channel (${unlinked.size})"
+                    if (subQuery.isBlank()) "Unlinked subtitles (${unlinked.size})"
                     else if (subFiltered.isEmpty()) "No subtitles match \"$subQuery\""
                     else "${subFiltered.size} match${if (subFiltered.size == 1) "" else "es"}",
                     style = MaterialTheme.typography.labelLarge,
