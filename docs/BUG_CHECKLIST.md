@@ -12,6 +12,7 @@ Every bug you report goes here. I check them off only when the fix is built, pus
 - [x] Unlinked subtitles list missing on entries whose channel held no subtitles (moon's 2026-11-22, WALL·E): the list was scoped to the entry's own channel, so it showed nothing on WALL·E's page (neither under the files nor in the Subtitle sheet) while entries from the manual channel showed all 7 → the list now covers every channel, so every entry shows the same unlinked subtitles and moon picks by hand
 - [x] Attached subtitle invisible on the entry it was attached to (moon's 2026-11-22, WALL·E subtitle attached to Tenet for a test): the movie subtitles list hid any subtitle carrying a season/episode number, and the WALL·E subtitle's stored episode (2008, misread from "WALL.E.2008" by the parser) kept it hidden, so it couldn't be seen or deleted → movie pages now show every attached subtitle
 - [x] Stats delta pill showed absurd percentages after a near-zero week ("↑ 3048% vs previous", moon's 2026-11-22) → rises of 10x and up now read as a multiple ("↑ 31x vs previous"); smaller changes still show a percent, drops unchanged
+- [x] Log window too short to catch a mystery download (moon's 2026-11-22, Beautiful 1246 MB with no playback): the 200-line screen buffer and 512 KB / 300-line disk file lost the evidence — one Clear Cache run filled the whole window → screen buffer 1000 lines, disk cap 4 MB, rotation keeps 5000 lines
 
 ## 🔨 Done in this build (0.15.168 — build from workflow to get it)
 

@@ -39,8 +39,13 @@ data class LogLine(
  * during a deep audit). ALL mutations are posted to the main thread.
  */
 object AppLog {
-    private const val MAX = 200 // reduced from 500: fewer items = less memory, faster render
-    private const val MAX_FILE_BYTES = 512 * 1024L
+    // Raised 2026-11-22 (moon's call): the 200-line window lost the evidence —
+    // one Clear Cache run's spam filled it and the download that mattered had
+    // scrolled off. 1000 lines on screen, 4 MB on disk.
+    private const val MAX = 1000
+    private const val MAX_FILE_BYTES = 4 * 1024 * 1024L
+    /** Lines kept when the disk file rotates (was 300 — far too few for 4 MB). */
+    private const val ROTATE_KEEP_LINES = 5000
     private const val TAG_APP = "APP"
     val lines = mutableStateListOf<LogLine>()
 
@@ -78,7 +83,7 @@ object AppLog {
             } catch (e: Exception) { /* logging must never crash the app */ }
         }
         // Boundary marker: makes it obvious where this launch begins when the
-        // older lines are still on screen (they are, until Clear or 200 lines).
+        // older lines are still on screen (they are, until Clear or 1000 lines).
         i(TAG_APP, "app launched — older lines kept from previous run")
         // Freeze/crash trap (moon's 2026-11-16): two random freeze-kills
         // left no log behind. The watchdog writes the evidence itself.
@@ -103,8 +108,8 @@ object AppLog {
             synchronized(fileLock) {
                 try {
                     if (file.length() > MAX_FILE_BYTES) {
-                        // Rotate: keep the last ~300 lines.
-                        val kept = file.readLines().takeLast(300)
+                        // Rotate: keep the last ROTATE_KEEP_LINES lines.
+                        val kept = file.readLines().takeLast(ROTATE_KEEP_LINES)
                         file.writeText(kept.joinToString("\n") + "\n")
                     }
                     file.appendText(formatLine(line) + "\n")
@@ -128,7 +133,7 @@ object AppLog {
                 val time = synchronized(timeFmt) { timeFmt.format(Date()) }
                 val line = LogLine(nextId.incrementAndGet(), time, tag, level, msg)
                 if (file.length() > MAX_FILE_BYTES) {
-                    val kept = file.readLines().takeLast(300)
+                    val kept = file.readLines().takeLast(ROTATE_KEEP_LINES)
                     file.writeText(kept.joinToString("\n") + "\n")
                 }
                 file.appendText(formatLine(line) + "\n")
