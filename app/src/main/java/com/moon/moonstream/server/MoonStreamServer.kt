@@ -522,6 +522,7 @@ class MoonStreamServer(
 
             var offset = start
             var remaining = length
+            var servedSincePurge = 0L
             while (remaining > 0) {
                 val chunk = minOf(CHUNK_SIZE.toLong(), remaining).toInt()
                 val bytes = readChunkWithRetry(targetFile.fileName, offset, chunk, ::readGlobalRange)
@@ -530,6 +531,14 @@ class MoonStreamServer(
                 ServerTelemetry.addBytes(appContext, bytes.size.toLong())
                 offset += bytes.size
                 remaining -= bytes.size
+                // Mid-stream purge (moon's 2026-11-25): drop Telegram's
+                // copy every 96 MB served, like the in-app player's purge,
+                // so a big addon stream never piles the whole file on disk.
+                servedSincePurge += bytes.size.toLong()
+                if (servedSincePurge >= ServedFiles.PURGE_AFTER_BYTES) {
+                    servedSincePurge = 0
+                    partsList.forEach { ServedFiles.purgeWhileServing(it.channelId, it.messageId) }
+                }
             }
             output.flush()
         } catch (e: Exception) {
@@ -597,6 +606,7 @@ class MoonStreamServer(
             output.write(header.toString().toByteArray(Charsets.UTF_8))
             var offset = start
             var remaining = length
+            var servedSincePurge = 0L
             while (remaining > 0) {
                 val chunk = minOf(CHUNK_SIZE.toLong(), remaining).toInt()
                 val bytes = readChunkWithRetry(msg.fileName, offset, chunk) { off, size ->
@@ -607,6 +617,12 @@ class MoonStreamServer(
                 ServerTelemetry.addBytes(appContext, bytes.size.toLong())
                 offset += bytes.size
                 remaining -= bytes.size
+                // Mid-stream purge (moon's 2026-11-25): see serveMediaBytes.
+                servedSincePurge += bytes.size.toLong()
+                if (servedSincePurge >= ServedFiles.PURGE_AFTER_BYTES) {
+                    servedSincePurge = 0
+                    ServedFiles.purgeWhileServing(channelId, messageId)
+                }
             }
             output.flush()
         } catch (e: Exception) {

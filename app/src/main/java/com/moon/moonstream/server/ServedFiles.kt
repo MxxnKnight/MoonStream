@@ -48,6 +48,10 @@ import kotlinx.coroutines.launch
  */
 object ServedFiles {
 
+    /** Drop TDLib's copy after this many bytes served in one stream
+     *  (same 96 MB as the in-app player's purge). */
+    const val PURGE_AFTER_BYTES = 96L * 1024 * 1024
+
     /** A served file idle this long is done playing. */
     private const val IDLE_MS = 10L * 60L * 1000L
 
@@ -122,6 +126,28 @@ object ServedFiles {
         if (count == null || count.get() <= 0) {
             activeServes.remove(key)
             scope.launch { dropIfIdle(key) }
+        }
+    }
+
+    /** Drop a file's Telegram copy mid-stream, the server twin of the
+     *  in-app player's purge (moon's 2026-11-25: a 15 GB addon stream
+     *  would otherwise land the whole file on disk). The client already
+     *  has the bytes it buffered; later reads re-download. Uses
+     *  deleteCachedFile, NOT cancelDownload — cancelling would stop the
+     *  loader and the very next read would restart the whole download.
+     *  Fire-and-forget on the IO scope, so it never blocks the stream;
+     *  a read in flight when the delete lands is covered by the
+     *  server's read retry. Skips files the in-app player holds. */
+    fun purgeWhileServing(channelId: Long, messageId: Long) {
+        scope.launch {
+            try {
+                if (TdStreamCache.isActive(channelId, messageId)) return@launch
+                if (BackendProvider.backend.deleteCachedFile(channelId, messageId)) {
+                    AppLog.d("SERVER", "mid-stream purge dropped copy for $channelId:$messageId")
+                }
+            } catch (e: Exception) {
+                AppLog.w("SERVER", "mid-stream purge failed: ${e.message}")
+            }
         }
     }
 
