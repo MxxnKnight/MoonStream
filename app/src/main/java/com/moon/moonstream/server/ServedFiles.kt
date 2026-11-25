@@ -6,6 +6,7 @@ import com.moon.moonstream.cache.TdStreamCache
 import com.moon.moonstream.util.AppLog
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
@@ -31,6 +32,19 @@ import kotlinx.coroutines.launch
  * downloaded bytes with no one remembering them. Sweeps run on a
  * timer while the server service is alive, plus the existing
  * app-start / player-close / served-request triggers.
+ *
+ * Active serves are counted too (moon's 2026-11-25): when a client's
+ * stream ends — played through, or closed early — and no other client
+ * is serving that file, its Telegram copy is dropped right away
+ * instead of waiting for the 10-minute idle sweep. The in-app player
+ * still wins: a file it holds is never touched.
+ *
+ * Known gap (TDLib source, 2026-11-25): deleteFile only unlinks the
+ * local partial — it does NOT cancel the background download (only
+ * cancelDownloadFile does that, and the app has no such API yet). So
+ * the drop frees the visible copy at once, but TDLib's loader may
+ * keep downloading until the cancel API lands — see
+ * docs/server-cancel-freebuff.md. The warmer has the same gap.
  */
 object ServedFiles {
 
@@ -58,6 +72,13 @@ object ServedFiles {
     private const val SAVE_DEBOUNCE_MS = 60L * 1000L
 
     private val lastServed = ConcurrentHashMap<Pair<Long, Long>, Long>()
+
+    /** Live streams per file (channelId to messageId). The server
+     *  calls [beginServe] when a stream starts and [endServe] when it
+     *  ends; the count guards the drop so one client's disconnect
+     *  never pulls the file out from under another client. */
+    private val activeServes = ConcurrentHashMap<Pair<Long, Long>, AtomicInteger>()
+
     private val lastSweepAt = AtomicLong(0L)
     private val lastSaveAt = AtomicLong(0L)
     private val initialized = AtomicBoolean(false)
@@ -76,6 +97,51 @@ object ServedFiles {
     fun note(channelId: Long, messageId: Long) {
         lastServed[channelId to messageId] = System.currentTimeMillis()
         maybeSave()
+    }
+
+    /** A client started streaming a file. Call once per stream, before
+     *  the first byte is read; pair with [endServe]. Safe from any
+     *  thread, including the server's request threads. */
+    fun beginServe(channelId: Long, messageId: Long) {
+        activeServes.compute(channelId to messageId) { _, v ->
+            (v ?: AtomicInteger(0)).apply { incrementAndGet() }
+        }
+        note(channelId, messageId)
+    }
+
+    /** A client's stream ended — played through, errored, or the
+     *  client disconnected. When the count hits zero the file's
+     *  Telegram copy is dropped (unless the in-app player holds it),
+     *  so a closed-early session stops piling up bytes at once
+     *  instead of waiting for the idle sweep. Safe from any thread. */
+    fun endServe(channelId: Long, messageId: Long) {
+        val key = channelId to messageId
+        val count = activeServes.computeIfPresent(key) { _, v ->
+            v.apply { decrementAndGet() }
+        }
+        if (count == null || count.get() <= 0) {
+            activeServes.remove(key)
+            scope.launch { dropIfIdle(key) }
+        }
+    }
+
+    /** Drop one file's Telegram copy now that no client serves it.
+     *  Runs on the IO scope. Re-checks the active count first: a new
+     *  stream may have started between the decrement and this launch,
+     *  and it must not lose the file mid-stream. */
+    private suspend fun dropIfIdle(key: Pair<Long, Long>) {
+        try {
+            if (activeServes.containsKey(key)) return
+            val (channelId, messageId) = key
+            if (TdStreamCache.isActive(channelId, messageId)) return
+            if (BackendProvider.backend.deleteCachedFile(channelId, messageId)) {
+                lastServed.remove(key)
+                AppLog.i("SERVER", "client left — dropped Telegram copy for $channelId:$messageId")
+                save()
+            }
+        } catch (e: Exception) {
+            AppLog.w("SERVER", "drop after stream end failed: ${e.message}")
+        }
     }
 
     /** Runs a sweep on a background thread if one is due; returns at

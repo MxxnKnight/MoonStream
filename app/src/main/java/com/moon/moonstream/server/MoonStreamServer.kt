@@ -489,7 +489,10 @@ class MoonStreamServer(
         // Storage janitor (moon's 2026-11-20): serving downloads these
         // parts into TDLib's dir — remember them so the idle sweep can
         // drop their Telegram copies once playback has been quiet.
-        partsList.forEach { ServedFiles.note(it.channelId, it.messageId) }
+        // Active serves are counted too (moon's 2026-11-25): when the
+        // last client leaves, the copies drop at once (see endServe
+        // in the finally below) instead of waiting for the sweep.
+        partsList.forEach { ServedFiles.beginServe(it.channelId, it.messageId) }
         ServedFiles.maybeSweep()
         try {
             val header = buildHeader(status.first, status.second, mime, length, extra)
@@ -531,6 +534,8 @@ class MoonStreamServer(
             output.flush()
         } catch (e: Exception) {
             Log.e(TAG, "Error streaming file ${targetFile.id}", e)
+        } finally {
+            partsList.forEach { ServedFiles.endServe(it.channelId, it.messageId) }
         }
     }
 
@@ -585,7 +590,7 @@ class MoonStreamServer(
             return
         }
         // Storage janitor (moon's 2026-11-20): see serveMediaBytes.
-        ServedFiles.note(channelId, messageId)
+        ServedFiles.beginServe(channelId, messageId)
         ServedFiles.maybeSweep()
         try {
             val header = buildHeader(status.first, status.second, mime, length, extra)
@@ -606,6 +611,8 @@ class MoonStreamServer(
             output.flush()
         } catch (e: Exception) {
             Log.e(TAG, "Error streaming direct $channelId/$messageId", e)
+        } finally {
+            ServedFiles.endServe(channelId, messageId)
         }
     }
 
