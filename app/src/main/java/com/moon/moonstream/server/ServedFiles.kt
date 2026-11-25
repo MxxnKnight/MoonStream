@@ -39,12 +39,12 @@ import kotlinx.coroutines.launch
  * instead of waiting for the 10-minute idle sweep. The in-app player
  * still wins: a file it holds is never touched.
  *
- * Known gap (TDLib source, 2026-11-25): deleteFile only unlinks the
- * local partial — it does NOT cancel the background download (only
- * cancelDownloadFile does that, and the app has no such API yet). So
- * the drop frees the visible copy at once, but TDLib's loader may
- * keep downloading until the cancel API lands — see
- * docs/server-cancel-freebuff.md. The warmer has the same gap.
+ * The drop stops the download for real (moon's 2026-11-25): it calls
+ * backend.cancelDownload, which sends CancelDownloadFile first and
+ * then DeleteFile. Delete alone never stopped the download (TDLib
+ * source — delete_file only unlinks the partial; only
+ * cancelDownloadFile stops the loader) — that was the gap in 0.15.170's
+ * warmer fix, now closed the same way in StreamWarmer.
  */
 object ServedFiles {
 
@@ -134,9 +134,9 @@ object ServedFiles {
             if (activeServes.containsKey(key)) return
             val (channelId, messageId) = key
             if (TdStreamCache.isActive(channelId, messageId)) return
-            if (BackendProvider.backend.deleteCachedFile(channelId, messageId)) {
+            if (BackendProvider.backend.cancelDownload(channelId, messageId)) {
                 lastServed.remove(key)
-                AppLog.i("SERVER", "client left — dropped Telegram copy for $channelId:$messageId")
+                AppLog.i("SERVER", "client left — stopped TDLib download and dropped copy for $channelId:$messageId")
                 save()
             }
         } catch (e: Exception) {

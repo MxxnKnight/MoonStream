@@ -64,18 +64,21 @@ object StreamWarmer {
                 window.release()
                 // NonCancellable: a cancelled warm must still stop the
                 // download — a finally block in a cancelled coroutine
-                // can't suspend otherwise. A failed delete must never
-                // break the warm, so it runs inside runCatching.
+                // can't suspend otherwise. cancelDownload stops the
+                // background download AND drops the copy (delete alone
+                // never stopped the download — TDLib source, 2026-11-25).
+                // A failed cancel must never break the warm, so it runs
+                // inside runCatching.
                 withContext(NonCancellable) {
-                    val dropped = runCatching {
-                        BackendProvider.backend.deleteCachedFile(
+                    val stopped = runCatching {
+                        BackendProvider.backend.cancelDownload(
                             file.channelId,
                             file.messageId,
                         )
                     }.getOrDefault(false)
                     AppLog.d(
                         "TDLOCAL",
-                        "warmer dropped TDLib copy for '${file.fileName}': $dropped",
+                        "warmer stopped TDLib download for '${file.fileName}': $stopped",
                     )
                 }
             }
