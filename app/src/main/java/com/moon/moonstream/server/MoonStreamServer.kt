@@ -962,7 +962,11 @@ class MoonStreamServer(
 
     companion object {
         private const val TAG = "MoonStreamServer"
-        private const val CHUNK_SIZE = 1_048_576 // 1 MB per Telegram read
+        // 8 MB per Telegram read (moon's 2026-11-25): one ~1s request
+        // carries 8 MB instead of 1 MB — same batching the in-app player
+        // got on 2026-11-13. The server fed Nuvio at ~1 MB/s before, so
+        // it buffered on anything above that bitrate.
+        private const val CHUNK_SIZE = 8_388_608
         private const val STREAM_MAX_RETRIES = 3 // empty-chunk retries before giving up
         private const val STREAM_RETRY_DELAY_MS = 1_000L // wait between retries
         private const val MAX_SUB_BYTES = 8 * 1_048_576 // sanity cap for subtitle files

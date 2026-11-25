@@ -1241,17 +1241,22 @@ fun PlayerScreen(
                             AppLog.e("PLAYER", "markFinished FAILED: ${e.message}")
                         }
                     }
-                    // Auto-delete the downloaded bytes on every close
-                    // (moon's call 2026-11-02: no 90% rule — always clear).
-                    // A split file deletes every part's Telegram copy.
+                    // Auto-stop the download and delete the bytes on every
+                    // close (moon's call 2026-11-02: no 90% rule — always
+                    // clear). A split file stops every part's download.
+                    // cancelDownload, not deleteCachedFile: delete alone
+                    // never stopped the background download (TDLib source,
+                    // 2026-11-25). NOT in TdByteWindow.release() — ExoPlayer
+                    // closes/reopens the DataSource mid-playback and each
+                    // reopen would kill the download (the 0.15.151 stall).
                     try {
                         closeFiles.forEach { f ->
-                            val deleted = BackendProvider.backend
-                                .deleteCachedFile(f.channelId, f.messageId)
+                            val stopped = BackendProvider.backend
+                                .cancelDownload(f.channelId, f.messageId)
                             AppLog.i(
                                 "PLAYER",
-                                "closed — Telegram copy of '${f.fileName}' " +
-                                    if (deleted) "deleted" else "NOT deleted (backend said no)",
+                                "closed — TDLib download stopped for '${f.fileName}' " +
+                                    if (stopped) "and copy dropped" else "NOT stopped (backend said no)",
                             )
                         }
                     } catch (e: Exception) { /* never break close */ }
