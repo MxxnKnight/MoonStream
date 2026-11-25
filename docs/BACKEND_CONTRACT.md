@@ -56,6 +56,12 @@ A class that implements `MoonStreamBackend` — i.e. it keeps these promises:
    (`false`), so old implementations keep compiling — override it with
    `TdApi.DeleteFile`. Return true when the bytes are gone (or were
    never downloaded).
+8. **`cancelDownload(channelId, messageId)`** — stop TDLib downloading a
+   file and drop the bytes it already wrote (`TdApi.CancelDownloadFile`
+   first, then `TdApi.DeleteFile`), so a client that stopped watching does
+   not leave a whole-file download running. Same file-id lookup as
+   `deleteCachedFile`; safe on a file that is not downloading. Default
+   no-op (`false`).
 
 Rules: never crash the app from these — return empty lists on failure and
 let the UI show its empty states. Never log secrets. API ID/hash and

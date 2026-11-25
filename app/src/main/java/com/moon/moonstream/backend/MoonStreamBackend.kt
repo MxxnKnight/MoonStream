@@ -131,6 +131,26 @@ interface MoonStreamBackend {
     suspend fun deleteCachedFile(channelId: Long, messageId: Long): Boolean = false
 
     /**
+     * Stop TDLib from downloading this file any further, and drop the
+     * bytes it already wrote to disk.
+     *
+     * `deleteCachedFile` alone is not enough while a download is running:
+     * TDLib re-opens/re-fetches the file on the next read, and a range
+     * request can leave a whole-file download running in the background
+     * long after the player or addon client stopped reading (moon's
+     * 2026-11-25: playing through Nuvio's addon player pulled the entire
+     * file). So this sends `CancelDownloadFile` first and then
+     * `DeleteFile`, using the same file-id lookup as [deleteCachedFile].
+     *
+     * Safe to call for a file that is not downloading. Returns true when
+     * Telegram acknowledged the cancel and the local copy is gone (or the
+     * message holds no downloadable file); false when the lookup or one of
+     * the requests failed. Default no-op returning false, so a backend
+     * without download control keeps compiling.
+     */
+    suspend fun cancelDownload(channelId: Long, messageId: Long): Boolean = false
+
+    /**
      * Ask Telegram to shrink its own downloaded-file cache (video,
      * document and audio files only — posters and thumbnails are left
      * alone) down to at most [maxBytes], dropping the least recently
