@@ -200,27 +200,18 @@ class TdlibMoonStreamBackend(
      * a failed lookup or delete returns false so the caller can say so.
      */
     override suspend fun deleteCachedFile(channelId: Long, messageId: Long): Boolean {
-        val key = channelId to messageId
         return try {
-            var fileId = messageFileIdCache[key]
-            if (fileId == null) {
-                val lookup = lookupFileId(channelId, messageId)
-                if (lookup.isFailure) {
-                    AppLog.w(
-                        "TDSTREAM",
-                        "could not look up msg=$messageId: " +
-                            "${lookup.exceptionOrNull()?.message}",
-                    )
-                    return false
-                }
-                fileId = lookup.getOrThrow()
-                if (fileId == 0) {
-                    AppLog.i("TDSTREAM", "msg=$messageId holds no video/file — nothing to delete")
-                    return true
-                }
-                messageFileIdCache[key] = fileId
-                AppLog.i("TDSTREAM", "resolved fileId=$fileId for msg=$messageId via GetMessage")
+            val lookup = fileIdFor(channelId, messageId)
+            if (lookup.isFailure) {
+                AppLog.w(
+                    "TDSTREAM",
+                    "could not look up msg=$messageId: " +
+                        "${lookup.exceptionOrNull()?.message}",
+                )
+                return false
             }
+            val fileId = lookup.getOrThrow()
+            if (fileId == 0) return true
             val res = telegramManager.send(TdApi.DeleteFile(fileId))
             if (!res.isSuccess) {
                 AppLog.w("TDSTREAM", "DeleteFile failed for msg=$messageId: ${res.exceptionOrNull()?.message}")
@@ -229,6 +220,89 @@ class TdlibMoonStreamBackend(
         } catch (e: Exception) {
             AppLog.w("TDSTREAM", "DeleteFile threw for msg=$messageId: ${e.message}")
             false
+        }
+    }
+
+    /**
+     * Stops TDLib downloading a file, then drops what it already wrote.
+     *
+     * A range read (`readFileRange` → `DownloadFile(offset, length)`) can
+     * leave TDLib downloading the rest of the file in the background: the
+     * player/addon client stops reading, but nothing tells TDLib to stop,
+     * so a 700 MB file arrives for a 6 MB seek (moon's 2026-11-25, Nuvio
+     * through the addon). `DeleteFile` on its own does not stop an active
+     * download — it is re-fetched on the next read — so
+     * `CancelDownloadFile` goes first. `onlyIfPending=false` is required:
+     * `true` would only cancel downloads that have not started yet.
+     *
+     * `DeleteFile` still runs after the cancel, because cancelling keeps
+     * the partial bytes on disk (and any file TDLib considers complete),
+     * and the next play must start clean rather than read a half file.
+     *
+     * Same file-id lookup as [deleteCachedFile] — memory cache first, then
+     * `GetMessage` — so this works for a file this process never read
+     * (a restart, or a client that connected after the download began).
+     */
+    override suspend fun cancelDownload(channelId: Long, messageId: Long): Boolean {
+        return try {
+            val lookup = fileIdFor(channelId, messageId)
+            if (lookup.isFailure) {
+                AppLog.w(
+                    "TDSTREAM",
+                    "cancel: could not look up msg=$messageId: " +
+                        "${lookup.exceptionOrNull()?.message}",
+                )
+                return false
+            }
+            val fileId = lookup.getOrThrow()
+            if (fileId == 0) {
+                AppLog.i("TDSTREAM", "cancel msg=$messageId: no video/file — nothing to stop")
+                return true
+            }
+            val cancelled = telegramManager.send(TdApi.CancelDownloadFile(fileId, false))
+            if (cancelled.isSuccess) {
+                AppLog.i("TDSTREAM", "cancel: stopped TDLib download fileId=$fileId (msg=$messageId)")
+            } else {
+                AppLog.w(
+                    "TDSTREAM",
+                    "CancelDownloadFile failed for msg=$messageId fileId=$fileId: " +
+                        "${cancelled.exceptionOrNull()?.message}",
+                )
+            }
+            val deleted = telegramManager.send(TdApi.DeleteFile(fileId))
+            if (!deleted.isSuccess) {
+                AppLog.w(
+                    "TDSTREAM",
+                    "DeleteFile after cancel failed for msg=$messageId fileId=$fileId: " +
+                        "${deleted.exceptionOrNull()?.message}",
+                )
+            }
+            cancelled.isSuccess && deleted.isSuccess
+        } catch (e: Exception) {
+            AppLog.w("TDSTREAM", "cancelDownload threw for msg=$messageId: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * The file id both [deleteCachedFile] and [cancelDownload] act on:
+     * [messageFileIdCache] first, then one `GetMessage` lookup.
+     *
+     * A `failure` means the lookup itself did not happen; `success(0)`
+     * means the message really holds no downloadable file. Callers must
+     * keep those two apart — reading a failed lookup as "no file" is how
+     * a delete used to report success without freeing anything.
+     */
+    private suspend fun fileIdFor(channelId: Long, messageId: Long): Result<Int> {
+        val key = channelId to messageId
+        messageFileIdCache[key]?.let { return Result.success(it) }
+        return lookupFileId(channelId, messageId).onSuccess { fileId ->
+            if (fileId == 0) {
+                AppLog.i("TDSTREAM", "msg=$messageId holds no video/file — nothing to delete")
+            } else {
+                messageFileIdCache[key] = fileId
+                AppLog.i("TDSTREAM", "resolved fileId=$fileId for msg=$messageId via GetMessage")
+            }
         }
     }
 
