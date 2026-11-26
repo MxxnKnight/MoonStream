@@ -1,5 +1,6 @@
 package com.moon.moonstream.index.parse
 
+import com.moon.moonstream.util.AppLog
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -240,11 +241,16 @@ object ZipStream {
         }
         if (tail.size < 22) return null
         // Search backwards for the EOCD signature; the true record is the
-        // one whose comment ends exactly at the archive end.
+        // one whose comment ends exactly at the archive end. If no record
+        // ends exactly there (trailing bytes after the EOCD — some tools
+        // append them), fall back to the last EOCD signature in the tail;
+        // the central-directory parse below still validates it.
         var eocdAt = -1
+        var lastEocdAt = -1
         var i = tail.size - 22
         while (i >= 0) {
             if (u32(tail, i) == SIG_EOCD.toLong()) {
+                if (lastEocdAt < 0) lastEocdAt = i
                 val commentLen = u16(tail, i + 20) ?: break
                 if (i + 22 + commentLen == tail.size) {
                     eocdAt = i
@@ -253,6 +259,7 @@ object ZipStream {
             }
             i--
         }
+        if (eocdAt < 0) eocdAt = lastEocdAt
         if (eocdAt < 0) return null
         val cdDisk = u16(tail, eocdAt + 6) ?: return null
         val totalEntries = u16(tail, eocdAt + 10) ?: return null
@@ -265,8 +272,12 @@ object ZipStream {
             if (u32(tail, locAt) != SIG_ZIP64_LOCATOR.toLong()) return null
             val zip64Disk = u32(tail, locAt + 4) ?: return null
             val zip64Off = u64(tail, locAt + 8) ?: return null
+            val recOff = recordOffset(
+                diskStart(partStarts, zip64Disk.toInt()) + zip64Off, zip64Off,
+                SIG_ZIP64_EOCD, totalSize, readAt,
+            ) ?: return null
             val rec = try {
-                readAt(diskStart(partStarts, zip64Disk.toInt()) + zip64Off, 56)
+                readAt(recOff, 56)
             } catch (e: Exception) {
                 return null
             }
@@ -276,15 +287,57 @@ object ZipStream {
             val z64CdDisk = u32(rec, 20) ?: return null
             val entries = u64(rec, 32) ?: return null
             val cdOffset = u64(rec, 48) ?: return null
-            return CentralDir(
-                start = diskStart(partStarts, z64CdDisk.toInt()) + cdOffset,
-                entries = entries,
-            )
+            val start = recordOffset(
+                diskStart(partStarts, z64CdDisk.toInt()) + cdOffset, cdOffset,
+                SIG_CENTRAL, totalSize, readAt,
+            ) ?: return null
+            return CentralDir(start = start, entries = entries)
         }
-        return CentralDir(
-            start = diskStart(partStarts, cdDisk) + cdOffset32,
-            entries = totalEntries.toLong(),
-        )
+        val start = recordOffset(
+            diskStart(partStarts, cdDisk) + cdOffset32, cdOffset32,
+            SIG_CENTRAL, totalSize, readAt,
+        ) ?: return null
+        return CentralDir(start = start, entries = totalEntries.toLong())
+    }
+
+    /**
+     * The offset of a record (ZIP64 EOCD or central directory): the spec
+     * reading (disk-relative offset) first, the raw archive-relative
+     * offset second. A zip built whole and then cut into parts carries
+     * archive-relative offsets — the spec reading points past the end of
+     * the archive and parses as garbage. Null when neither points at
+     * the expected signature (moon's 2026-11-26 'Thuruppu Gulan').
+     */
+    private fun recordOffset(
+        specOffset: Long,
+        archiveOffset: Long,
+        sig: Int,
+        totalSize: Long,
+        readAt: (Long, Int) -> ByteArray,
+    ): Long? {
+        if (isSigAt(specOffset, sig, totalSize, readAt)) return specOffset
+        if (archiveOffset != specOffset &&
+            isSigAt(archiveOffset, sig, totalSize, readAt)
+        ) {
+            AppLog.i("ZIP", "probe: archive-relative offset (cut-up zip)")
+            return archiveOffset
+        }
+        return null
+    }
+
+    private fun isSigAt(
+        offset: Long,
+        sig: Int,
+        totalSize: Long,
+        readAt: (Long, Int) -> ByteArray,
+    ): Boolean {
+        if (offset < 0 || offset + 4 > totalSize) return false
+        return try {
+            val b = readAt(offset, 4)
+            b.size == 4 && u32(b, 0) == sig.toLong()
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private data class CentralEntry(
@@ -372,11 +425,28 @@ object ZipStream {
 
     private fun playableOrNull(offset: Long, size: Long, name: String, totalSize: Long): Probe.Playable? {
         if (offset < 0L || size <= 0L || offset + size > totalSize) return null
+        AppLog.i("ZIP", "probe: playable '$name' at +$offset, ${size / (1024 * 1024)} MB")
         return Probe.Playable(Info(dataOffset = offset, videoSize = size, innerName = name))
     }
 
     private fun isVideo(name: String): Boolean =
         name.substringAfterLast('.', "").lowercase() in VIDEO_EXTS
+
+    /**
+     * Log + return Unreadable in one line. The probe's decisions must be
+     * visible in the log — a silent Unreadable hid why 'Thuruppu Gulan'
+     * wouldn't play (moon's 2026-11-26: the log proved the probe returned
+     * Unreadable, but not why).
+     */
+    private fun unreadable(why: String): Probe.Unreadable {
+        AppLog.i("ZIP", "probe: unreadable — $why")
+        return Probe.Unreadable
+    }
+
+    private fun compressed(why: String): Probe.Compressed {
+        AppLog.i("ZIP", "probe: compressed — $why")
+        return Probe.Compressed
+    }
 
     /**
      * Probes a joined (possibly split) zip for a streamable inner video.
@@ -391,7 +461,7 @@ object ZipStream {
         partSizes: List<Long>,
         readAt: (offset: Long, size: Int) -> ByteArray,
     ): Probe {
-        if (totalSize <= 0L || partSizes.isEmpty()) return Probe.Unreadable
+        if (totalSize <= 0L || partSizes.isEmpty()) return unreadable("empty input")
         val partStarts = LongArray(partSizes.size).also { arr ->
             var acc = 0L
             partSizes.forEachIndexed { i, s -> arr[i] = acc; acc += s }
@@ -399,41 +469,55 @@ object ZipStream {
         val head = try {
             readAt(0L, minOf(totalSize, HEAD_BYTES.toLong()).toInt())
         } catch (e: Exception) {
-            return Probe.Unreadable
+            return unreadable("head read failed: ${e.message}")
         }
-        if (head.isEmpty()) return Probe.Unreadable
-        val first = parseLocal(head, 0L) ?: return Probe.Unreadable
-        if (first.method != METHOD_STORED) return Probe.Compressed
-        // Fast path: the first entry is the video (the usual media zip).
+        if (head.isEmpty()) return unreadable("empty head")
+        val first = parseLocal(head, 0L) ?: return unreadable("no local header at 0 — not a zip")
+        AppLog.i(
+            "ZIP",
+            "probe: first entry '${first.name}' method=${first.method} " +
+                "descriptor=${first.hasDataDescriptor}",
+        )
+        // The method check belongs to the VIDEO entry, not the first
+        // entry: a deflated .nfo first must not kill a stored video
+        // later in the zip.
         if (isVideo(first.name)) {
+            if (first.method != METHOD_STORED) {
+                return compressed("video entry '${first.name}' is not stored")
+            }
             if (!first.hasDataDescriptor && first.uncompSize > 0L) {
                 return playableOrNull(first.dataOffset, first.uncompSize, first.name, totalSize)
-                    ?: Probe.Unreadable
+                    ?: unreadable("fast-path bounds failed for '${first.name}'")
             }
             // Sizes live in the central directory — match the entry by name.
-            val cd = findCentralDir(totalSize, partStarts, readAt) ?: return Probe.Unreadable
+            val cd = findCentralDir(totalSize, partStarts, readAt)
+                ?: return unreadable("central directory not found")
             val sizes = centralEntry(cd, totalSize, partStarts, readAt) { it.name == first.name }
-                ?: return Probe.Unreadable
-            if (sizes.method != METHOD_STORED) return Probe.Compressed
+                ?: return unreadable("'${first.name}' not in central directory")
+            if (sizes.method != METHOD_STORED) {
+                return compressed("video entry '${first.name}' is not stored")
+            }
             return playableOrNull(first.dataOffset, sizes.uncompSize, first.name, totalSize)
-                ?: Probe.Unreadable
+                ?: unreadable("central-directory bounds failed for '${first.name}'")
         }
         // Multi-entry zip: the video isn't first — find it in the directory.
-        val cd = findCentralDir(totalSize, partStarts, readAt) ?: return Probe.Unreadable
+        val cd = findCentralDir(totalSize, partStarts, readAt)
+            ?: return unreadable("central directory not found")
         val entry = centralEntry(cd, totalSize, partStarts, readAt) {
             it.method == METHOD_STORED && isVideo(it.name)
-        } ?: return Probe.Unreadable
-        if (entry.uncompSize <= 0L) return Probe.Unreadable
+        } ?: return unreadable("no stored video entry in central directory")
+        if (entry.uncompSize <= 0L) return unreadable("stored video entry has no size")
         // The data offset comes from THAT entry's own local header (its
         // extra field can differ in length from the central copy).
         val localHead = try {
             readAt(entry.localHeaderOffset, HEAD_BYTES)
         } catch (e: Exception) {
-            return Probe.Unreadable
+            return unreadable("video local header read failed: ${e.message}")
         }
-        val local = parseLocal(localHead, entry.localHeaderOffset) ?: return Probe.Unreadable
+        val local = parseLocal(localHead, entry.localHeaderOffset)
+            ?: return unreadable("video local header unparseable")
         return playableOrNull(local.dataOffset, entry.uncompSize, entry.name, totalSize)
-            ?: Probe.Unreadable
+            ?: unreadable("multi-entry bounds failed for '${entry.name}'")
     }
 
     /** Probe results by joined-file key — Telegram files never change, so a probe stays valid. */
